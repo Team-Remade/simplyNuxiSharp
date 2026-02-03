@@ -14,7 +14,7 @@ public partial class SceneObject : Node3D
 	public Color PickColor = Colors.White;
 	public int ObjectId = 0;
 	
-	private Node3D Visual;
+	public Node3D Visual;
 	
 	public SceneObject()
 	{
@@ -29,8 +29,8 @@ public partial class SceneObject : Node3D
 	private void GeneratePickColor()
 	{
 		// This supports around 16 million objects
-		var r = ((ObjectId / 65025f) % 255) / 255f;
-		var g = ((ObjectId / 255f) % 255) / 255f;
+		var r = ((ObjectId / 65025) % 255) / 255f;
+		var g = ((ObjectId / 255) % 255) / 255f;
 		var b = (ObjectId % 255) / 255f;
 		
 		PickColor = new Color(r, g, b);
@@ -163,7 +163,7 @@ public partial class SceneObject : Node3D
 		}
 	}
 
-	private List<MeshInstance3D> GetMeshInstancesRecursively(Node node)
+	public List<MeshInstance3D> GetMeshInstancesRecursively(Node node)
 	{
 		var meshInstances = new List<MeshInstance3D>();
 		

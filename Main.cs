@@ -1,4 +1,5 @@
 using Godot;
+using simplyRemadeNuxi.core;
 using SceneTree = simplyRemadeNuxi.core.SceneTree;
 
 namespace simplyRemadeNuxi;
@@ -23,10 +24,14 @@ public partial class Main : Control
 		SetWindowTitle("Mine Imator Simply Remade: Nuxi");
 	}
 
-	public override void _Ready()
+	public override async void _Ready()
 	{
 		SetupMenus();
 		SceneTreePanel.SetViewport(Viewport);
+		
+		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+		
+		SceneTreePanel.ObjectSelected += OnSceneObjectSelected;
 	}
 
 	private void SetupMenus()
@@ -100,5 +105,11 @@ public partial class Main : Control
 	{
 		var window = GetWindow();
 		window.Title = title;
+	}
+
+	private void OnSceneObjectSelected(SceneObject sceneObject)
+	{
+		SelectionManager.Instance.ClearSelection();
+		SelectionManager.Instance.SelectObject(sceneObject);
 	}
 }

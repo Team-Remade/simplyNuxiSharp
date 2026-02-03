@@ -6,6 +6,8 @@
 [ext_resource type="Script" uid="uid://c7r7ej2l8wj2e" path="res://addons/dockable_container/layout.gd" id="4_3dxm6"]
 [ext_resource type="Script" uid="uid://dcjai3itiedcl" path="res://addons/dockable_container/layout_split.gd" id="4_fos0i"]
 [ext_resource type="Script" uid="uid://1358ext44s8c" path="res://src/core/SceneTree.cs" id="6_3dxm6"]
+[ext_resource type="Script" uid="uid://yk4xrjo1fpr7" path="res://src/core/WorkCamera.cs" id="6_lgr22"]
+[ext_resource type="Shader" uid="uid://btpopdqor5lee" path="res://assets/Shaders/Picking.gdshader" id="7_trn2v"]
 
 [sub_resource type="Resource" id="Resource_3dxm6"]
 resource_name = "Tabs"
@@ -161,10 +163,14 @@ grow_vertical = 2
 stretch = true
 
 [node name="SubViewport" type="SubViewport" parent="Content/MainContent/Viewport/MainViewport" unique_id=1386258356]
+handle_input_locally = false
 size = Vector2i(915, 392)
+render_target_update_mode = 4
 
 [node name="WorkCam" type="Camera3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=1302633907]
 transform = Transform3D(0.70710677, -0.49999997, 0.49999997, 0, 0.70710677, 0.70710677, -0.70710677, -0.49999997, 0.49999997, 3, 3, 3)
+script = ExtResource("6_lgr22")
+PickingShader = ExtResource("7_trn2v")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=920564239]
 transform = Transform3D(0.8660254, -0.25, 0.4330127, 0, 0.8660254, 0.5, -0.5, -0.4330127, 0.75, 0, 0, 0)
