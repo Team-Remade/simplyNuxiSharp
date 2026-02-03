@@ -1,0 +1,202 @@
+[gd_scene format=3 uid="uid://f4a6hf0g12j2"]
+
+[ext_resource type="Script" uid="uid://c3g35x51isfy2" path="res://Main.cs" id="1_glv2v"]
+[ext_resource type="Script" uid="uid://d3sbpgo0rl5pc" path="res://addons/dockable_container/dockable_container.gd" id="2_cm0pq"]
+[ext_resource type="Script" uid="uid://qbhpr5tlanct" path="res://addons/dockable_container/layout_panel.gd" id="3_fos0i"]
+[ext_resource type="Script" uid="uid://c7r7ej2l8wj2e" path="res://addons/dockable_container/layout.gd" id="4_3dxm6"]
+[ext_resource type="Script" uid="uid://dcjai3itiedcl" path="res://addons/dockable_container/layout_split.gd" id="4_fos0i"]
+
+[sub_resource type="Resource" id="Resource_3dxm6"]
+resource_name = "Tabs"
+script = ExtResource("3_fos0i")
+names = PackedStringArray("Viewport")
+metadata/_custom_type_script = "uid://qbhpr5tlanct"
+
+[sub_resource type="Resource" id="Resource_lgr22"]
+resource_name = "Tabs"
+script = ExtResource("3_fos0i")
+names = PackedStringArray("Timeline")
+metadata/_custom_type_script = "uid://qbhpr5tlanct"
+
+[sub_resource type="Resource" id="Resource_03owx"]
+resource_name = "Split"
+script = ExtResource("4_fos0i")
+direction = 1
+percent = 0.7
+first = SubResource("Resource_3dxm6")
+second = SubResource("Resource_lgr22")
+metadata/_custom_type_script = "uid://dcjai3itiedcl"
+
+[sub_resource type="Resource" id="Resource_wkp8b"]
+resource_name = "Tabs"
+script = ExtResource("3_fos0i")
+names = PackedStringArray("Scene Tree")
+metadata/_custom_type_script = "uid://qbhpr5tlanct"
+
+[sub_resource type="Resource" id="Resource_20pc6"]
+resource_name = "Tabs"
+script = ExtResource("3_fos0i")
+names = PackedStringArray("Project Properties", "Object Properties")
+metadata/_custom_type_script = "uid://qbhpr5tlanct"
+
+[sub_resource type="Resource" id="Resource_5vvyt"]
+resource_name = "Split"
+script = ExtResource("4_fos0i")
+direction = 1
+percent = 0.3
+first = SubResource("Resource_wkp8b")
+second = SubResource("Resource_20pc6")
+metadata/_custom_type_script = "uid://dcjai3itiedcl"
+
+[sub_resource type="Resource" id="Resource_c6i3y"]
+resource_name = "Split"
+script = ExtResource("4_fos0i")
+percent = 0.8
+first = SubResource("Resource_03owx")
+second = SubResource("Resource_5vvyt")
+metadata/_custom_type_script = "uid://dcjai3itiedcl"
+
+[sub_resource type="Resource" id="Resource_trn2v"]
+resource_name = "Layout"
+script = ExtResource("4_3dxm6")
+root = SubResource("Resource_c6i3y")
+
+[sub_resource type="Environment" id="Environment_fos0i"]
+background_mode = 3
+background_canvas_max_layer = 1
+
+[node name="Main" type="Control" unique_id=718552606 node_paths=PackedStringArray("FileButton", "EditButton", "ViewButton", "RenderButton", "HelpButton", "Viewport", "SceneTreePanel", "SceneTree", "ObjectPropertyPanel")]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_glv2v")
+FileButton = NodePath("Content/Menubar/FileButton")
+EditButton = NodePath("Content/Menubar/EditButton")
+ViewButton = NodePath("Content/Menubar/ViewButton")
+RenderButton = NodePath("Content/Menubar/RenderButton")
+HelpButton = NodePath("Content/Menubar/HelpButton")
+Viewport = NodePath("Content/MainContent/Viewport/MainViewport/SubViewport")
+SceneTreePanel = NodePath("Content/MainContent/Scene Tree")
+SceneTree = NodePath("Content/MainContent/Scene Tree")
+ObjectPropertyPanel = NodePath("Content/MainContent/Object Properties")
+
+[node name="ColorRect" type="ColorRect" parent="." unique_id=1736416454]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.12315103, 0.11757479, 0.112778, 1)
+
+[node name="Content" type="VBoxContainer" parent="." unique_id=1471900694]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Menubar" type="HBoxContainer" parent="Content" unique_id=1475988101]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="FileButton" type="MenuButton" parent="Content/Menubar" unique_id=481983326]
+layout_mode = 2
+text = "File"
+
+[node name="FilePopup" type="PopupMenu" parent="Content/Menubar/FileButton" unique_id=245091282]
+oversampling_override = 1.0
+
+[node name="EditButton" type="MenuButton" parent="Content/Menubar" unique_id=1921133696]
+layout_mode = 2
+text = "Edit"
+
+[node name="EditPopup" type="PopupMenu" parent="Content/Menubar/EditButton" unique_id=53433655]
+oversampling_override = 1.0
+
+[node name="ViewButton" type="MenuButton" parent="Content/Menubar" unique_id=2027525395]
+layout_mode = 2
+text = "View"
+
+[node name="ViewPopup" type="PopupMenu" parent="Content/Menubar/ViewButton" unique_id=1329880797]
+oversampling_override = 1.0
+
+[node name="RenderButton" type="MenuButton" parent="Content/Menubar" unique_id=302133687]
+layout_mode = 2
+text = "Render"
+
+[node name="RenderPopup" type="PopupMenu" parent="Content/Menubar/RenderButton" unique_id=1109063284]
+oversampling_override = 1.0
+
+[node name="HelpButton" type="MenuButton" parent="Content/Menubar" unique_id=1547958817]
+layout_mode = 2
+text = "Help"
+
+[node name="HelpPopup" type="PopupMenu" parent="Content/Menubar/HelpButton" unique_id=1552682200]
+oversampling_override = 1.0
+
+[node name="MainContent" type="Container" parent="Content" unique_id=531635407]
+layout_mode = 2
+size_flags_vertical = 3
+script = ExtResource("2_cm0pq")
+tab_alignment = 3
+layout = SubResource("Resource_trn2v")
+metadata/_custom_type_script = "uid://d3sbpgo0rl5pc"
+
+[node name="Viewport" type="Control" parent="Content/MainContent" unique_id=185253855]
+layout_mode = 2
+
+[node name="MainViewport" type="SubViewportContainer" parent="Content/MainContent/Viewport" unique_id=1441386572]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+stretch = true
+
+[node name="SubViewport" type="SubViewport" parent="Content/MainContent/Viewport/MainViewport" unique_id=1386258356]
+size = Vector2i(915, 392)
+
+[node name="WorkCam" type="Camera3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=1302633907]
+transform = Transform3D(0.70710677, -0.49999997, 0.49999997, 0, 0.70710677, 0.70710677, -0.70710677, -0.49999997, 0.49999997, 3, 3, 3)
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=920564239]
+transform = Transform3D(0.8660254, -0.25, 0.4330127, 0, 0.8660254, 0.5, -0.5, -0.4330127, 0.75, 0, 0, 0)
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=1863678213]
+environment = SubResource("Environment_fos0i")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=1815694963]
+
+[node name="ColorRect" type="ColorRect" parent="Content/MainContent/Viewport/MainViewport/SubViewport/CanvasLayer" unique_id=1350367524]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.5764706, 0.5764706, 1, 1)
+
+[node name="TextureRect" type="TextureRect" parent="Content/MainContent/Viewport/MainViewport/SubViewport/CanvasLayer" unique_id=2122414019]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Timeline" type="Panel" parent="Content/MainContent" unique_id=1397746994]
+layout_mode = 2
+
+[node name="Scene Tree" type="Panel" parent="Content/MainContent" unique_id=480008741]
+layout_mode = 2
+
+[node name="Project Properties" type="Panel" parent="Content/MainContent" unique_id=1905535208]
+layout_mode = 2
+
+[node name="Object Properties" type="Panel" parent="Content/MainContent" unique_id=572742684]
+visible = false
+layout_mode = 2
