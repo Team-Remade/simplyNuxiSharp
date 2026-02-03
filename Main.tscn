@@ -5,6 +5,7 @@
 [ext_resource type="Script" uid="uid://qbhpr5tlanct" path="res://addons/dockable_container/layout_panel.gd" id="3_fos0i"]
 [ext_resource type="Script" uid="uid://c7r7ej2l8wj2e" path="res://addons/dockable_container/layout.gd" id="4_3dxm6"]
 [ext_resource type="Script" uid="uid://dcjai3itiedcl" path="res://addons/dockable_container/layout_split.gd" id="4_fos0i"]
+[ext_resource type="Script" uid="uid://1358ext44s8c" path="res://src/core/SceneTree.cs" id="6_3dxm6"]
 
 [sub_resource type="Resource" id="Resource_3dxm6"]
 resource_name = "Tabs"
@@ -193,6 +194,7 @@ layout_mode = 2
 
 [node name="Scene Tree" type="Panel" parent="Content/MainContent" unique_id=480008741]
 layout_mode = 2
+script = ExtResource("6_3dxm6")
 
 [node name="Project Properties" type="Panel" parent="Content/MainContent" unique_id=1905535208]
 layout_mode = 2

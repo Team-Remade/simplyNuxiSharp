@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://cagt7pjdbi66f"]
+
+[ext_resource type="Script" uid="uid://bsqiyoy06l0by" path="res://src/core/SelectionManager.cs" id="1_d5hhi"]
+[ext_resource type="Shader" uid="uid://4p0c22x3feue" path="res://assets/Shaders/SelectionOutline.gdshader" id="2_6400l"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_d5hhi"]
+render_priority = 0
+shader = ExtResource("2_6400l")
+shader_parameter/outline_threshold = 0.2
+shader_parameter/outline_color = Color(0.043, 0.282, 0.467, 1)
+
+[node name="SelectionManager" type="Node" unique_id=1985921452]
+script = ExtResource("1_d5hhi")
+SelectionMaterial = SubResource("ShaderMaterial_d5hhi")

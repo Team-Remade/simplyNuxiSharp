@@ -1,4 +1,5 @@
 using Godot;
+using SceneTree = simplyRemadeNuxi.core.SceneTree;
 
 namespace simplyRemadeNuxi;
 
@@ -13,7 +14,7 @@ public partial class Main : Control
 	[Export] public MenuButton HelpButton;
 	
 	[Export] public SubViewport Viewport;
-	[Export] public Panel SceneTreePanel;
+	[Export] public SceneTree SceneTreePanel;
 	[Export] public Control SceneTree;
 	[Export] public Panel ObjectPropertyPanel;
 	
@@ -25,6 +26,7 @@ public partial class Main : Control
 	public override void _Ready()
 	{
 		SetupMenus();
+		SceneTreePanel.SetViewport(Viewport);
 	}
 
 	private void SetupMenus()

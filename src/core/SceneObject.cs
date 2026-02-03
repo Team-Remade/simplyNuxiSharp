@@ -22,7 +22,7 @@ public partial class SceneObject : Node3D
 		Visual = new Node3D();
 		Visual.Name = "Visual";
 		AddChild(Visual);
-		ObjectId = -1; //TODO: Assign a proper id on creation
+		ObjectId = SelectionManager.Instance.GetNextObjectId();
 		GeneratePickColor();
 	}
 	
@@ -135,7 +135,7 @@ public partial class SceneObject : Node3D
 		ApplySelectionMaterial(selected);
 	}
 
-	private void ApplySelectionMaterial(bool selected)
+	public void ApplySelectionMaterial(bool selected)
 	{
 		
 	}
