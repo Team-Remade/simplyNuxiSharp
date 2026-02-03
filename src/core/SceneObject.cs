@@ -137,6 +137,55 @@ public partial class SceneObject : Node3D
 
 	public void ApplySelectionMaterial(bool selected)
 	{
+		if (Visual == null) return;
 		
+		var meshInstances = GetMeshInstancesRecursively(Visual);
+		
+		foreach (var meshInstance in meshInstances)
+		{
+			var mesh = meshInstance.Mesh;
+			if (mesh == null) continue;
+			
+			var surfaceCount = mesh.GetSurfaceCount();
+			for (var i = 0; i < surfaceCount; i++)
+			{
+				var material = meshInstance.Mesh.SurfaceGetMaterial(i);
+				if (material == null) continue;
+				if (selected)
+				{
+					material.NextPass = SelectionManager.Instance.SelectionMaterial;
+				}
+				else
+				{
+					material.NextPass = null;
+				}
+			}
+		}
+	}
+
+	private List<MeshInstance3D> GetMeshInstancesRecursively(Node node)
+	{
+		var meshInstances = new List<MeshInstance3D>();
+		
+		foreach (var child in node.GetChildren())
+		{
+			if (child is MeshInstance3D meshInstance)
+			{
+				meshInstances.Add(meshInstance);
+			}
+			
+			// Recursively search through child nodes
+			if (child.GetChildCount() > 0)
+			{
+				meshInstances.AddRange(GetMeshInstancesRecursively(child));
+			}
+		}
+		
+		return meshInstances;
+	}
+	
+	public void AddVisualInstance(Node3D visual)
+	{
+		Visual.AddChild(visual);
 	}
 }

@@ -75,7 +75,7 @@ public partial class SceneTree : Panel
 		Tree.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		Tree.SizeFlagsVertical = SizeFlags.ExpandFill;
 		Tree.Columns = 1;
-		Tree.HideRoot = false;
+		Tree.HideRoot = true;
 		Tree.SelectMode = Tree.SelectModeEnum.Single;
 		Tree.AllowReselect = true;
 		
@@ -154,6 +154,8 @@ public partial class SceneTree : Panel
 		if (selected != null && ObjectMap.TryGetValue(selected, out var item))
 		{
 			EmitSignal(nameof(ObjectSelected), item);
+			SelectionManager.Instance.ClearSelection();
+			SelectionManager.Instance.SelectObject(item);
 		}
 	}
 	
@@ -195,6 +197,12 @@ public partial class SceneTree : Panel
 			var obj = new SceneObject();
 			obj.Name = "Object" + obj.ObjectId;
 			Viewport.AddChild(obj);
+			var material = new StandardMaterial3D();
+			var meshInstance = new MeshInstance3D();
+			var mesh = new BoxMesh();
+			mesh.SurfaceSetMaterial(0, material);
+			meshInstance.Mesh = mesh;
+			obj.AddVisualInstance(meshInstance);
 			BuildTree();
 			SelectObject(obj);
 		}
