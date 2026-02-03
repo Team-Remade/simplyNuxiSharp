@@ -198,7 +198,7 @@ public partial class WorkCamera : Camera3D
 		{
 			if (sceneObject is SceneObject { IsSelectable: true } so)
 			{
-				RestoreObjectMaterial(so);	
+				RestoreObjectMaterial(so);
 			}
 		}
 		
