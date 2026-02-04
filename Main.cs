@@ -17,7 +17,7 @@ public partial class Main : Control
 	[Export] public SubViewport Viewport;
 	[Export] public SceneTree SceneTreePanel;
 	[Export] public Control SceneTree;
-	[Export] public Panel ObjectPropertyPanel;
+	[Export] public ObjectPropertiesPanel ObjectPropertyPanel;
 	
 	public override void _EnterTree()
 	{
@@ -111,5 +111,6 @@ public partial class Main : Control
 	{
 		SelectionManager.Instance.ClearSelection();
 		SelectionManager.Instance.SelectObject(sceneObject);
+		ObjectPropertyPanel.Show();
 	}
 }
