@@ -1,3 +1,4 @@
+using Gizmo3DPlugin;
 using Godot;
 using simplyRemadeNuxi.core;
 using SceneTree = simplyRemadeNuxi.core.SceneTree;
@@ -31,7 +32,18 @@ public partial class Main : Control
 		
 		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
 		
+		SetupGizmo();
+		
 		SceneTreePanel.ObjectSelected += OnSceneObjectSelected;
+	}
+
+	private void SetupGizmo()
+	{
+		var gizmo = new Gizmo3D();
+		gizmo.Name = "Gizmo";
+		Viewport.AddChild(gizmo);
+		gizmo.ShowSelectionBox = false;
+		SelectionManager.Instance.Gizmo = gizmo;
 	}
 
 	private void SetupMenus()

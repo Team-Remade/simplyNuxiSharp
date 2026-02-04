@@ -1,4 +1,5 @@
-﻿using Godot;
+﻿using Gizmo3DPlugin;
+using Godot;
 using Godot.Collections;
 
 namespace simplyRemadeNuxi.core;
@@ -10,6 +11,8 @@ public partial class SelectionManager : Node
     [Signal] public delegate void SelectionChangedEventHandler();
     
     public Array<SceneObject> SelectedObjects = new Array<SceneObject>();
+    
+    public Gizmo3D Gizmo;
     
     private int NextObjectId = 1;
     
