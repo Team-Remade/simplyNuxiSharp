@@ -40,6 +40,7 @@ public partial class SelectionManager : Node
         SelectedObjects.Add(obj);
         obj.SetSelected(true);
         ApplySelection(obj, true);
+        SyncGizmoSelection();
         EmitSignal(nameof(SelectionChanged));
     }
 
@@ -49,6 +50,7 @@ public partial class SelectionManager : Node
         SelectedObjects.Remove(obj);
         obj.SetSelected(false);
         ApplySelection(obj, false);
+        SyncGizmoSelection();
         EmitSignal(nameof(SelectionChanged));
     }
 
@@ -72,12 +74,31 @@ public partial class SelectionManager : Node
             ApplySelection(obj, false);
         }
         SelectedObjects.Clear();
+        SyncGizmoSelection();
         EmitSignal(nameof(SelectionChanged));
     }
     
     private void ApplySelection(SceneObject obj, bool selected)
     {
         obj.ApplySelectionMaterial(selected);
+    }
+
+    /// <summary>
+    /// Sync the gizmo selection with the currently selected SceneObjects.
+    /// The gizmo will attach to all selected objects and position itself at their center.
+    /// </summary>
+    private void SyncGizmoSelection()
+    {
+        if (Gizmo == null) return;
+        
+        // Clear current gizmo selection
+        Gizmo.ClearSelection();
+        
+        // Add all selected objects to the gizmo
+        foreach (var obj in SelectedObjects)
+        {
+            Gizmo.Select(obj);
+        }
     }
 
     public bool IsSelected(SceneObject obj)

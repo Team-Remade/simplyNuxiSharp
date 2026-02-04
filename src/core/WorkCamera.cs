@@ -84,6 +84,10 @@ public partial class WorkCamera : Camera3D
 			SetFlying(mouseEvent.Pressed);
 		}
 
+		// Check if gizmo is being hovered or edited
+		bool gizmoInteracting = SelectionManager.Instance?.Gizmo != null && 
+				(SelectionManager.Instance.Gizmo.Hovering || SelectionManager.Instance.Gizmo.Editing);
+
 		if (@event is InputEventMouseButton { ButtonIndex: MouseButton.Left } buttonEvent)
 		{
 			if (buttonEvent.Pressed)
@@ -93,7 +97,7 @@ public partial class WorkCamera : Camera3D
 			}
 			else
 			{
-				if (!IsDragging && !IsFlying)
+				if (!IsDragging && !IsFlying && !gizmoInteracting)
 				{
 					HandleSelection(GetViewport().GetMousePosition());
 				}
@@ -140,7 +144,7 @@ public partial class WorkCamera : Camera3D
 				rot.X = Mathf.Clamp(rot.X, Mathf.DegToRad(-90), Mathf.DegToRad(90));
 				Rotation = rot;
 			}
-			else if (Input.IsMouseButtonPressed(MouseButton.Left))
+			else if (Input.IsMouseButtonPressed(MouseButton.Left) && !gizmoInteracting)
 			{
 				if (!IsDragging)
 				{
@@ -156,6 +160,7 @@ public partial class WorkCamera : Camera3D
 					OrbitYaw -= motionEvent.Relative.X * OrbitSensitivity;
 					OrbitPitch += motionEvent.Relative.Y * OrbitSensitivity;
 					OrbitPitch = Mathf.Clamp(OrbitPitch, Mathf.DegToRad(-89), Mathf.DegToRad(89));
+					UpdateOrbitTransform();
 				}
 			}
 		}
@@ -248,12 +253,14 @@ public partial class WorkCamera : Camera3D
 
 	private void HandlePickColor(Color color, Array<Node> sceneObjects)
 	{
+		bool isCtrlPressed = Input.IsKeyPressed(Key.Ctrl);
+		
 		if (color.A < 0.5f)
 		{
-			//Empty space
-			foreach (var sceneObject in SelectionManager.Instance.SelectedObjects)
+			//Empty space - clear selection unless Ctrl is pressed
+			if (!isCtrlPressed)
 			{
-				SelectionManager.Instance.ToggleSelection(sceneObject);
+				SelectionManager.Instance.ClearSelection();
 			}
 			return;
 		}
@@ -264,11 +271,17 @@ public partial class WorkCamera : Camera3D
 			{
 				if (color == so.PickColor)
 				{
-					foreach (var selectedObject in SelectionManager.Instance.SelectedObjects)
+					if (isCtrlPressed)
 					{
-						SelectionManager.Instance.ToggleSelection(selectedObject);
+						// Ctrl+Click toggles selection (multiselect)
+						SelectionManager.Instance.ToggleSelection(so);
 					}
-					SelectionManager.Instance.SelectObject(so);
+					else
+					{
+						// Normal click clears selection and selects new object
+						SelectionManager.Instance.ClearSelection();
+						SelectionManager.Instance.SelectObject(so);
+					}
 					return;
 				}
 			}

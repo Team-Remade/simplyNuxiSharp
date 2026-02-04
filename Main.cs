@@ -43,6 +43,7 @@ public partial class Main : Control
 		gizmo.Name = "Gizmo";
 		Viewport.AddChild(gizmo);
 		gizmo.ShowSelectionBox = false;
+		gizmo.Layers = 2; // Set to layer 2 so it can be hidden from certain cameras
 		SelectionManager.Instance.Gizmo = gizmo;
 	}
 
