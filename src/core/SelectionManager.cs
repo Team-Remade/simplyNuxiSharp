@@ -38,6 +38,7 @@ public partial class SelectionManager : Node
         if (!obj.IsSelectable) return;
         
         SelectedObjects.Add(obj);
+        obj.SetSelected(true);
         ApplySelection(obj, true);
         EmitSignal(nameof(SelectionChanged));
     }
@@ -46,7 +47,7 @@ public partial class SelectionManager : Node
     {
         if (!SelectedObjects.Contains(obj)) return;
         SelectedObjects.Remove(obj);
-        
+        obj.SetSelected(false);
         ApplySelection(obj, false);
         EmitSignal(nameof(SelectionChanged));
     }
@@ -67,6 +68,7 @@ public partial class SelectionManager : Node
     {
         foreach (var obj in SelectedObjects)
         {
+            obj.SetSelected(false);
             ApplySelection(obj, false);
         }
         SelectedObjects.Clear();

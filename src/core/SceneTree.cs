@@ -13,6 +13,8 @@ public partial class SceneTree : Panel
 	public Tree Tree;
 	public Dictionary<TreeItem, SceneObject> ObjectMap = new Dictionary<TreeItem, SceneObject>();
 	
+	private bool _isProcessingSelection = false;
+	
 	const string ItemMetaObject = "SceneObject";
 	const string ItemMetaExpanded = "IsExpanded";
 	
@@ -34,6 +36,12 @@ public partial class SceneTree : Panel
 			await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
 		}
 		BuildTree();
+		
+		// Connect to SelectionManager to sync with viewport selection
+		if (SelectionManager.Instance != null)
+		{
+			SelectionManager.Instance.SelectionChanged += OnSelectionChanged;
+		}
 	}
 
 	private void SetupUi()
@@ -150,6 +158,8 @@ public partial class SceneTree : Panel
 
 	private void OnItemSelected()
 	{
+		if (_isProcessingSelection) return;
+		
 		var selected = Tree.GetSelected();
 		if (selected != null && ObjectMap.TryGetValue(selected, out var item))
 		{
@@ -204,7 +214,9 @@ public partial class SceneTree : Panel
 			meshInstance.Mesh = mesh;
 			obj.AddVisualInstance(meshInstance);
 			BuildTree();
+			_isProcessingSelection = true;
 			SelectObject(obj);
+			_isProcessingSelection = false;
 		}
 	}
 
@@ -231,6 +243,33 @@ public partial class SceneTree : Panel
 		
 		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
 		BuildTree();
+	}
+
+	private void OnSelectionChanged()
+	{
+		if (_isProcessingSelection) return;
+		
+		// Update tree selection to match viewport selection
+		var selectedObject = SelectionManager.Instance.SelectedObjects.Count > 0 
+			? SelectionManager.Instance.SelectedObjects[0] 
+			: null;
+		
+		_isProcessingSelection = true;
+		
+		if (selectedObject != null)
+		{
+			SelectObject(selectedObject);
+		}
+		else
+		{
+			// Deselect all items in tree
+			foreach (var item in ObjectMap.Keys)
+			{
+				item.Deselect(0);
+			}
+		}
+		
+		_isProcessingSelection = false;
 	}
 
 	private void SelectObject(SceneObject obj)
