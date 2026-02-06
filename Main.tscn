@@ -8,7 +8,7 @@
 [ext_resource type="Script" uid="uid://1358ext44s8c" path="res://src/core/SceneTree.cs" id="6_3dxm6"]
 [ext_resource type="Script" uid="uid://yk4xrjo1fpr7" path="res://src/core/WorkCamera.cs" id="6_lgr22"]
 [ext_resource type="Shader" uid="uid://btpopdqor5lee" path="res://assets/Shaders/Picking.gdshader" id="7_trn2v"]
-[ext_resource type="Script" uid="uid://b2m8qk1j5xw3k" path="res://src/core/ObjectPropertiesPanel.cs" id="8_props"]
+[ext_resource type="Script" uid="uid://gv1c5wwt7ydw" path="res://src/core/ObjectPropertiesPanel.cs" id="8_props"]
 
 [sub_resource type="Resource" id="Resource_3dxm6"]
 resource_name = "Tabs"
@@ -69,7 +69,7 @@ root = SubResource("Resource_c6i3y")
 background_mode = 3
 background_canvas_max_layer = 1
 
-[node name="Main" type="Control" unique_id=718552606 node_paths=PackedStringArray("FileButton", "EditButton", "ViewButton", "RenderButton", "HelpButton", "Viewport", "SceneTreePanel", "SceneTree", "ObjectPropertyPanel", "ObjectPropertiesPanelControl")]
+[node name="Main" type="Control" unique_id=718552606 node_paths=PackedStringArray("FileButton", "EditButton", "ViewButton", "RenderButton", "HelpButton", "Viewport", "SceneTreePanel", "SceneTree", "ObjectPropertyPanel")]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -86,7 +86,6 @@ Viewport = NodePath("Content/MainContent/Viewport/MainViewport/SubViewport")
 SceneTreePanel = NodePath("Content/MainContent/Scene Tree")
 SceneTree = NodePath("Content/MainContent/Scene Tree")
 ObjectPropertyPanel = NodePath("Content/MainContent/Object Properties")
-ObjectPropertiesPanelControl = NodePath("Content/MainContent/Object Properties")
 
 [node name="ColorRect" type="ColorRect" parent="." unique_id=1736416454]
 layout_mode = 1
@@ -211,5 +210,6 @@ script = ExtResource("6_3dxm6")
 layout_mode = 2
 
 [node name="Object Properties" type="Panel" parent="Content/MainContent" unique_id=572742684]
+visible = false
 layout_mode = 2
 script = ExtResource("8_props")
