@@ -9,6 +9,7 @@
 [ext_resource type="Script" uid="uid://yk4xrjo1fpr7" path="res://src/core/WorkCamera.cs" id="6_lgr22"]
 [ext_resource type="Shader" uid="uid://btpopdqor5lee" path="res://assets/Shaders/Picking.gdshader" id="7_trn2v"]
 [ext_resource type="Script" uid="uid://gv1c5wwt7ydw" path="res://src/core/ObjectPropertiesPanel.cs" id="8_props"]
+[ext_resource type="Script" uid="uid://d1j8yvxoe0f0r" path="res://src/core/TimelinePanel.cs" id="8_wkp8b"]
 
 [sub_resource type="Resource" id="Resource_3dxm6"]
 resource_name = "Tabs"
@@ -201,6 +202,7 @@ grow_vertical = 2
 
 [node name="Timeline" type="Panel" parent="Content/MainContent" unique_id=1397746994]
 layout_mode = 2
+script = ExtResource("8_wkp8b")
 
 [node name="Scene Tree" type="Panel" parent="Content/MainContent" unique_id=480008741]
 layout_mode = 2
