@@ -238,8 +238,7 @@ public partial class SceneTree : Panel
 				DeleteObject(childObject);
 			}
 		}
-
-		SelectionManager.Instance.Gizmo.ClearSelection();
+		
 		SelectionManager.Instance.ClearSelection();
 		
 		sceneObject.QueueFree();
