@@ -143,23 +143,7 @@ public partial class SceneObject : Node3D
 		
 		foreach (var meshInstance in meshInstances)
 		{
-			var mesh = meshInstance.Mesh;
-			if (mesh == null) continue;
-			
-			var surfaceCount = mesh.GetSurfaceCount();
-			for (var i = 0; i < surfaceCount; i++)
-			{
-				var material = meshInstance.Mesh.SurfaceGetMaterial(i);
-				if (material == null) continue;
-				if (selected)
-				{
-					material.NextPass = SelectionManager.Instance.SelectionMaterial;
-				}
-				else
-				{
-					material.NextPass = null;
-				}
-			}
+			meshInstance.MaterialOverlay = selected ? SelectionManager.Instance.SelectionMaterial : null;
 		}
 	}
 

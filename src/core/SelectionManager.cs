@@ -38,16 +38,16 @@ public partial class SelectionManager : Node
         // Auto-keyframe affected properties when gizmo manipulation ends
         if (TimelinePanel.Instance == null || SelectedObjects.Count == 0) return;
         
-        var transformMode = (Gizmo3DPlugin.Gizmo3D.TransformMode)mode;
-        var transformPlane = (Gizmo3DPlugin.Gizmo3D.TransformPlane)plane;
+        var transformMode = (Gizmo3D.TransformMode)mode;
+        var transformPlane = (Gizmo3D.TransformPlane)plane;
         
         foreach (var obj in SelectedObjects)
         {
             string propertyPrefix = transformMode switch
             {
-                Gizmo3DPlugin.Gizmo3D.TransformMode.Translate => "position",
-                Gizmo3DPlugin.Gizmo3D.TransformMode.Rotate => "rotation",
-                Gizmo3DPlugin.Gizmo3D.TransformMode.Scale => "scale",
+                Gizmo3D.TransformMode.Translate => "position",
+                Gizmo3D.TransformMode.Rotate => "rotation",
+                Gizmo3D.TransformMode.Scale => "scale",
                 _ => null
             };
             
@@ -56,40 +56,40 @@ public partial class SelectionManager : Node
             // Keyframe only the affected axes based on the plane/axis that was manipulated
             switch (transformPlane)
             {
-                case Gizmo3DPlugin.Gizmo3D.TransformPlane.X:
+                case Gizmo3D.TransformPlane.X:
                     // Single axis: X only
                     TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.x", TimelinePanel.Instance.CurrentFrame);
                     break;
                     
-                case Gizmo3DPlugin.Gizmo3D.TransformPlane.Y:
+                case Gizmo3D.TransformPlane.Y:
                     // Single axis: Y only
                     TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.y", TimelinePanel.Instance.CurrentFrame);
                     break;
                     
-                case Gizmo3DPlugin.Gizmo3D.TransformPlane.Z:
+                case Gizmo3D.TransformPlane.Z:
                     // Single axis: Z only
                     TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.z", TimelinePanel.Instance.CurrentFrame);
                     break;
                     
-                case Gizmo3DPlugin.Gizmo3D.TransformPlane.YZ:
+                case Gizmo3D.TransformPlane.YZ:
                     // Plane: Y and Z
                     TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.y", TimelinePanel.Instance.CurrentFrame);
                     TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.z", TimelinePanel.Instance.CurrentFrame);
                     break;
                     
-                case Gizmo3DPlugin.Gizmo3D.TransformPlane.XZ:
+                case Gizmo3D.TransformPlane.XZ:
                     // Plane: X and Z
                     TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.x", TimelinePanel.Instance.CurrentFrame);
                     TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.z", TimelinePanel.Instance.CurrentFrame);
                     break;
                     
-                case Gizmo3DPlugin.Gizmo3D.TransformPlane.XY:
+                case Gizmo3D.TransformPlane.XY:
                     // Plane: X and Y
                     TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.x", TimelinePanel.Instance.CurrentFrame);
                     TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.y", TimelinePanel.Instance.CurrentFrame);
                     break;
                     
-                case Gizmo3DPlugin.Gizmo3D.TransformPlane.View:
+                case Gizmo3D.TransformPlane.View:
                     // View plane: All axes
                     TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.x", TimelinePanel.Instance.CurrentFrame);
                     TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.y", TimelinePanel.Instance.CurrentFrame);
