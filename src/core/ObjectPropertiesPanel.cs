@@ -128,11 +128,11 @@ public partial class ObjectPropertiesPanel : Panel
 
 		_objectNameLabel.Text = _currentObject.Name;
 
-		// Position
+		// Position (scaled by 16 for display)
 		var pos = _currentObject.Position;
-		_positionX.Value = Math.Round(pos.X, 2);
-		_positionY.Value = Math.Round(pos.Y, 2);
-		_positionZ.Value = Math.Round(pos.Z, 2);
+		_positionX.Value = Math.Round(pos.X * 16, 2);
+		_positionY.Value = Math.Round(pos.Y * 16, 2);
+		_positionZ.Value = Math.Round(pos.Z * 16, 2);
 
 		// Rotation (convert from radians to degrees)
 		var rot = _currentObject.Rotation;
@@ -165,9 +165,9 @@ public partial class ObjectPropertiesPanel : Panel
 		if (_currentObject == null) return;
 
 		_currentObject.Position = new Vector3(
-			(float)_positionX.Value,
-			(float)_positionY.Value,
-			(float)_positionZ.Value
+			(float)_positionX.Value / 16,
+			(float)_positionY.Value / 16,
+			(float)_positionZ.Value / 16
 		);
 		
 		// Auto-keyframe when property changes
