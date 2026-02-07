@@ -14,7 +14,7 @@ public partial class SelectionManager : Node
     
     public Gizmo3D Gizmo;
     
-    private int NextObjectId = 1;
+    private int NextPickColorId = 1;
     
     // Track if gizmo is being used to prevent timeline from overriding transforms
     public bool IsGizmoEditing { get; private set; } = false;
@@ -99,12 +99,12 @@ public partial class SelectionManager : Node
         }
     }
 
-    public int GetNextObjectId()
+    public (string uuid, int pickColorId) GetNextObjectId()
     {
-        //TODO: Handle object deletions
-        var id = NextObjectId;
-        NextObjectId++;
-        return id;
+        var uuid = System.Guid.NewGuid().ToString();
+        var pickColorId = NextPickColorId;
+        NextPickColorId++;
+        return (uuid, pickColorId);
     }
 
     public void SelectObject(SceneObject obj)

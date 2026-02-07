@@ -595,6 +595,9 @@ public partial class TimelinePanel : Panel
 		objectHeaderRight.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		_keyframesTracksContainer.AddChild(objectHeaderRight);
 
+		// Visibility property (non-collapsible single property)
+		AddSingleProperty(obj, "Visible", "visible");
+
 		// Position properties
 		AddCollapsiblePropertyGroup(obj, "Position", new string[] { "position.x", "position.y", "position.z" });
 
@@ -603,6 +606,160 @@ public partial class TimelinePanel : Panel
 
 		// Scale properties
 		AddCollapsiblePropertyGroup(obj, "Scale", new string[] { "scale.x", "scale.y", "scale.z" });
+	}
+
+	private void AddSingleProperty(SceneObject obj, string propertyName, string propertyPath)
+	{
+		// Create the left property row
+		var propertyRow = new HBoxContainer();
+		propertyRow.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_propertiesContainer.AddChild(propertyRow);
+		
+		// Property name label
+		var label = new Label();
+		label.Text = propertyName;
+		label.VerticalAlignment = VerticalAlignment.Center;
+		label.CustomMinimumSize = new Vector2(60, 0);
+		propertyRow.AddChild(label);
+		
+		// Add keyframe button
+		var addKeyButton = new Button();
+		addKeyButton.Text = "+";
+		addKeyButton.CustomMinimumSize = new Vector2(24, 20);
+		addKeyButton.TooltipText = $"Add Keyframe for {propertyName}";
+		addKeyButton.Flat = true;
+		addKeyButton.Pressed += () => AddKeyframeForProperty(obj, propertyPath, CurrentFrame);
+		propertyRow.AddChild(addKeyButton);
+		
+		// Create the right keyframe track (single track, no collapsing)
+		var track = new Control();
+		track.CustomMinimumSize = new Vector2(_maxFrames * _pixelsPerFrame, 31);
+		track.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_keyframesTracksContainer.AddChild(track);
+		
+		// Draw grid background and keyframes
+		track.Draw += () =>
+		{
+			// Draw alternating background
+			var bgColor = new Color(0.12f, 0.12f, 0.12f);
+			track.DrawRect(new Rect2(Vector2.Zero, track.Size), bgColor, true);
+			
+			// Draw vertical grid lines every 10 frames
+			for (int frame = 0; frame <= _maxFrames; frame += 10)
+			{
+				float x = frame * _pixelsPerFrame;
+				track.DrawLine(
+					new Vector2(x, 0),
+					new Vector2(x, track.Size.Y),
+					new Color(0.25f, 0.25f, 0.25f, 0.5f),
+					1.0f
+				);
+			}
+			
+			// Draw keyframes
+			var keyframes = GetKeyframesForProperty(obj, propertyPath);
+			foreach (var keyframe in keyframes)
+			{
+				float x = keyframe.Frame * _pixelsPerFrame;
+				float y = track.Size.Y / 2;
+				float size = 6f;
+				
+				// Draw diamond shape
+				var points = new Vector2[]
+				{
+					new Vector2(x, y - size),
+					new Vector2(x + size, y),
+					new Vector2(x, y + size),
+					new Vector2(x - size, y)
+				};
+				
+				track.DrawColoredPolygon(points, new Color(1f, 0.8f, 0.2f));
+				
+				for (int i = 0; i < points.Length; i++)
+				{
+					var nextI = (i + 1) % points.Length;
+					track.DrawLine(points[i], points[nextI], new Color(0.8f, 0.6f, 0.1f), 1.5f);
+				}
+			}
+		};
+		
+		// Handle track input for adding/removing/dragging keyframes
+		bool isDragging = false;
+		Keyframe draggedKeyframe = null;
+		int dragStartFrame = 0;
+		
+		track.GuiInput += (inputEvent) =>
+		{
+			if (inputEvent is InputEventMouseButton mouseButton)
+			{
+				if (mouseButton.ButtonIndex == MouseButton.Left)
+				{
+					float localX = mouseButton.Position.X;
+					int frame = Mathf.RoundToInt(localX / _pixelsPerFrame);
+					frame = Mathf.Clamp(frame, 0, _maxFrames);
+					
+					if (mouseButton.Pressed)
+					{
+						var keyframes = GetKeyframesForProperty(obj, propertyPath);
+						var clickedKeyframe = keyframes.Find(k => Mathf.Abs(k.Frame - frame) <= 1);
+						
+						if (clickedKeyframe != null && mouseButton.AltPressed)
+						{
+							RemoveKeyframeForProperty(obj, propertyPath, clickedKeyframe.Frame);
+						}
+						else if (clickedKeyframe != null)
+						{
+							isDragging = true;
+							draggedKeyframe = clickedKeyframe;
+							dragStartFrame = clickedKeyframe.Frame;
+						}
+						else
+						{
+							AddKeyframeForProperty(obj, propertyPath, frame);
+						}
+					}
+					else
+					{
+						if (isDragging && draggedKeyframe != null)
+						{
+							if (draggedKeyframe.Frame != dragStartFrame)
+							{
+								MoveKeyframe(obj, propertyPath, dragStartFrame, draggedKeyframe.Frame);
+							}
+							isDragging = false;
+							draggedKeyframe = null;
+						}
+					}
+				}
+			}
+			else if (inputEvent is InputEventMouseMotion mouseMotion && isDragging && draggedKeyframe != null)
+			{
+				float localX = mouseMotion.Position.X;
+				int newFrame = Mathf.RoundToInt(localX / _pixelsPerFrame);
+				newFrame = Mathf.Clamp(newFrame, 0, _maxFrames);
+				
+				if (newFrame != draggedKeyframe.Frame)
+				{
+					draggedKeyframe.Frame = newFrame;
+					track.QueueRedraw();
+				}
+			}
+		};
+		
+		// Store property reference and initialize keyframe list
+		var fullPath = $"{obj.GetInstanceId()}.{propertyPath}";
+		if (!_propertyKeyframes.ContainsKey(fullPath))
+		{
+			_propertyKeyframes[fullPath] = new List<Keyframe>();
+		}
+		
+		_properties.Add(new AnimatableProperty
+		{
+			Object = obj,
+			PropertyPath = propertyPath,
+			PropertyGroup = null,
+			TrackGroup = null
+		});
 	}
 
 	private void AddCollapsiblePropertyGroup(SceneObject obj, string groupName, string[] propertyPaths)
@@ -730,6 +887,12 @@ public partial class TimelinePanel : Panel
 	
 	private object GetPropertyValue(SceneObject obj, string propertyPath)
 	{
+		// Handle single property (like "visible")
+		if (propertyPath == "visible")
+		{
+			return obj.ObjectVisible ? 1f : 0f;
+		}
+		
 		var parts = propertyPath.Split('.');
 		
 		if (parts.Length == 2)
@@ -799,12 +962,22 @@ public partial class TimelinePanel : Panel
 			
 			// Parse the full path to get object ID and property path
 			var pathParts = fullPath.Split('.');
-			if (pathParts.Length < 3) continue;
+			if (pathParts.Length < 2) continue;
 			
 			var objectIdStr = pathParts[0];
-			var propertyType = pathParts[1];
-			var component = pathParts[2];
-			var propertyPath = $"{propertyType}.{component}";
+			string propertyPath;
+			
+			// Handle single property (like "visible") vs compound property (like "position.x")
+			if (pathParts.Length == 2)
+			{
+				propertyPath = pathParts[1]; // e.g., "visible"
+			}
+			else // pathParts.Length >= 3
+			{
+				var propertyType = pathParts[1];
+				var component = pathParts[2];
+				propertyPath = $"{propertyType}.{component}"; // e.g., "position.x"
+			}
 			
 			// Find the object
 			if (!ulong.TryParse(objectIdStr, out ulong objectId)) continue;
@@ -843,21 +1016,33 @@ public partial class TimelinePanel : Panel
 				}
 			}
 			
-			// Calculate interpolated value
+			// Calculate interpolated or step value
 			float value = 0f;
 			
-			if (prevKeyframe != null && nextKeyframe != null && prevKeyframe.Frame != nextKeyframe.Frame)
+			// For "visible" property, use step interpolation (no smoothing)
+			if (propertyPath == "visible")
 			{
-				// Interpolate between keyframes
-				float t = (_currentFrame - prevKeyframe.Frame) / (float)(nextKeyframe.Frame - prevKeyframe.Frame);
-				float prevValue = Convert.ToSingle(prevKeyframe.Value);
-				float nextValue = Convert.ToSingle(nextKeyframe.Value);
-				value = Mathf.Lerp(prevValue, nextValue, t);
+				if (prevKeyframe != null)
+				{
+					value = Convert.ToSingle(prevKeyframe.Value);
+				}
 			}
-			else if (prevKeyframe != null)
+			else
 			{
-				// Use exact keyframe value
-				value = Convert.ToSingle(prevKeyframe.Value);
+				// For other properties, use linear interpolation
+				if (prevKeyframe != null && nextKeyframe != null && prevKeyframe.Frame != nextKeyframe.Frame)
+				{
+					// Interpolate between keyframes
+					float t = (_currentFrame - prevKeyframe.Frame) / (float)(nextKeyframe.Frame - prevKeyframe.Frame);
+					float prevValue = Convert.ToSingle(prevKeyframe.Value);
+					float nextValue = Convert.ToSingle(nextKeyframe.Value);
+					value = Mathf.Lerp(prevValue, nextValue, t);
+				}
+				else if (prevKeyframe != null)
+				{
+					// Use exact keyframe value
+					value = Convert.ToSingle(prevKeyframe.Value);
+				}
 			}
 			
 			// Apply value to object
@@ -867,6 +1052,13 @@ public partial class TimelinePanel : Panel
 	
 	private void SetPropertyValue(SceneObject obj, string propertyPath, float value)
 	{
+		// Handle single property (like "visible")
+		if (propertyPath == "visible")
+		{
+			obj.SetObjectVisible(value >= 0.5f);
+			return;
+		}
+		
 		var parts = propertyPath.Split('.');
 		
 		if (parts.Length == 2)

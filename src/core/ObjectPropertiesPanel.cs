@@ -7,6 +7,7 @@ public partial class ObjectPropertiesPanel : Panel
 {
 	private VBoxContainer _vboxContainer;
 	private Label _objectNameLabel;
+	private CheckBox _visibilityCheckbox;
 	private SpinBox _positionX;
 	private SpinBox _positionY;
 	private SpinBox _positionZ;
@@ -52,6 +53,34 @@ public partial class ObjectPropertiesPanel : Panel
 		_objectNameLabel.Text = "No object selected";
 		_objectNameLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		vbox.AddChild(_objectNameLabel);
+
+		// Visibility checkbox
+		var visibilityContainer = new HBoxContainer();
+		vbox.AddChild(visibilityContainer);
+		
+		var visibilityLabel = new Label();
+		visibilityLabel.Text = "Visible:";
+		visibilityLabel.CustomMinimumSize = new Vector2(60, 0);
+		visibilityContainer.AddChild(visibilityLabel);
+		
+		_visibilityCheckbox = new CheckBox();
+		_visibilityCheckbox.Name = "VisibilityCheckbox";
+		_visibilityCheckbox.Text = "";  // Empty text - we have a label already
+		_visibilityCheckbox.ButtonPressed = true;
+		_visibilityCheckbox.CustomMinimumSize = new Vector2(24, 24);  // Ensure it's visible
+		// Add background color to make it visible when unchecked
+		_visibilityCheckbox.AddThemeColorOverride("font_color", new Color(1, 1, 1));  // White checkmark
+		// Add style box for background
+		var styleBox = new StyleBoxFlat();
+		styleBox.BgColor = new Color(0.25f, 0.25f, 0.25f);  // Slightly lighter background
+		styleBox.BorderColor = new Color(0.5f, 0.5f, 0.5f);  // Border to make it visible
+		styleBox.SetBorderWidthAll(1);
+		styleBox.SetCornerRadiusAll(2);
+		_visibilityCheckbox.AddThemeStyleboxOverride("normal", styleBox);
+		_visibilityCheckbox.AddThemeStyleboxOverride("hover", styleBox);
+		_visibilityCheckbox.AddThemeStyleboxOverride("pressed", styleBox);
+		_visibilityCheckbox.Toggled += OnVisibilityChanged;
+		visibilityContainer.AddChild(_visibilityCheckbox);
 
 		// Position section with toggle arrow
 		_positionSection = new CollapsibleSection("Position");
@@ -128,6 +157,9 @@ public partial class ObjectPropertiesPanel : Panel
 
 		_objectNameLabel.Text = _currentObject.Name;
 
+		// Visibility
+		_visibilityCheckbox.SetPressedNoSignal(_currentObject.ObjectVisible);
+
 		// Position (scaled by 16 for display)
 		var pos = _currentObject.Position;
 		_positionX.Value = Math.Round(pos.X * 16, 2);
@@ -149,6 +181,7 @@ public partial class ObjectPropertiesPanel : Panel
 
 	private void ClearSpinBoxes()
 	{
+		_visibilityCheckbox.SetPressedNoSignal(true);
 		_positionX.Value = 0;
 		_positionY.Value = 0;
 		_positionZ.Value = 0;
@@ -158,6 +191,16 @@ public partial class ObjectPropertiesPanel : Panel
 		_scaleX.Value = 1;
 		_scaleY.Value = 1;
 		_scaleZ.Value = 1;
+	}
+
+	private void OnVisibilityChanged(bool visible)
+	{
+		if (_currentObject == null) return;
+
+		_currentObject.SetObjectVisible(visible);
+		
+		// Auto-keyframe when property changes
+		AutoKeyframe("visible");
 	}
 
 	private void OnPositionChanged()

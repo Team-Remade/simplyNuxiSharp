@@ -12,7 +12,8 @@ public partial class SceneObject : Node3D
 	public bool ObjectVisible = true;
 	public bool IsSelected = false;
 	public Color PickColor = Colors.White;
-	public int ObjectId = 0;
+	public string ObjectId = "";
+	public int PickColorId = 0;
 	
 	public Node3D Visual;
 	
@@ -22,16 +23,16 @@ public partial class SceneObject : Node3D
 		Visual = new Node3D();
 		Visual.Name = "Visual";
 		AddChild(Visual);
-		ObjectId = SelectionManager.Instance.GetNextObjectId();
+		(ObjectId, PickColorId) = SelectionManager.Instance.GetNextObjectId();
 		GeneratePickColor();
 	}
 	
 	private void GeneratePickColor()
 	{
 		// This supports around 16 million objects
-		var r = ((ObjectId / 65025) % 255) / 255f;
-		var g = ((ObjectId / 255) % 255) / 255f;
-		var b = (ObjectId % 255) / 255f;
+		var r = ((PickColorId / 65025) % 255) / 255f;
+		var g = ((PickColorId / 255) % 255) / 255f;
+		var b = (PickColorId % 255) / 255f;
 		
 		PickColor = new Color(r, g, b);
 	}
