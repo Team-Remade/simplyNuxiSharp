@@ -45,6 +45,9 @@ public partial class Main : Control
 		gizmo.ShowSelectionBox = false;
 		gizmo.Layers = 2; // Set to layer 2 so it can be hidden from certain cameras
 		SelectionManager.Instance.Gizmo = gizmo;
+		
+		// Connect gizmo signals for auto-keyframing after gizmo is initialized
+		SelectionManager.Instance.ConnectGizmoSignals();
 	}
 
 	private void SetupMenus()
@@ -124,6 +127,5 @@ public partial class Main : Control
 	{
 		SelectionManager.Instance.ClearSelection();
 		SelectionManager.Instance.SelectObject(sceneObject);
-		ObjectPropertyPanel.Show();
 	}
 }

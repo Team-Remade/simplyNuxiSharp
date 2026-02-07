@@ -119,7 +119,7 @@ public partial class Gizmo3D : Node3D
         private set
         {
             if (editing && !value)
-                EmitSignal(SignalName.TransformEnd, (int) Edit.Mode);
+                EmitSignal(SignalName.TransformEnd, (int) Edit.Mode, (int) Edit.Plane);
             editing = value;
             if (!value)
                 Message = "";
@@ -266,7 +266,7 @@ public partial class Gizmo3D : Node3D
     [Flags]
     public enum ToolMode { Move = 1, Rotate = 2, Scale = 4, All = 7 };
     public enum TransformMode { None, Rotate, Translate, Scale };
-    enum TransformPlane { View, X, Y, Z, YZ, XZ, XY, };
+    public enum TransformPlane { View, X, Y, Z, YZ, XZ, XY, };
 
     /// <summary>
     /// Temporary data holder for interacting with the gizmo.
@@ -313,7 +313,7 @@ public partial class Gizmo3D : Node3D
     /// Emitted when the user stops interacting with the gizmo.
     /// </summary>
     [Signal]
-    public delegate void TransformEndEventHandler(int mode);
+    public delegate void TransformEndEventHandler(int mode, int plane);
 
     public override void _Ready()
     {

@@ -6,6 +6,10 @@ namespace simplyRemadeNuxi.core;
 
 public partial class TimelinePanel : Panel
 {
+	// Singleton for easy access from other panels
+	private static TimelinePanel _instance;
+	public static TimelinePanel Instance => _instance;
+	
 	private HSplitContainer _splitContainer;
 	private ScrollContainer _propertiesScroll;
 	private VBoxContainer _propertiesContainer;
@@ -27,11 +31,18 @@ public partial class TimelinePanel : Panel
 	private bool _isPlaying = false;
 	private int _playStartFrame = 0; // Frame when play was pressed
 	
+	// Public properties for external access
+	public int CurrentFrame => _currentFrame;
+	
 	// Property tracking
 	private List<AnimatableProperty> _properties = new List<AnimatableProperty>();
 	
+	// Keyframe tracking by property path
+	private Dictionary<string, List<Keyframe>> _propertyKeyframes = new Dictionary<string, List<Keyframe>>();
+	
 	public override void _Ready()
 	{
+		_instance = this;
 		SetupUi();
 		SelectionManager.Instance.SelectionChanged += OnSelectionChanged;
 	}
@@ -42,10 +53,13 @@ public partial class TimelinePanel : Panel
 		{
 			SelectionManager.Instance.SelectionChanged -= OnSelectionChanged;
 		}
+		_instance = null;
 	}
 
 	public override void _Process(double delta)
 	{
+		int previousFrame = _currentFrame;
+		
 		if (_isPlaying)
 		{
 			// Advance playhead when playing
@@ -66,6 +80,12 @@ public partial class TimelinePanel : Panel
 		}
 		
 		UpdatePlayheadPosition();
+		
+		// Apply keyframe values if frame changed
+		if (previousFrame != _currentFrame)
+		{
+			ApplyKeyframesAtCurrentFrame();
+		}
 	}
 
 	private void SetupUi()
@@ -169,36 +189,32 @@ public partial class TimelinePanel : Panel
 		var separator = new HSeparator();
 		rightContainer.AddChild(separator);
 
-		// Keyframes area with playhead (overlaid structure)
-		var keyframesAndPlayheadContainer = new Control();
-		keyframesAndPlayheadContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		keyframesAndPlayheadContainer.SizeFlagsVertical = SizeFlags.ExpandFill;
-		keyframesAndPlayheadContainer.ClipContents = false;
-		rightContainer.AddChild(keyframesAndPlayheadContainer);
-
 		// Keyframes scroll (base layer)
 		_keyframesScroll = new ScrollContainer();
-		_keyframesScroll.SetAnchorsPreset(LayoutPreset.FullRect);
+		_keyframesScroll.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_keyframesScroll.SizeFlagsVertical = SizeFlags.ExpandFill;
 		_keyframesScroll.VerticalScrollMode = ScrollContainer.ScrollMode.Auto; // Enable vertical scrolling
-		keyframesAndPlayheadContainer.AddChild(_keyframesScroll);
+		_keyframesScroll.ClipContents = true; // Clip the playhead when it goes off screen
+		rightContainer.AddChild(_keyframesScroll);
+
+		// Playhead and tracks container (holds both so playhead scrolls with content)
+		_playheadContainer = new Control();
+		_playheadContainer.CustomMinimumSize = new Vector2(_maxFrames * _pixelsPerFrame, 0);
+		_playheadContainer.SizeFlagsVertical = SizeFlags.ExpandFill;
+		_keyframesScroll.AddChild(_playheadContainer);
 
 		// Container for keyframe tracks
 		_keyframesTracksContainer = new VBoxContainer();
-		_keyframesTracksContainer.CustomMinimumSize = new Vector2(_maxFrames * _pixelsPerFrame, 0);
+		_keyframesTracksContainer.SetAnchorsPreset(LayoutPreset.FullRect);
 		_keyframesTracksContainer.SizeFlagsVertical = SizeFlags.ExpandFill;
-		_keyframesScroll.AddChild(_keyframesTracksContainer);
+		_playheadContainer.AddChild(_keyframesTracksContainer);
 
-		// Playhead container (overlays on top)
-		_playheadContainer = new Control();
-		_playheadContainer.SetAnchorsPreset(LayoutPreset.FullRect);
-		_playheadContainer.MouseFilter = MouseFilterEnum.Ignore; // Don't block mouse events to scrollbar
-		keyframesAndPlayheadContainer.AddChild(_playheadContainer);
-
-		// Playhead visual
+		// Playhead visual (on top of tracks)
 		_playhead = new ColorRect();
 		_playhead.Color = new Color(1, 0.3f, 0.3f, 0.8f);
 		_playhead.Size = new Vector2(2, 300);
 		_playhead.MouseFilter = MouseFilterEnum.Stop;
+		_playhead.ZIndex = 100; // Ensure it's on top
 		_playheadContainer.AddChild(_playhead);
 
 		// Playhead handle (top)
@@ -315,6 +331,7 @@ public partial class TimelinePanel : Panel
 		_currentFrame = 0;
 		_isPlaying = false;
 		UpdatePlayPauseButton();
+		ApplyKeyframesAtCurrentFrame();
 	}
 
 	private void OnStepBackward()
@@ -322,6 +339,7 @@ public partial class TimelinePanel : Panel
 		_currentFrame = Mathf.Max(0, _currentFrame - 1);
 		_isPlaying = false;
 		UpdatePlayPauseButton();
+		ApplyKeyframesAtCurrentFrame();
 	}
 
 	private void OnStop()
@@ -329,6 +347,7 @@ public partial class TimelinePanel : Panel
 		_currentFrame = _playStartFrame; // Return to frame when play was pressed
 		_isPlaying = false;
 		UpdatePlayPauseButton();
+		ApplyKeyframesAtCurrentFrame();
 	}
 
 	private void OnPlayPause()
@@ -347,6 +366,7 @@ public partial class TimelinePanel : Panel
 		_currentFrame = Mathf.Min(_maxFrames, _currentFrame + 1);
 		_isPlaying = false;
 		UpdatePlayPauseButton();
+		ApplyKeyframesAtCurrentFrame();
 	}
 
 	private void OnJumpToEnd()
@@ -354,6 +374,7 @@ public partial class TimelinePanel : Panel
 		_currentFrame = _maxFrames;
 		_isPlaying = false;
 		UpdatePlayPauseButton();
+		ApplyKeyframesAtCurrentFrame();
 	}
 
 	private void UpdatePlayPauseButton()
@@ -451,8 +472,14 @@ public partial class TimelinePanel : Panel
 			{
 				// Click to move playhead
 				float localX = mouseButton.Position.X;
-				_currentFrame = Mathf.Clamp(Mathf.RoundToInt(localX / _pixelsPerFrame), 0, _maxFrames);
-				UpdatePlayheadPosition();
+				int newFrame = Mathf.Clamp(Mathf.RoundToInt(localX / _pixelsPerFrame), 0, _maxFrames);
+				
+				if (newFrame != _currentFrame)
+				{
+					_currentFrame = newFrame;
+					UpdatePlayheadPosition();
+					ApplyKeyframesAtCurrentFrame(); // Apply animation when clicking timeline
+				}
 			}
 		}
 	}
@@ -466,8 +493,14 @@ public partial class TimelinePanel : Panel
 			var localPos = _keyframesTracksContainer.GlobalPosition;
 			float localX = globalPos.X - localPos.X + _keyframesScroll.ScrollHorizontal;
 			
-			_currentFrame = Mathf.Clamp(Mathf.RoundToInt(localX / _pixelsPerFrame), 0, _maxFrames);
-			UpdatePlayheadPosition();
+			int newFrame = Mathf.Clamp(Mathf.RoundToInt(localX / _pixelsPerFrame), 0, _maxFrames);
+			
+			if (newFrame != _currentFrame)
+			{
+				_currentFrame = newFrame;
+				UpdatePlayheadPosition();
+				ApplyKeyframesAtCurrentFrame(); // Apply animation when dragging playhead
+			}
 		}
 
 		if (@event is InputEventMouseButton mouseButton)
@@ -483,7 +516,7 @@ public partial class TimelinePanel : Panel
 	{
 		if (_playhead == null) return;
 		
-		// Calculate playhead position in content space (absolute position)
+		// Calculate playhead position in absolute content space
 		float xPos = _currentFrame * _pixelsPerFrame;
 		_playhead.Position = new Vector2(xPos, 0);
 		
@@ -515,6 +548,7 @@ public partial class TimelinePanel : Panel
 			child.QueueFree();
 		}
 		_properties.Clear();
+		_propertyKeyframes.Clear();
 
 		var selectedObjects = SelectionManager.Instance.SelectedObjects;
 		if (selectedObjects.Count == 0)
@@ -574,11 +608,11 @@ public partial class TimelinePanel : Panel
 	private void AddCollapsiblePropertyGroup(SceneObject obj, string groupName, string[] propertyPaths)
 	{
 		// Create the left property group
-		var propertyGroup = new CollapsiblePropertyGroup(groupName, propertyPaths, obj);
+		var propertyGroup = new CollapsiblePropertyGroup(groupName, propertyPaths, obj, this);
 		_propertiesContainer.AddChild(propertyGroup);
 		
 		// Create the right keyframe track group
-		var trackGroup = new KeyframeTrackGroup(_maxFrames, _pixelsPerFrame, propertyPaths.Length);
+		var trackGroup = new KeyframeTrackGroup(_maxFrames, _pixelsPerFrame, propertyPaths.Length, obj, propertyPaths, this);
 		_keyframesTracksContainer.AddChild(trackGroup);
 		
 		// Link them together so they expand/collapse in sync
@@ -587,14 +621,295 @@ public partial class TimelinePanel : Panel
 			trackGroup.SetExpanded(expanded);
 		};
 		
-		// Store property references
-		_properties.Add(new AnimatableProperty 
-		{ 
-			Object = obj, 
-			PropertyPath = groupName.ToLower(), 
+		// Store property references and initialize keyframe lists
+		foreach (var propPath in propertyPaths)
+		{
+			var fullPath = $"{obj.GetInstanceId()}.{propPath}";
+			if (!_propertyKeyframes.ContainsKey(fullPath))
+			{
+				_propertyKeyframes[fullPath] = new List<Keyframe>();
+			}
+		}
+		
+		_properties.Add(new AnimatableProperty
+		{
+			Object = obj,
+			PropertyPath = groupName.ToLower(),
 			PropertyGroup = propertyGroup,
 			TrackGroup = trackGroup
 		});
+	}
+	
+	public void AddKeyframeForProperty(SceneObject obj, string propertyPath, int frame)
+	{
+		var fullPath = $"{obj.GetInstanceId()}.{propertyPath}";
+		
+		// Get current value from object
+		var value = GetPropertyValue(obj, propertyPath);
+		
+		// Check if keyframe already exists at this frame
+		if (!_propertyKeyframes.ContainsKey(fullPath))
+		{
+			_propertyKeyframes[fullPath] = new List<Keyframe>();
+		}
+		
+		var existingKeyframe = _propertyKeyframes[fullPath].Find(k => k.Frame == frame);
+		if (existingKeyframe != null)
+		{
+			// Update existing keyframe value
+			existingKeyframe.Value = value;
+		}
+		else
+		{
+			// Add new keyframe
+			var keyframe = new Keyframe
+			{
+				Frame = frame,
+				Value = value,
+				InterpolationType = "linear"
+			};
+			_propertyKeyframes[fullPath].Add(keyframe);
+			_propertyKeyframes[fullPath].Sort((a, b) => a.Frame.CompareTo(b.Frame));
+		}
+		
+		// Refresh the track to show the new keyframe
+		RefreshTracks();
+	}
+	
+	public void RemoveKeyframeForProperty(SceneObject obj, string propertyPath, int frame)
+	{
+		var fullPath = $"{obj.GetInstanceId()}.{propertyPath}";
+		
+		if (_propertyKeyframes.ContainsKey(fullPath))
+		{
+			var keyframe = _propertyKeyframes[fullPath].Find(k => k.Frame == frame);
+			if (keyframe != null)
+			{
+				_propertyKeyframes[fullPath].Remove(keyframe);
+				RefreshTracks();
+			}
+		}
+	}
+	
+	public void MoveKeyframe(SceneObject obj, string propertyPath, int fromFrame, int toFrame)
+	{
+		var fullPath = $"{obj.GetInstanceId()}.{propertyPath}";
+		
+		if (_propertyKeyframes.ContainsKey(fullPath))
+		{
+			var keyframe = _propertyKeyframes[fullPath].Find(k => k.Frame == fromFrame);
+			if (keyframe != null)
+			{
+				// Check if there's already a keyframe at the target frame
+				var existingKeyframe = _propertyKeyframes[fullPath].Find(k => k.Frame == toFrame && k != keyframe);
+				if (existingKeyframe != null)
+				{
+					// Replace the existing keyframe
+					_propertyKeyframes[fullPath].Remove(existingKeyframe);
+				}
+				
+				// Update frame and re-sort
+				keyframe.Frame = toFrame;
+				_propertyKeyframes[fullPath].Sort((a, b) => a.Frame.CompareTo(b.Frame));
+				RefreshTracks();
+			}
+		}
+	}
+	
+	public List<Keyframe> GetKeyframesForProperty(SceneObject obj, string propertyPath)
+	{
+		var fullPath = $"{obj.GetInstanceId()}.{propertyPath}";
+		
+		if (_propertyKeyframes.ContainsKey(fullPath))
+		{
+			return _propertyKeyframes[fullPath];
+		}
+		
+		return new List<Keyframe>();
+	}
+	
+	private object GetPropertyValue(SceneObject obj, string propertyPath)
+	{
+		var parts = propertyPath.Split('.');
+		
+		if (parts.Length == 2)
+		{
+			var propName = parts[0];
+			var component = parts[1];
+			
+			switch (propName)
+			{
+				case "position":
+					return component switch
+					{
+						"x" => obj.Position.X,
+						"y" => obj.Position.Y,
+						"z" => obj.Position.Z,
+						_ => 0f
+					};
+				case "rotation":
+					return component switch
+					{
+						"x" => obj.RotationDegrees.X,
+						"y" => obj.RotationDegrees.Y,
+						"z" => obj.RotationDegrees.Z,
+						_ => 0f
+					};
+				case "scale":
+					return component switch
+					{
+						"x" => obj.Scale.X,
+						"y" => obj.Scale.Y,
+						"z" => obj.Scale.Z,
+						_ => 1f
+					};
+			}
+		}
+		
+		return 0f;
+	}
+	
+	private void RefreshTracks()
+	{
+		// Queue draw on all tracks to update keyframe visualization
+		foreach (var prop in _properties)
+		{
+			if (prop.TrackGroup != null)
+			{
+				prop.TrackGroup.QueueRedrawTracks();
+			}
+		}
+	}
+	
+	private void ApplyKeyframesAtCurrentFrame()
+	{
+		// Don't apply keyframes while user is dragging the gizmo
+		if (SelectionManager.Instance != null && SelectionManager.Instance.IsGizmoEditing)
+		{
+			return;
+		}
+		
+		// Apply keyframe values for all animated properties at current frame
+		foreach (var kvp in _propertyKeyframes)
+		{
+			var fullPath = kvp.Key;
+			var keyframes = kvp.Value;
+			
+			if (keyframes.Count == 0) continue;
+			
+			// Parse the full path to get object ID and property path
+			var pathParts = fullPath.Split('.');
+			if (pathParts.Length < 3) continue;
+			
+			var objectIdStr = pathParts[0];
+			var propertyType = pathParts[1];
+			var component = pathParts[2];
+			var propertyPath = $"{propertyType}.{component}";
+			
+			// Find the object
+			if (!ulong.TryParse(objectIdStr, out ulong objectId)) continue;
+			
+			SceneObject targetObject = null;
+			foreach (var prop in _properties)
+			{
+				if (prop.Object.GetInstanceId() == objectId)
+				{
+					targetObject = prop.Object;
+					break;
+				}
+			}
+			
+			if (targetObject == null) continue;
+			
+			// Find keyframes around current frame
+			Keyframe prevKeyframe = null;
+			Keyframe nextKeyframe = null;
+			
+			foreach (var kf in keyframes)
+			{
+				if (kf.Frame <= _currentFrame)
+				{
+					if (prevKeyframe == null || kf.Frame > prevKeyframe.Frame)
+					{
+						prevKeyframe = kf;
+					}
+				}
+				if (kf.Frame >= _currentFrame)
+				{
+					if (nextKeyframe == null || kf.Frame < nextKeyframe.Frame)
+					{
+						nextKeyframe = kf;
+					}
+				}
+			}
+			
+			// Calculate interpolated value
+			float value = 0f;
+			
+			if (prevKeyframe != null && nextKeyframe != null && prevKeyframe.Frame != nextKeyframe.Frame)
+			{
+				// Interpolate between keyframes
+				float t = (_currentFrame - prevKeyframe.Frame) / (float)(nextKeyframe.Frame - prevKeyframe.Frame);
+				float prevValue = Convert.ToSingle(prevKeyframe.Value);
+				float nextValue = Convert.ToSingle(nextKeyframe.Value);
+				value = Mathf.Lerp(prevValue, nextValue, t);
+			}
+			else if (prevKeyframe != null)
+			{
+				// Use exact keyframe value
+				value = Convert.ToSingle(prevKeyframe.Value);
+			}
+			
+			// Apply value to object
+			SetPropertyValue(targetObject, propertyPath, value);
+		}
+	}
+	
+	private void SetPropertyValue(SceneObject obj, string propertyPath, float value)
+	{
+		var parts = propertyPath.Split('.');
+		
+		if (parts.Length == 2)
+		{
+			var propName = parts[0];
+			var component = parts[1];
+			
+			switch (propName)
+			{
+				case "position":
+					var pos = obj.Position;
+					switch (component)
+					{
+						case "x": pos.X = value; break;
+						case "y": pos.Y = value; break;
+						case "z": pos.Z = value; break;
+					}
+					obj.Position = pos;
+					break;
+					
+				case "rotation":
+					var rot = obj.RotationDegrees;
+					switch (component)
+					{
+						case "x": rot.X = value; break;
+						case "y": rot.Y = value; break;
+						case "z": rot.Z = value; break;
+					}
+					obj.RotationDegrees = rot;
+					break;
+					
+				case "scale":
+					var scale = obj.Scale;
+					switch (component)
+					{
+						case "x": scale.X = value; break;
+						case "y": scale.Y = value; break;
+						case "z": scale.Z = value; break;
+					}
+					obj.Scale = scale;
+					break;
+			}
+		}
 	}
 }
 
@@ -611,12 +926,14 @@ public partial class CollapsiblePropertyGroup : VBoxContainer
 	private string _groupName;
 	private string[] _propertyPaths;
 	private SceneObject _object;
+	private TimelinePanel _timeline;
 
-	public CollapsiblePropertyGroup(string groupName, string[] propertyPaths, SceneObject obj)
+	public CollapsiblePropertyGroup(string groupName, string[] propertyPaths, SceneObject obj, TimelinePanel timeline)
 	{
 		_groupName = groupName;
 		_propertyPaths = propertyPaths;
 		_object = obj;
+		_timeline = timeline;
 
 		SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
@@ -704,8 +1021,23 @@ public partial class CollapsiblePropertyGroup : VBoxContainer
 
 	private void AddKeyframe(string propertyPath)
 	{
-		GD.Print($"Adding keyframe for {_object.Name}.{propertyPath}");
-		// TODO: Implement keyframe creation logic
+		if (_timeline != null)
+		{
+			// Check if this is a group keyframe (position, rotation, scale) or individual property
+			if (propertyPath == _groupName.ToLower())
+			{
+				// Add keyframes for all child properties
+				foreach (var childPath in _propertyPaths)
+				{
+					_timeline.AddKeyframeForProperty(_object, childPath, _timeline.CurrentFrame);
+				}
+			}
+			else
+			{
+				// Add keyframe for individual property
+				_timeline.AddKeyframeForProperty(_object, propertyPath, _timeline.CurrentFrame);
+			}
+		}
 	}
 }
 
@@ -716,15 +1048,28 @@ public partial class KeyframeTrackGroup : VBoxContainer
 {
 	private Control _mainTrack;
 	private VBoxContainer _childTracks;
+	private List<Control> _childTrackControls = new List<Control>();
 	private int _maxFrames;
 	private float _pixelsPerFrame;
 	private int _childCount;
+	private SceneObject _object;
+	private string[] _propertyPaths;
+	private TimelinePanel _timeline;
+	
+	// Dragging state
+	private bool _isDraggingKeyframe = false;
+	private Keyframe _draggedKeyframe = null;
+	private string _draggedPropertyPath = null;
+	private int _dragStartFrame = 0;
 
-	public KeyframeTrackGroup(int maxFrames, float pixelsPerFrame, int childCount)
+	public KeyframeTrackGroup(int maxFrames, float pixelsPerFrame, int childCount, SceneObject obj, string[] propertyPaths, TimelinePanel timeline)
 	{
 		_maxFrames = maxFrames;
 		_pixelsPerFrame = pixelsPerFrame;
 		_childCount = childCount;
+		_object = obj;
+		_propertyPaths = propertyPaths;
+		_timeline = timeline;
 		
 		SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
@@ -735,7 +1080,10 @@ public partial class KeyframeTrackGroup : VBoxContainer
 		AddChild(_mainTrack);
 
 		// Draw grid background
-		_mainTrack.Draw += () => DrawTrackBackground(_mainTrack, false);
+		_mainTrack.Draw += () => DrawTrackBackground(_mainTrack, false, null);
+		
+		// Handle clicks on main track
+		_mainTrack.GuiInput += (inputEvent) => OnTrackInput(inputEvent, null);
 
 		// Child tracks (expanded state)
 		_childTracks = new VBoxContainer();
@@ -749,13 +1097,91 @@ public partial class KeyframeTrackGroup : VBoxContainer
 			childTrack.CustomMinimumSize = new Vector2(maxFrames * pixelsPerFrame, 31); // Match button height
 			childTrack.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 			_childTracks.AddChild(childTrack);
+			_childTrackControls.Add(childTrack);
 			
-			// Draw grid background for child
-			childTrack.Draw += () => DrawTrackBackground(childTrack, true);
+			var propertyPath = propertyPaths[i];
+			
+			// Draw grid background and keyframes for child
+			childTrack.Draw += () => DrawTrackBackground(childTrack, true, propertyPath);
+			
+			// Handle clicks on child tracks
+			childTrack.GuiInput += (inputEvent) => OnTrackInput(inputEvent, propertyPath);
 		}
 	}
 
-	private void DrawTrackBackground(Control track, bool isChild)
+	private void OnTrackInput(InputEvent inputEvent, string propertyPath)
+	{
+		if (inputEvent is InputEventMouseButton mouseButton)
+		{
+			if (mouseButton.ButtonIndex == MouseButton.Left)
+			{
+				// Calculate frame from click position
+				float localX = mouseButton.Position.X;
+				int frame = Mathf.RoundToInt(localX / _pixelsPerFrame);
+				frame = Mathf.Clamp(frame, 0, _maxFrames);
+				
+				if (mouseButton.Pressed)
+				{
+					// Mouse button pressed
+					if (propertyPath != null)
+					{
+						// Check if clicking on existing keyframe
+						var keyframes = _timeline.GetKeyframesForProperty(_object, propertyPath);
+						var clickedKeyframe = keyframes.Find(k => Mathf.Abs(k.Frame - frame) <= 1);
+						
+						if (clickedKeyframe != null && mouseButton.AltPressed)
+						{
+							// Alt+Click to delete keyframe
+							_timeline.RemoveKeyframeForProperty(_object, propertyPath, clickedKeyframe.Frame);
+						}
+						else if (clickedKeyframe != null)
+						{
+							// Start dragging existing keyframe
+							_isDraggingKeyframe = true;
+							_draggedKeyframe = clickedKeyframe;
+							_draggedPropertyPath = propertyPath;
+							_dragStartFrame = clickedKeyframe.Frame;
+						}
+						else
+						{
+							// Add new keyframe
+							_timeline.AddKeyframeForProperty(_object, propertyPath, frame);
+						}
+					}
+				}
+				else
+				{
+					// Mouse button released
+					if (_isDraggingKeyframe && _draggedKeyframe != null &&_draggedPropertyPath != null)
+					{
+						// Finish dragging - move keyframe to new position
+						if (_draggedKeyframe.Frame != _dragStartFrame)
+						{
+							_timeline.MoveKeyframe(_object, _draggedPropertyPath, _dragStartFrame, _draggedKeyframe.Frame);
+						}
+						_isDraggingKeyframe = false;
+						_draggedKeyframe = null;
+						_draggedPropertyPath = null;
+					}
+				}
+			}
+		}
+		else if (inputEvent is InputEventMouseMotion mouseMotion && _isDraggingKeyframe && _draggedKeyframe != null)
+		{
+			// Update keyframe position while dragging
+			float localX = mouseMotion.Position.X;
+			int newFrame = Mathf.RoundToInt(localX / _pixelsPerFrame);
+			newFrame = Mathf.Clamp(newFrame, 0, _maxFrames);
+			
+			if (newFrame != _draggedKeyframe.Frame)
+			{
+				_draggedKeyframe.Frame = newFrame;
+				QueueRedrawTracks();
+			}
+		}
+	}
+
+	private void DrawTrackBackground(Control track, bool isChild, string propertyPath)
 	{
 		// Draw alternating background
 		var bgColor = isChild ? new Color(0.15f, 0.15f, 0.15f) : new Color(0.12f, 0.12f, 0.12f);
@@ -772,11 +1198,78 @@ public partial class KeyframeTrackGroup : VBoxContainer
 				1.0f
 			);
 		}
+		
+		// Draw keyframes
+		if (_timeline != null && _object != null)
+		{
+			if (propertyPath != null)
+			{
+				// Child track - draw keyframes for specific property only
+				var keyframes = _timeline.GetKeyframesForProperty(_object, propertyPath);
+				foreach (var keyframe in keyframes)
+				{
+					DrawKeyframeDiamond(track, keyframe.Frame);
+				}
+			}
+			else
+			{
+				// Main track - draw keyframes if ANY child property has a keyframe at that frame
+				var allFrames = new HashSet<int>();
+				foreach (var propPath in _propertyPaths)
+				{
+					var keyframes = _timeline.GetKeyframesForProperty(_object, propPath);
+					foreach (var keyframe in keyframes)
+					{
+						allFrames.Add(keyframe.Frame);
+					}
+				}
+				
+				foreach (var frame in allFrames)
+				{
+					DrawKeyframeDiamond(track, frame);
+				}
+			}
+		}
+	}
+	
+	private void DrawKeyframeDiamond(Control track, int frame)
+	{
+		float x = frame * _pixelsPerFrame;
+		float y = track.Size.Y / 2;
+		float size = 6f;
+		
+		// Draw diamond shape
+		var points = new Vector2[]
+		{
+			new Vector2(x, y - size),      // Top
+			new Vector2(x + size, y),      // Right
+			new Vector2(x, y + size),      // Bottom
+			new Vector2(x - size, y)       // Left
+		};
+		
+		// Fill
+		track.DrawColoredPolygon(points, new Color(1f, 0.8f, 0.2f));
+		
+		// Outline
+		for (int i = 0; i < points.Length; i++)
+		{
+			var nextI = (i + 1) % points.Length;
+			track.DrawLine(points[i], points[nextI], new Color(0.8f, 0.6f, 0.1f), 1.5f);
+		}
 	}
 
 	public void SetExpanded(bool expanded)
 	{
 		_childTracks.Visible = expanded;
+	}
+	
+	public void QueueRedrawTracks()
+	{
+		_mainTrack?.QueueRedraw();
+		foreach (var child in _childTrackControls)
+		{
+			child?.QueueRedraw();
+		}
 	}
 }
 

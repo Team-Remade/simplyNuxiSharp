@@ -169,6 +169,11 @@ public partial class ObjectPropertiesPanel : Panel
 			(float)_positionY.Value,
 			(float)_positionZ.Value
 		);
+		
+		// Auto-keyframe when property changes
+		AutoKeyframe("position.x");
+		AutoKeyframe("position.y");
+		AutoKeyframe("position.z");
 	}
 
 	private void OnRotationChanged()
@@ -180,6 +185,11 @@ public partial class ObjectPropertiesPanel : Panel
 			Mathf.DegToRad((float)_rotationY.Value),
 			Mathf.DegToRad((float)_rotationZ.Value)
 		);
+		
+		// Auto-keyframe when property changes
+		AutoKeyframe("rotation.x");
+		AutoKeyframe("rotation.y");
+		AutoKeyframe("rotation.z");
 	}
 
 	private void OnScaleChanged()
@@ -191,6 +201,19 @@ public partial class ObjectPropertiesPanel : Panel
 			(float)_scaleY.Value,
 			(float)_scaleZ.Value
 		);
+		
+		// Auto-keyframe when property changes
+		AutoKeyframe("scale.x");
+		AutoKeyframe("scale.y");
+		AutoKeyframe("scale.z");
+	}
+	
+	private void AutoKeyframe(string propertyPath)
+	{
+		if (_currentObject == null || TimelinePanel.Instance == null) return;
+		
+		// Add keyframe at current timeline frame
+		TimelinePanel.Instance.AddKeyframeForProperty(_currentObject, propertyPath, TimelinePanel.Instance.CurrentFrame);
 	}
 }
 
