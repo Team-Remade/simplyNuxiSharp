@@ -15,6 +15,21 @@ public partial class SceneObject : Node3D
 	public string ObjectId = "";
 	public int PickColorId = 0;
 	
+	// Keyframe storage for animation
+	// Dictionary key format: "propertyPath" (e.g., "visible", "position.x", "rotation.y")
+	public Dictionary<string, List<ObjectKeyframe>> Keyframes = new Dictionary<string, List<ObjectKeyframe>>();
+	
+	private Vector3 _pivotOffset = new Vector3(0, -0.5f, 0);
+	public Vector3 PivotOffset
+	{
+		get => _pivotOffset;
+		set
+		{
+			_pivotOffset = value;
+			UpdateVisualPosition();
+		}
+	}
+	
 	public Node3D Visual;
 	
 	public SceneObject()
@@ -25,6 +40,7 @@ public partial class SceneObject : Node3D
 		AddChild(Visual);
 		(ObjectId, PickColorId) = SelectionManager.Instance.GetNextObjectId();
 		GeneratePickColor();
+		UpdateVisualPosition(); // Initialize visual position with pivot offset
 	}
 	
 	private void GeneratePickColor()
@@ -173,4 +189,22 @@ public partial class SceneObject : Node3D
 	{
 		Visual.AddChild(visual);
 	}
+
+	private void UpdateVisualPosition()
+	{
+		if (Visual != null)
+		{
+			Visual.Position = -PivotOffset;
+		}
+	}
+}
+
+/// <summary>
+/// Represents a keyframe stored with a SceneObject
+/// </summary>
+public class ObjectKeyframe
+{
+	public int Frame { get; set; }
+	public object Value { get; set; }
+	public string InterpolationType { get; set; } = "linear";
 }

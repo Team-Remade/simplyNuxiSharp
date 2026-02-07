@@ -79,6 +79,19 @@ public partial class TimelinePanel : Panel
 			}
 		}
 		
+		// Manually sync vertical scroll as well
+		if (_propertiesScroll != null && _keyframesScroll != null)
+		{
+			if (_propertiesScroll.ScrollVertical != _keyframesScroll.ScrollVertical)
+			{
+				_keyframesScroll.ScrollVertical = _propertiesScroll.ScrollVertical;
+			}
+			else if (_keyframesScroll.ScrollVertical != _propertiesScroll.ScrollVertical)
+			{
+				_propertiesScroll.ScrollVertical = _keyframesScroll.ScrollVertical;
+			}
+		}
+		
 		UpdatePlayheadPosition();
 		
 		// Apply keyframe values if frame changed
@@ -189,25 +202,34 @@ public partial class TimelinePanel : Panel
 		var separator = new HSeparator();
 		rightContainer.AddChild(separator);
 
+		// Use a container to hold both scroll and playhead overlay
+		var scrollAndPlayheadContainer = new Control();
+		scrollAndPlayheadContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		scrollAndPlayheadContainer.SizeFlagsVertical = SizeFlags.ExpandFill;
+		scrollAndPlayheadContainer.ClipContents = true; // Clip playhead when it scrolls out
+		rightContainer.AddChild(scrollAndPlayheadContainer);
+
 		// Keyframes scroll (base layer)
 		_keyframesScroll = new ScrollContainer();
-		_keyframesScroll.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		_keyframesScroll.SizeFlagsVertical = SizeFlags.ExpandFill;
+		_keyframesScroll.SetAnchorsPreset(LayoutPreset.FullRect);
 		_keyframesScroll.VerticalScrollMode = ScrollContainer.ScrollMode.Auto; // Enable vertical scrolling
-		_keyframesScroll.ClipContents = true; // Clip the playhead when it goes off screen
-		rightContainer.AddChild(_keyframesScroll);
-
-		// Playhead and tracks container (holds both so playhead scrolls with content)
-		_playheadContainer = new Control();
-		_playheadContainer.CustomMinimumSize = new Vector2(_maxFrames * _pixelsPerFrame, 0);
-		_playheadContainer.SizeFlagsVertical = SizeFlags.ExpandFill;
-		_keyframesScroll.AddChild(_playheadContainer);
+		_keyframesScroll.ClipContents = true;
+		scrollAndPlayheadContainer.AddChild(_keyframesScroll);
 
 		// Container for keyframe tracks
 		_keyframesTracksContainer = new VBoxContainer();
-		_keyframesTracksContainer.SetAnchorsPreset(LayoutPreset.FullRect);
-		_keyframesTracksContainer.SizeFlagsVertical = SizeFlags.ExpandFill;
-		_playheadContainer.AddChild(_keyframesTracksContainer);
+		_keyframesTracksContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_keyframesTracksContainer.SizeFlagsVertical = SizeFlags.ShrinkBegin; // Shrink to content
+		_keyframesTracksContainer.CustomMinimumSize = new Vector2(_maxFrames * _pixelsPerFrame, 0);
+		_keyframesScroll.AddChild(_keyframesTracksContainer);
+
+		// Playhead container overlay (on top of scroll, positioned to align with scroll content)
+		_playheadContainer = new Control();
+		_playheadContainer.SetAnchorsPreset(LayoutPreset.TopLeft);
+		_playheadContainer.MouseFilter = MouseFilterEnum.Ignore; // Clicks pass through to scroll
+		_playheadContainer.Position = new Vector2(0, 0);
+		_playheadContainer.Size = new Vector2(10000, 10000); // Large size
+		scrollAndPlayheadContainer.AddChild(_playheadContainer);
 
 		// Playhead visual (on top of tracks)
 		_playhead = new ColorRect();
@@ -232,13 +254,24 @@ public partial class TimelinePanel : Panel
 		_keyframesTracksContainer.GuiInput += OnTimelineInput;
 
 		// Sync scrolling between properties and keyframes
+		bool _syncingScroll = false;
 		_propertiesScroll.GetVScrollBar().ValueChanged += (value) =>
 		{
-			_keyframesScroll.ScrollVertical = (int)value;
+			if (!_syncingScroll)
+			{
+				_syncingScroll = true;
+				_keyframesScroll.ScrollVertical = (int)value;
+				_syncingScroll = false;
+			}
 		};
 		_keyframesScroll.GetVScrollBar().ValueChanged += (value) =>
 		{
-			_propertiesScroll.ScrollVertical = (int)value;
+			if (!_syncingScroll)
+			{
+				_syncingScroll = true;
+				_propertiesScroll.ScrollVertical = (int)value;
+				_syncingScroll = false;
+			}
 		};
 
 		// Sync horizontal scrolling between frame ruler and keyframes (bidirectional)
@@ -516,18 +549,23 @@ public partial class TimelinePanel : Panel
 	{
 		if (_playhead == null) return;
 		
-		// Calculate playhead position in absolute content space
-		float xPos = _currentFrame * _pixelsPerFrame;
-		_playhead.Position = new Vector2(xPos, 0);
+		// Calculate playhead position
+		// X position: account for horizontal scroll and scrollbar offset
+		var scrollPos = _keyframesScroll.GlobalPosition - _playheadContainer.GlobalPosition;
+		float xPos = scrollPos.X + (_currentFrame * _pixelsPerFrame) - _keyframesScroll.ScrollHorizontal;
+		// Y position: keep fixed at top of scroll container (don't move with vertical scroll)
+		float yPos = scrollPos.Y;
+		_playhead.Position = new Vector2(xPos, yPos);
 		
 		// Calculate time from frame and framerate
 		float timeInSeconds = _currentFrame / _frameRate;
 		_timeLabel.Text = $"Frame: {_currentFrame} ({timeInSeconds:F2}s)";
 		
-		// Update playhead height to match content
-		if (_keyframesTracksContainer != null)
+		// Update playhead height to match visible area + content
+		if (_keyframesTracksContainer != null && _keyframesScroll != null)
 		{
-			_playhead.Size = new Vector2(2, Mathf.Max(_keyframesTracksContainer.Size.Y, 300));
+			float contentHeight = Mathf.Max(_keyframesTracksContainer.Size.Y, _keyframesScroll.Size.Y);
+			_playhead.Size = new Vector2(2, contentHeight);
 		}
 	}
 
@@ -548,6 +586,7 @@ public partial class TimelinePanel : Panel
 			child.QueueFree();
 		}
 		_properties.Clear();
+		// Don't clear _propertyKeyframes - keep it for now but load from objects instead
 		_propertyKeyframes.Clear();
 
 		var selectedObjects = SelectionManager.Instance.SelectedObjects;
@@ -746,12 +785,17 @@ public partial class TimelinePanel : Panel
 			}
 		};
 		
-		// Store property reference and initialize keyframe list
+		// Store property reference and load keyframes from object
 		var fullPath = $"{obj.GetInstanceId()}.{propertyPath}";
+		
+		// Only initialize if not already present - LoadKeyframesFromObject will create the list if needed
 		if (!_propertyKeyframes.ContainsKey(fullPath))
 		{
 			_propertyKeyframes[fullPath] = new List<Keyframe>();
 		}
+		
+		// Load keyframes from SceneObject (this will replace the empty list if keyframes exist)
+		LoadKeyframesFromObject(obj, propertyPath);
 		
 		_properties.Add(new AnimatableProperty
 		{
@@ -778,14 +822,19 @@ public partial class TimelinePanel : Panel
 			trackGroup.SetExpanded(expanded);
 		};
 		
-		// Store property references and initialize keyframe lists
+		// Store property references and load keyframes from object
 		foreach (var propPath in propertyPaths)
 		{
 			var fullPath = $"{obj.GetInstanceId()}.{propPath}";
+			
+			// Only initialize if not already present - LoadKeyframesFromObject will create the list if needed
 			if (!_propertyKeyframes.ContainsKey(fullPath))
 			{
 				_propertyKeyframes[fullPath] = new List<Keyframe>();
 			}
+			
+			// Load keyframes from SceneObject (this will replace the empty list if keyframes exist)
+			LoadKeyframesFromObject(obj, propPath);
 		}
 		
 		_properties.Add(new AnimatableProperty
@@ -795,6 +844,65 @@ public partial class TimelinePanel : Panel
 			PropertyGroup = propertyGroup,
 			TrackGroup = trackGroup
 		});
+	}
+	
+	/// <summary>
+	/// Load keyframes from the SceneObject into the timeline's working dictionary
+	/// </summary>
+	private void LoadKeyframesFromObject(SceneObject obj, string propertyPath)
+	{
+		if (obj.Keyframes.ContainsKey(propertyPath) && obj.Keyframes[propertyPath].Count > 0)
+		{
+			var fullPath = $"{obj.GetInstanceId()}.{propertyPath}";
+			
+			// Create Timeline Keyframe objects from ObjectKeyframe objects
+			_propertyKeyframes[fullPath] = new List<Keyframe>();
+			foreach (var objKeyframe in obj.Keyframes[propertyPath])
+			{
+				_propertyKeyframes[fullPath].Add(new Keyframe
+				{
+					Frame = objKeyframe.Frame,
+					Value = objKeyframe.Value,
+					InterpolationType = objKeyframe.InterpolationType
+				});
+			}
+			_propertyKeyframes[fullPath].Sort((a, b) => a.Frame.CompareTo(b.Frame));
+		}
+	}
+	
+	/// <summary>
+	/// Save keyframes from the timeline's working dictionary back to the SceneObject
+	/// </summary>
+	private void SaveKeyframesToObject(SceneObject obj, string propertyPath)
+	{
+		var fullPath = $"{obj.GetInstanceId()}.{propertyPath}";
+		
+		if (!_propertyKeyframes.ContainsKey(fullPath) || _propertyKeyframes[fullPath].Count == 0)
+		{
+			// No keyframes in timeline, ensure object has none either
+			if (obj.Keyframes.ContainsKey(propertyPath))
+			{
+				obj.Keyframes.Remove(propertyPath);
+			}
+			return;
+		}
+		
+		// Create ObjectKeyframe objects from Timeline Keyframe objects
+		if (!obj.Keyframes.ContainsKey(propertyPath))
+		{
+			obj.Keyframes[propertyPath] = new List<ObjectKeyframe>();
+		}
+		
+		obj.Keyframes[propertyPath].Clear();
+		foreach (var keyframe in _propertyKeyframes[fullPath])
+		{
+			obj.Keyframes[propertyPath].Add(new ObjectKeyframe
+			{
+				Frame = keyframe.Frame,
+				Value = keyframe.Value,
+				InterpolationType = keyframe.InterpolationType
+			});
+		}
 	}
 	
 	public void AddKeyframeForProperty(SceneObject obj, string propertyPath, int frame)
@@ -829,6 +937,9 @@ public partial class TimelinePanel : Panel
 			_propertyKeyframes[fullPath].Sort((a, b) => a.Frame.CompareTo(b.Frame));
 		}
 		
+		// Save to SceneObject
+		SaveKeyframesToObject(obj, propertyPath);
+		
 		// Refresh the track to show the new keyframe
 		RefreshTracks();
 	}
@@ -843,6 +954,10 @@ public partial class TimelinePanel : Panel
 			if (keyframe != null)
 			{
 				_propertyKeyframes[fullPath].Remove(keyframe);
+				
+				// Save to SceneObject
+				SaveKeyframesToObject(obj, propertyPath);
+				
 				RefreshTracks();
 			}
 		}
@@ -868,6 +983,10 @@ public partial class TimelinePanel : Panel
 				// Update frame and re-sort
 				keyframe.Frame = toFrame;
 				_propertyKeyframes[fullPath].Sort((a, b) => a.Frame.CompareTo(b.Frame));
+				
+				// Save to SceneObject
+				SaveKeyframesToObject(obj, propertyPath);
+				
 				RefreshTracks();
 			}
 		}

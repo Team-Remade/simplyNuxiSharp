@@ -17,10 +17,20 @@ public partial class ObjectPropertiesPanel : Panel
 	private SpinBox _scaleX;
 	private SpinBox _scaleY;
 	private SpinBox _scaleZ;
+	private SpinBox _pivotOffsetX;
+	private SpinBox _pivotOffsetY;
+	private SpinBox _pivotOffsetZ;
 	private CollapsibleSection _positionSection;
 	private CollapsibleSection _rotationSection;
 	private CollapsibleSection _scaleSection;
+	private CollapsibleSection _pivotOffsetSection;
 	private SceneObject _currentObject;
+	
+	// Store original values for reset functionality
+	private Vector3 _originalPosition = Vector3.Zero;
+	private Vector3 _originalRotation = Vector3.Zero;
+	private Vector3 _originalScale = Vector3.One;
+	private Vector3 _originalPivotOffset = new Vector3(0, -0.5f, 0);
 
 	public override void _Ready()
 	{
@@ -38,13 +48,19 @@ public partial class ObjectPropertiesPanel : Panel
 
 	private void SetupUi()
 	{
+		// Add ScrollContainer to handle overflow
+		var scrollContainer = new ScrollContainer();
+		scrollContainer.Name = "ScrollContainer";
+		scrollContainer.SizeFlagsVertical = SizeFlags.ExpandFill;
+		scrollContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		scrollContainer.SetAnchorsPreset(LayoutPreset.FullRect);
+		AddChild(scrollContainer);
+
 		var vbox = new VBoxContainer();
 		vbox.Name = "VBoxContainer";
 		vbox.AddThemeConstantOverride("separation", 4);
-		vbox.SizeFlagsVertical = SizeFlags.ExpandFill;
 		vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		vbox.SetAnchorsPreset(LayoutPreset.FullRect);
-		AddChild(vbox);
+		scrollContainer.AddChild(vbox);
 		_vboxContainer = vbox;
 
 		// Object name label
@@ -86,6 +102,7 @@ public partial class ObjectPropertiesPanel : Panel
 		_positionSection = new CollapsibleSection("Position");
 		_positionSection.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		vbox.AddChild(_positionSection);
+		_positionSection.GetResetButton().Pressed += OnResetPosition;
 		
 		var posContainer = _positionSection.GetContentContainer();
 		_positionX = CreateSpinBoxRow(posContainer, "X:", OnPositionChanged);
@@ -96,6 +113,7 @@ public partial class ObjectPropertiesPanel : Panel
 		_rotationSection = new CollapsibleSection("Rotation (degrees)");
 		_rotationSection.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		vbox.AddChild(_rotationSection);
+		_rotationSection.GetResetButton().Pressed += OnResetRotation;
 		
 		var rotContainer = _rotationSection.GetContentContainer();
 		_rotationX = CreateSpinBoxRow(rotContainer, "X:", OnRotationChanged);
@@ -106,11 +124,23 @@ public partial class ObjectPropertiesPanel : Panel
 		_scaleSection = new CollapsibleSection("Scale");
 		_scaleSection.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		vbox.AddChild(_scaleSection);
+		_scaleSection.GetResetButton().Pressed += OnResetScale;
 		
 		var scaleContainer = _scaleSection.GetContentContainer();
 		_scaleX = CreateSpinBoxRow(scaleContainer, "X:", OnScaleChanged);
 		_scaleY = CreateSpinBoxRow(scaleContainer, "Y:", OnScaleChanged);
 		_scaleZ = CreateSpinBoxRow(scaleContainer, "Z:", OnScaleChanged);
+
+		// Pivot Offset section with toggle arrow (non-animated property)
+		_pivotOffsetSection = new CollapsibleSection("Pivot Offset");
+		_pivotOffsetSection.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		vbox.AddChild(_pivotOffsetSection);
+		_pivotOffsetSection.GetResetButton().Pressed += OnResetPivotOffset;
+		
+		var pivotOffsetContainer = _pivotOffsetSection.GetContentContainer();
+		_pivotOffsetX = CreateSpinBoxRow(pivotOffsetContainer, "X:", OnPivotOffsetChanged);
+		_pivotOffsetY = CreateSpinBoxRow(pivotOffsetContainer, "Y:", OnPivotOffsetChanged);
+		_pivotOffsetZ = CreateSpinBoxRow(pivotOffsetContainer, "Z:", OnPivotOffsetChanged);
 	}
 
 	private SpinBox CreateSpinBoxRow(VBoxContainer parent, string labelText, Action onChanged)
@@ -160,37 +190,46 @@ public partial class ObjectPropertiesPanel : Panel
 		// Visibility
 		_visibilityCheckbox.SetPressedNoSignal(_currentObject.ObjectVisible);
 
-		// Position (scaled by 16 for display)
+		// Position (scaled by 16 for display) - use SetValueNoSignal to avoid triggering auto-keyframing
 		var pos = _currentObject.Position;
-		_positionX.Value = Math.Round(pos.X * 16, 2);
-		_positionY.Value = Math.Round(pos.Y * 16, 2);
-		_positionZ.Value = Math.Round(pos.Z * 16, 2);
+		_positionX.SetValueNoSignal(Math.Round(pos.X * 16, 2));
+		_positionY.SetValueNoSignal(Math.Round(pos.Y * 16, 2));
+		_positionZ.SetValueNoSignal(Math.Round(pos.Z * 16, 2));
 
-		// Rotation (convert from radians to degrees)
+		// Rotation (convert from radians to degrees) - use SetValueNoSignal to avoid triggering auto-keyframing
 		var rot = _currentObject.Rotation;
-		_rotationX.Value = Math.Round(Mathf.RadToDeg(rot.X), 2);
-		_rotationY.Value = Math.Round(Mathf.RadToDeg(rot.Y), 2);
-		_rotationZ.Value = Math.Round(Mathf.RadToDeg(rot.Z), 2);
+		_rotationX.SetValueNoSignal(Math.Round(Mathf.RadToDeg(rot.X), 2));
+		_rotationY.SetValueNoSignal(Math.Round(Mathf.RadToDeg(rot.Y), 2));
+		_rotationZ.SetValueNoSignal(Math.Round(Mathf.RadToDeg(rot.Z), 2));
 
-		// Scale
+		// Scale - use SetValueNoSignal to avoid triggering auto-keyframing
 		var scale = _currentObject.Scale;
-		_scaleX.Value = Math.Round(scale.X, 2);
-		_scaleY.Value = Math.Round(scale.Y, 2);
-		_scaleZ.Value = Math.Round(scale.Z, 2);
+		_scaleX.SetValueNoSignal(Math.Round(scale.X, 2));
+		_scaleY.SetValueNoSignal(Math.Round(scale.Y, 2));
+		_scaleZ.SetValueNoSignal(Math.Round(scale.Z, 2));
+
+		// Pivot Offset (scaled by 16 for display, same as position)
+		var pivotOffset = _currentObject.PivotOffset;
+		_pivotOffsetX.SetValueNoSignal(Math.Round(pivotOffset.X * 16, 2));
+		_pivotOffsetY.SetValueNoSignal(Math.Round(pivotOffset.Y * 16, 2));
+		_pivotOffsetZ.SetValueNoSignal(Math.Round(pivotOffset.Z * 16, 2));
 	}
 
 	private void ClearSpinBoxes()
 	{
 		_visibilityCheckbox.SetPressedNoSignal(true);
-		_positionX.Value = 0;
-		_positionY.Value = 0;
-		_positionZ.Value = 0;
-		_rotationX.Value = 0;
-		_rotationY.Value = 0;
-		_rotationZ.Value = 0;
-		_scaleX.Value = 1;
-		_scaleY.Value = 1;
-		_scaleZ.Value = 1;
+		_positionX.SetValueNoSignal(0);
+		_positionY.SetValueNoSignal(0);
+		_positionZ.SetValueNoSignal(0);
+		_rotationX.SetValueNoSignal(0);
+		_rotationY.SetValueNoSignal(0);
+		_rotationZ.SetValueNoSignal(0);
+		_scaleX.SetValueNoSignal(1);
+		_scaleY.SetValueNoSignal(1);
+		_scaleZ.SetValueNoSignal(1);
+		_pivotOffsetX.SetValueNoSignal(0);
+		_pivotOffsetY.SetValueNoSignal(0);
+		_pivotOffsetZ.SetValueNoSignal(0);
 	}
 
 	private void OnVisibilityChanged(bool visible)
@@ -250,6 +289,19 @@ public partial class ObjectPropertiesPanel : Panel
 		AutoKeyframe("scale.y");
 		AutoKeyframe("scale.z");
 	}
+
+	private void OnPivotOffsetChanged()
+	{
+		if (_currentObject == null) return;
+
+		_currentObject.PivotOffset = new Vector3(
+			(float)_pivotOffsetX.Value / 16,
+			(float)_pivotOffsetY.Value / 16,
+			(float)_pivotOffsetZ.Value / 16
+		);
+		
+		// Note: Pivot offset is NOT auto-keyframed as it's a non-animated property
+	}
 	
 	private void AutoKeyframe(string propertyPath)
 	{
@@ -257,6 +309,75 @@ public partial class ObjectPropertiesPanel : Panel
 		
 		// Add keyframe at current timeline frame
 		TimelinePanel.Instance.AddKeyframeForProperty(_currentObject, propertyPath, TimelinePanel.Instance.CurrentFrame);
+	}
+	
+	private void OnResetPosition()
+	{
+		if (_currentObject == null) return;
+		
+		// Reset to original position
+		_currentObject.Position = _originalPosition;
+		
+		// Update UI to reflect the change
+		_positionX.Value = Math.Round(_originalPosition.X * 16, 2);
+		_positionY.Value = Math.Round(_originalPosition.Y * 16, 2);
+		_positionZ.Value = Math.Round(_originalPosition.Z * 16, 2);
+		
+		// Auto-keyframe when property changes
+		AutoKeyframe("position.x");
+		AutoKeyframe("position.y");
+		AutoKeyframe("position.z");
+	}
+	
+	private void OnResetRotation()
+	{
+		if (_currentObject == null) return;
+		
+		// Reset to original rotation
+		_currentObject.Rotation = _originalRotation;
+		
+		// Update UI to reflect the change
+		_rotationX.Value = Math.Round(Mathf.RadToDeg(_originalRotation.X), 2);
+		_rotationY.Value = Math.Round(Mathf.RadToDeg(_originalRotation.Y), 2);
+		_rotationZ.Value = Math.Round(Mathf.RadToDeg(_originalRotation.Z), 2);
+		
+		// Auto-keyframe when property changes
+		AutoKeyframe("rotation.x");
+		AutoKeyframe("rotation.y");
+		AutoKeyframe("rotation.z");
+	}
+	
+	private void OnResetScale()
+	{
+		if (_currentObject == null) return;
+		
+		// Reset to original scale
+		_currentObject.Scale = _originalScale;
+		
+		// Update UI to reflect the change
+		_scaleX.Value = Math.Round(_originalScale.X, 2);
+		_scaleY.Value = Math.Round(_originalScale.Y, 2);
+		_scaleZ.Value = Math.Round(_originalScale.Z, 2);
+		
+		// Auto-keyframe when property changes
+		AutoKeyframe("scale.x");
+		AutoKeyframe("scale.y");
+		AutoKeyframe("scale.z");
+	}
+	
+	private void OnResetPivotOffset()
+	{
+		if (_currentObject == null) return;
+		
+		// Reset to original pivot offset
+		_currentObject.PivotOffset = _originalPivotOffset;
+		
+		// Update UI to reflect the change
+		_pivotOffsetX.Value = Math.Round(_originalPivotOffset.X * 16, 2);
+		_pivotOffsetY.Value = Math.Round(_originalPivotOffset.Y * 16, 2);
+		_pivotOffsetZ.Value = Math.Round(_originalPivotOffset.Z * 16, 2);
+		
+		// Note: Pivot offset is NOT auto-keyframed as it's a non-animated property
 	}
 }
 
@@ -266,6 +387,7 @@ public partial class ObjectPropertiesPanel : Panel
 public partial class CollapsibleSection : VBoxContainer
 {
 	private Button _toggleButton;
+	private Button _resetButton;
 	private VBoxContainer _contentContainer;
 	private bool _isExpanded = true;
 
@@ -291,7 +413,16 @@ public partial class CollapsibleSection : VBoxContainer
 		label.Text = title;
 		label.AddThemeFontSizeOverride("font_size", 14);
 		label.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
+		label.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		header.AddChild(label);
+
+		// Reset button
+		_resetButton = new Button();
+		_resetButton.Text = "↺";
+		_resetButton.TooltipText = "Reset to original value";
+		_resetButton.CustomMinimumSize = new Vector2(24, 0);
+		_resetButton.SizeFlagsHorizontal = SizeFlags.ShrinkEnd;
+		header.AddChild(_resetButton);
 
 		// Content container for the spinbox rows
 		_contentContainer = new VBoxContainer();
@@ -306,4 +437,6 @@ public partial class CollapsibleSection : VBoxContainer
 	}
 
 	public VBoxContainer GetContentContainer() => _contentContainer;
+	
+	public Button GetResetButton() => _resetButton;
 }

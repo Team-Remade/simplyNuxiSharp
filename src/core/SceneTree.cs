@@ -200,12 +200,55 @@ public partial class SceneTree : Panel
 		meta[ItemMetaExpanded] = item.Collapsed;
 	}
 
+	private int GetNextAvailableObjectNumber()
+	{
+		var existingNumbers = new System.Collections.Generic.HashSet<int>();
+		
+		// Scan all existing SceneObjects to find used numbers
+		void ScanNode(Node node)
+		{
+			foreach (var child in node.GetChildren())
+			{
+				if (child is SceneObject sceneObject)
+				{
+					// Try to extract number from name like "Object1", "Object2", etc.
+					var name = sceneObject.Name.ToString();
+					if (name.StartsWith("Object") && name.Length > 6)
+					{
+						var numberPart = name.Substring(6);
+						if (int.TryParse(numberPart, out int num))
+						{
+							existingNumbers.Add(num);
+						}
+					}
+					
+					// Recursively scan children
+					ScanNode(sceneObject);
+				}
+			}
+		}
+		
+		if (Viewport != null)
+		{
+			ScanNode(Viewport);
+		}
+		
+		// Find the lowest available number starting from 1
+		int nextNumber = 1;
+		while (existingNumbers.Contains(nextNumber))
+		{
+			nextNumber++;
+		}
+		
+		return nextNumber;
+	}
+
 	private void OnAddPressed()
 	{
 		if (Viewport != null)
 		{
 			var obj = new SceneObject();
-			obj.Name = "Object" + obj.ObjectId;
+			obj.Name = "Object" + GetNextAvailableObjectNumber();
 			Viewport.AddChild(obj);
 			var material = new StandardMaterial3D();
 			var meshInstance = new MeshInstance3D();

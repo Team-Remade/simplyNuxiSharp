@@ -19,6 +19,9 @@ public partial class SelectionManager : Node
     // Track if gizmo is being used to prevent timeline from overriding transforms
     public bool IsGizmoEditing { get; private set; } = false;
     
+    // Track if we're syncing selection (to prevent auto-keyframing during selection changes)
+    private bool _isSyncingSelection = false;
+    
     [Export] public ShaderMaterial SelectionMaterial;
 
     public override void _Ready()
@@ -34,6 +37,9 @@ public partial class SelectionManager : Node
     private void OnGizmoTransformEnd(int mode, int plane)
     {
         IsGizmoEditing = false;
+        
+        // Don't auto-keyframe if we're just syncing the selection (not actually transforming)
+        if (_isSyncingSelection) return;
         
         // Auto-keyframe affected properties when gizmo manipulation ends
         if (TimelinePanel.Instance == null || SelectedObjects.Count == 0) return;
@@ -167,6 +173,9 @@ public partial class SelectionManager : Node
     {
         if (Gizmo == null) return;
         
+        // Set flag to prevent auto-keyframing during selection sync
+        _isSyncingSelection = true;
+        
         // Clear current gizmo selection
         Gizmo.ClearSelection();
         
@@ -175,6 +184,9 @@ public partial class SelectionManager : Node
         {
             Gizmo.Select(obj);
         }
+        
+        // Reset flag
+        _isSyncingSelection = false;
     }
 
     /// <summary>
