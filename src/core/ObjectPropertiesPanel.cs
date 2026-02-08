@@ -190,14 +190,26 @@ public partial class ObjectPropertiesPanel : Panel
 		// Visibility
 		_visibilityCheckbox.SetPressedNoSignal(_currentObject.ObjectVisible);
 
+		// For bones, show TargetPosition and TargetRotation (offset from base pose)
+		// For other objects, show regular Position and Rotation
+		Vector3 pos, rot;
+		if (_currentObject is BoneSceneObject boneObj)
+		{
+			pos = boneObj.TargetPosition;
+			rot = boneObj.TargetRotation;
+		}
+		else
+		{
+			pos = _currentObject.Position;
+			rot = _currentObject.Rotation;
+		}
+
 		// Position (scaled by 16 for display) - use SetValueNoSignal to avoid triggering auto-keyframing
-		var pos = _currentObject.Position;
 		_positionX.SetValueNoSignal(Math.Round(pos.X * 16, 2));
 		_positionY.SetValueNoSignal(Math.Round(pos.Y * 16, 2));
 		_positionZ.SetValueNoSignal(Math.Round(pos.Z * 16, 2));
 
 		// Rotation (convert from radians to degrees) - use SetValueNoSignal to avoid triggering auto-keyframing
-		var rot = _currentObject.Rotation;
 		_rotationX.SetValueNoSignal(Math.Round(Mathf.RadToDeg(rot.X), 2));
 		_rotationY.SetValueNoSignal(Math.Round(Mathf.RadToDeg(rot.Y), 2));
 		_rotationZ.SetValueNoSignal(Math.Round(Mathf.RadToDeg(rot.Z), 2));
@@ -246,11 +258,22 @@ public partial class ObjectPropertiesPanel : Panel
 	{
 		if (_currentObject == null) return;
 
-		_currentObject.Position = new Vector3(
+		var newPos = new Vector3(
 			(float)_positionX.Value / 16,
 			(float)_positionY.Value / 16,
 			(float)_positionZ.Value / 16
 		);
+
+		// For bones, update TargetPosition (offset from base pose)
+		// For other objects, update regular Position
+		if (_currentObject is BoneSceneObject boneObj)
+		{
+			boneObj.TargetPosition = newPos;
+		}
+		else
+		{
+			_currentObject.Position = newPos;
+		}
 		
 		// Auto-keyframe when property changes
 		AutoKeyframe("position.x");
@@ -262,11 +285,22 @@ public partial class ObjectPropertiesPanel : Panel
 	{
 		if (_currentObject == null) return;
 
-		_currentObject.Rotation = new Vector3(
+		var newRot = new Vector3(
 			Mathf.DegToRad((float)_rotationX.Value),
 			Mathf.DegToRad((float)_rotationY.Value),
 			Mathf.DegToRad((float)_rotationZ.Value)
 		);
+
+		// For bones, update TargetRotation (offset from base pose)
+		// For other objects, update regular Rotation
+		if (_currentObject is BoneSceneObject boneObj)
+		{
+			boneObj.TargetRotation = newRot;
+		}
+		else
+		{
+			_currentObject.Rotation = newRot;
+		}
 		
 		// Auto-keyframe when property changes
 		AutoKeyframe("rotation.x");
@@ -315,13 +349,26 @@ public partial class ObjectPropertiesPanel : Panel
 	{
 		if (_currentObject == null) return;
 		
-		// Reset to original position
-		_currentObject.Position = _originalPosition;
-		
-		// Update UI to reflect the change
-		_positionX.Value = Math.Round(_originalPosition.X * 16, 2);
-		_positionY.Value = Math.Round(_originalPosition.Y * 16, 2);
-		_positionZ.Value = Math.Round(_originalPosition.Z * 16, 2);
+		// For bones, reset TargetPosition to zero (back to base pose)
+		// For other objects, reset to original position
+		if (_currentObject is BoneSceneObject boneObj)
+		{
+			boneObj.TargetPosition = Vector3.Zero;
+			
+			// Update UI to reflect the change (zero)
+			_positionX.Value = 0;
+			_positionY.Value = 0;
+			_positionZ.Value = 0;
+		}
+		else
+		{
+			_currentObject.Position = _originalPosition;
+			
+			// Update UI to reflect the change
+			_positionX.Value = Math.Round(_originalPosition.X * 16, 2);
+			_positionY.Value = Math.Round(_originalPosition.Y * 16, 2);
+			_positionZ.Value = Math.Round(_originalPosition.Z * 16, 2);
+		}
 		
 		// Auto-keyframe when property changes
 		AutoKeyframe("position.x");
@@ -333,13 +380,26 @@ public partial class ObjectPropertiesPanel : Panel
 	{
 		if (_currentObject == null) return;
 		
-		// Reset to original rotation
-		_currentObject.Rotation = _originalRotation;
-		
-		// Update UI to reflect the change
-		_rotationX.Value = Math.Round(Mathf.RadToDeg(_originalRotation.X), 2);
-		_rotationY.Value = Math.Round(Mathf.RadToDeg(_originalRotation.Y), 2);
-		_rotationZ.Value = Math.Round(Mathf.RadToDeg(_originalRotation.Z), 2);
+		// For bones, reset TargetRotation to zero (back to base pose)
+		// For other objects, reset to original rotation
+		if (_currentObject is BoneSceneObject boneObj)
+		{
+			boneObj.TargetRotation = Vector3.Zero;
+			
+			// Update UI to reflect the change (zero)
+			_rotationX.Value = 0;
+			_rotationY.Value = 0;
+			_rotationZ.Value = 0;
+		}
+		else
+		{
+			_currentObject.Rotation = _originalRotation;
+			
+			// Update UI to reflect the change
+			_rotationX.Value = Math.Round(Mathf.RadToDeg(_originalRotation.X), 2);
+			_rotationY.Value = Math.Round(Mathf.RadToDeg(_originalRotation.Y), 2);
+			_rotationZ.Value = Math.Round(Mathf.RadToDeg(_originalRotation.Z), 2);
+		}
 		
 		// Auto-keyframe when property changes
 		AutoKeyframe("rotation.x");

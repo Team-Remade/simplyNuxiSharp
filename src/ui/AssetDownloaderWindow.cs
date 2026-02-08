@@ -473,30 +473,80 @@ public partial class AssetDownloaderWindow : Window
 	{
 		try
 		{
-			UpdateStatus("Loading Minecraft JSON files...", 0);
+			// Load textures first
+			UpdateStatus("Loading Minecraft textures...", 0);
+			
+			var textureLoader = MinecraftTextureLoader.Instance;
+			var textureSuccess = await textureLoader.LoadAllTextures((message, progress) =>
+			{
+				UpdateStatus(message, (int)(progress * 0.33f)); // First third of progress
+			});
+			
+			if (textureSuccess)
+			{
+				UpdateStatus($"Loaded {textureLoader.TotalTexturesLoaded} Minecraft textures successfully!", 33);
+				GD.Print($"Minecraft texture loading complete. Block textures: {textureLoader.GetAllBlockTexturePaths().Count()}, Item textures: {textureLoader.GetAllItemTexturePaths().Count()}");
+			}
+			else
+			{
+				UpdateStatus("Failed to load some Minecraft textures. Check the console for details.", 33);
+				GD.PrintErr($"Failed textures: {textureLoader.TotalTexturesFailed}");
+			}
+			
+			await Task.Delay(250);
+			
+			// Then load JSON files
+			UpdateStatus("Loading Minecraft JSON files...", 33);
 			
 			var loader = MinecraftJsonLoader.Instance;
 			var success = await loader.LoadAllJsonFiles((message, progress) =>
 			{
-				UpdateStatus(message, (int)progress);
+				UpdateStatus(message, 33 + (int)(progress * 0.33f)); // Second third of progress
 			});
 			
 			if (success)
 			{
-				UpdateStatus($"Loaded {loader.TotalFilesLoaded} Minecraft JSON files successfully!", 100);
+				UpdateStatus($"Loaded {loader.TotalFilesLoaded} Minecraft JSON files successfully!", 66);
 				GD.Print($"Minecraft JSON loading complete. Models: {loader.GetAllModelPaths().Count()}, BlockStates: {loader.GetAllBlockStatePaths().Count()}");
 			}
 			else
 			{
-				UpdateStatus("Failed to load some Minecraft JSON files. Check the console for details.", 100);
+				UpdateStatus("Failed to load some Minecraft JSON files. Check the console for details.", 66);
 				GD.PrintErr($"Failed files: {loader.TotalFilesFailed}");
 			}
 			
-			await Task.Delay(500);
+			await Task.Delay(250);
+			
+			// Finally, scan for character GLB files
+			UpdateStatus("Scanning for character files...", 66);
+			
+			var characterLoader = CharacterLoader.Instance;
+			var charSuccess = await characterLoader.LoadCharacterList((message, progress) =>
+			{
+				UpdateStatus(message, 66 + (int)(progress * 0.34f)); // Last third of progress
+			});
+			
+			if (charSuccess)
+			{
+				UpdateStatus($"Found {characterLoader.TotalCharactersFound} character files!", 100);
+				GD.Print($"Character scanning complete. Characters found: {characterLoader.TotalCharactersFound}");
+			}
+			else
+			{
+				UpdateStatus("Failed to scan for character files. Check the console for details.", 100);
+			}
+			
+			await Task.Delay(250);
+			
+			// Print summary
+			GD.Print($"=== Asset Loading Complete ===");
+			GD.Print($"Textures Loaded: {textureLoader.TotalTexturesLoaded} (Failed: {textureLoader.TotalTexturesFailed})");
+			GD.Print($"JSON Files Loaded: {loader.TotalFilesLoaded} (Failed: {loader.TotalFilesFailed})");
+			GD.Print($"Characters Found: {characterLoader.TotalCharactersFound}");
 		}
 		catch (Exception ex)
 		{
-			UpdateStatus($"Error loading JSON files: {ex.Message}", 0);
+			UpdateStatus($"Error loading assets: {ex.Message}", 0);
 			GD.PrintErr($"Error in LoadMinecraftJsonFiles: {ex.Message}");
 			GD.PrintErr($"Stack trace: {ex.StackTrace}");
 		}

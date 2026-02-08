@@ -36,73 +36,82 @@ public partial class SelectionManager : Node
     
     private void OnGizmoTransformEnd(int mode, int plane)
     {
-        IsGizmoEditing = false;
-        
-        // Don't auto-keyframe if we're just syncing the selection (not actually transforming)
-        if (_isSyncingSelection) return;
-        
-        // Auto-keyframe affected properties when gizmo manipulation ends
-        if (TimelinePanel.Instance == null || SelectedObjects.Count == 0) return;
-        
-        var transformMode = (Gizmo3D.TransformMode)mode;
-        var transformPlane = (Gizmo3D.TransformPlane)plane;
-        
-        foreach (var obj in SelectedObjects)
-        {
-            string propertyPrefix = transformMode switch
-            {
-                Gizmo3D.TransformMode.Translate => "position",
-                Gizmo3D.TransformMode.Rotate => "rotation",
-                Gizmo3D.TransformMode.Scale => "scale",
-                _ => null
-            };
-            
-            if (propertyPrefix == null) continue;
-            
-            // Keyframe only the affected axes based on the plane/axis that was manipulated
-            switch (transformPlane)
-            {
-                case Gizmo3D.TransformPlane.X:
-                    // Single axis: X only
-                    TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.x", TimelinePanel.Instance.CurrentFrame);
-                    break;
-                    
-                case Gizmo3D.TransformPlane.Y:
-                    // Single axis: Y only
-                    TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.y", TimelinePanel.Instance.CurrentFrame);
-                    break;
-                    
-                case Gizmo3D.TransformPlane.Z:
-                    // Single axis: Z only
-                    TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.z", TimelinePanel.Instance.CurrentFrame);
-                    break;
-                    
-                case Gizmo3D.TransformPlane.YZ:
-                    // Plane: Y and Z
-                    TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.y", TimelinePanel.Instance.CurrentFrame);
-                    TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.z", TimelinePanel.Instance.CurrentFrame);
-                    break;
-                    
-                case Gizmo3D.TransformPlane.XZ:
-                    // Plane: X and Z
-                    TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.x", TimelinePanel.Instance.CurrentFrame);
-                    TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.z", TimelinePanel.Instance.CurrentFrame);
-                    break;
-                    
-                case Gizmo3D.TransformPlane.XY:
-                    // Plane: X and Y
-                    TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.x", TimelinePanel.Instance.CurrentFrame);
-                    TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.y", TimelinePanel.Instance.CurrentFrame);
-                    break;
-                    
-                case Gizmo3D.TransformPlane.View:
-                    // View plane: All axes
-                    TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.x", TimelinePanel.Instance.CurrentFrame);
-                    TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.y", TimelinePanel.Instance.CurrentFrame);
-                    TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.z", TimelinePanel.Instance.CurrentFrame);
-                    break;
-            }
-        }
+    	IsGizmoEditing = false;
+    	
+    	// Don't auto-keyframe if we're just syncing the selection (not actually transforming)
+    	if (_isSyncingSelection) return;
+    	
+    	// Update target position/rotation for bone objects
+    	foreach (var obj in SelectedObjects)
+    	{
+    		if (obj is BoneSceneObject boneObj)
+    		{
+    			boneObj.OnGizmoTransformEnd();
+    		}
+    	}
+    	
+    	// Auto-keyframe affected properties when gizmo manipulation ends
+    	if (TimelinePanel.Instance == null || SelectedObjects.Count == 0) return;
+    	
+    	var transformMode = (Gizmo3D.TransformMode)mode;
+    	var transformPlane = (Gizmo3D.TransformPlane)plane;
+    	
+    	foreach (var obj in SelectedObjects)
+    	{
+    		string propertyPrefix = transformMode switch
+    		{
+    			Gizmo3D.TransformMode.Translate => "position",
+    			Gizmo3D.TransformMode.Rotate => "rotation",
+    			Gizmo3D.TransformMode.Scale => "scale",
+    			_ => null
+    		};
+    		
+    		if (propertyPrefix == null) continue;
+    		
+    		// Keyframe only the affected axes based on the plane/axis that was manipulated
+    		switch (transformPlane)
+    		{
+    			case Gizmo3D.TransformPlane.X:
+    				// Single axis: X only
+    				TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.x", TimelinePanel.Instance.CurrentFrame);
+    				break;
+    				
+    			case Gizmo3D.TransformPlane.Y:
+    				// Single axis: Y only
+    				TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.y", TimelinePanel.Instance.CurrentFrame);
+    				break;
+    				
+    			case Gizmo3D.TransformPlane.Z:
+    				// Single axis: Z only
+    				TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.z", TimelinePanel.Instance.CurrentFrame);
+    				break;
+    				
+    			case Gizmo3D.TransformPlane.YZ:
+    				// Plane: Y and Z
+    				TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.y", TimelinePanel.Instance.CurrentFrame);
+    				TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.z", TimelinePanel.Instance.CurrentFrame);
+    				break;
+    				
+    			case Gizmo3D.TransformPlane.XZ:
+    				// Plane: X and Z
+    				TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.x", TimelinePanel.Instance.CurrentFrame);
+    				TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.z", TimelinePanel.Instance.CurrentFrame);
+    				break;
+    				
+    			case Gizmo3D.TransformPlane.XY:
+    				// Plane: X and Y
+    				TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.x", TimelinePanel.Instance.CurrentFrame);
+    				TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.y", TimelinePanel.Instance.CurrentFrame);
+    				break;
+    				
+    			case Gizmo3D.TransformPlane.View:
+    				// View plane: All axes
+    				TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.x", TimelinePanel.Instance.CurrentFrame);
+    				TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.y", TimelinePanel.Instance.CurrentFrame);
+    				TimelinePanel.Instance.AddKeyframeForProperty(obj, $"{propertyPrefix}.z", TimelinePanel.Instance.CurrentFrame);
+    				break;
+    		}
+    	}
     }
 
     public (string uuid, int pickColorId) GetNextObjectId()

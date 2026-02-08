@@ -12,12 +12,16 @@ public partial class SpawnMenu : PopupPanel
 	private ItemList _variantList;
 	private Button _spawnButton;
 	private LineEdit _searchBar;
+	private OptionButton _textureTypeDropdown;
+	private Label _dropdownLabel;
+	private CheckBox _spawn3DPlaneCheckbox;
 	private Dictionary<string, List<string>> _categories;
 	private string _selectedCategory = "Primitives";
 	private int _selectedObjectIndex = -1;
 	private int _selectedVariantIndex = -1;
 	private string _selectedBlockState = "";
 	private string _searchQuery = "";
+	private string _selectedTextureType = "item"; // "block" or "item"
 	
 	public SubViewport Viewport { get; set; }
 
@@ -75,10 +79,37 @@ public partial class SpawnMenu : PopupPanel
 		middleContainer.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 		mainContainer.AddChild(middleContainer);
 		
+		// Add header with dropdown for texture type
+		var middleHeaderContainer = new HBoxContainer();
+		middleHeaderContainer.AddThemeConstantOverride("separation", 10);
+		middleContainer.AddChild(middleHeaderContainer);
+		
 		var objectLabel = new Label();
 		objectLabel.Text = "Objects";
 		objectLabel.AddThemeStyleboxOverride("normal", new StyleBoxFlat());
-		middleContainer.AddChild(objectLabel);
+		objectLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		middleHeaderContainer.AddChild(objectLabel);
+		
+		// Add dropdown label and dropdown (initially hidden)
+		_dropdownLabel = new Label();
+		_dropdownLabel.Text = "Type:";
+		_dropdownLabel.Visible = false;
+		middleHeaderContainer.AddChild(_dropdownLabel);
+		
+		_textureTypeDropdown = new OptionButton();
+		_textureTypeDropdown.AddItem("Block");
+		_textureTypeDropdown.AddItem("Item");
+		_textureTypeDropdown.Selected = 1;
+		_textureTypeDropdown.ItemSelected += OnTextureTypeSelected;
+		_textureTypeDropdown.Visible = false;
+		middleHeaderContainer.AddChild(_textureTypeDropdown);
+		
+		// Add 3D plane checkbox (initially hidden)
+		_spawn3DPlaneCheckbox = new CheckBox();
+		_spawn3DPlaneCheckbox.Text = "3D Plane";
+		_spawn3DPlaneCheckbox.ButtonPressed = true;  // Checked by default
+		_spawn3DPlaneCheckbox.Visible = false;
+		middleHeaderContainer.AddChild(_spawn3DPlaneCheckbox);
 		
 		_objectList = new ItemList();
 		_objectList.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
@@ -131,21 +162,27 @@ public partial class SpawnMenu : PopupPanel
 	{
 		_categories = new Dictionary<string, List<string>>()
 		{
-			{ "Primitives", new List<string>() 
-				{ 
-					"Cube", 
-					"Sphere", 
-					"Cylinder", 
-					"Cone", 
-					"Torus", 
+			{ "Primitives", new List<string>()
+				{
+					"Cube",
+					"Sphere",
+					"Cylinder",
+					"Cone",
+					"Torus",
 					"Plane",
 					"Capsule"
-				} 
+				}
 			}
 		};
 		
 		// Add Blocks category from loaded Minecraft models
 		LoadMinecraftBlocks();
+		
+		// Add Items category from loaded Minecraft textures
+		LoadMinecraftTextures();
+		
+		// Add Characters category from loaded GLB files
+		LoadCharacters();
 	}
 	
 	private void LoadMinecraftBlocks()
@@ -191,6 +228,70 @@ public partial class SpawnMenu : PopupPanel
 		}
 	}
 	
+	private void LoadMinecraftTextures()
+	{
+		var textureLoader = MinecraftTextureLoader.Instance;
+		if (!textureLoader.IsLoaded)
+		{
+			GD.PrintErr("Cannot load Minecraft textures - textures not loaded yet!");
+			return;
+		}
+		
+		var items = new List<string>();
+		
+		// Start with item textures by default
+		foreach (var texturePath in textureLoader.GetAllItemTexturePaths())
+		{
+			// Extract the texture name from the path (e.g., "item/stone.png" -> "stone")
+			var fileName = System.IO.Path.GetFileNameWithoutExtension(texturePath);
+			
+			// Skip .mcmeta files and other non-texture files
+			if (!string.IsNullOrEmpty(fileName))
+			{
+				var displayName = CleanBlockName(fileName);
+				if (!items.Contains(displayName))
+				{
+					items.Add(displayName);
+				}
+			}
+		}
+		
+		// Sort alphabetically for easier browsing
+		items.Sort();
+		
+		if (items.Count > 0)
+		{
+			_categories["Items"] = items;
+			GD.Print($"Added {items.Count} Minecraft texture items to spawn menu");
+		}
+		else
+		{
+			GD.Print("No Minecraft textures found");
+		}
+	}
+	
+	private void LoadCharacters()
+	{
+		var characterLoader = CharacterLoader.Instance;
+		if (!characterLoader.IsLoaded)
+		{
+			GD.PrintErr("Cannot load Characters - character files not loaded yet!");
+			return;
+		}
+		
+		var characters = characterLoader.GetAllCharacterNames();
+		
+		if (characters.Count > 0)
+		{
+			_categories["Characters"] = characters;
+			GD.Print($"Added {characters.Count} characters to spawn menu");
+		}
+		else
+		{
+			GD.Print("No character GLB files found");
+		}
+	}
+	
 	private string CleanBlockName(string fileName)
 	{
 		// Convert underscores to spaces and capitalize words
@@ -204,6 +305,54 @@ public partial class SpawnMenu : PopupPanel
 			}
 		}
 		return string.Join(" ", words);
+	}
+	
+	private void OnTextureTypeSelected(long index)
+	{
+		_selectedTextureType = index == 0 ? "block" : "item";
+		GD.Print($"Texture type changed to: {_selectedTextureType}");
+		
+		// Reload the Items category with the new texture type
+		ReloadTextureItems();
+	}
+	
+	private void ReloadTextureItems()
+	{
+		var textureLoader = MinecraftTextureLoader.Instance;
+		if (!textureLoader.IsLoaded)
+		{
+			return;
+		}
+		
+		var items = new List<string>();
+		
+		// Load textures based on selected type
+		var texturePaths = _selectedTextureType == "block"
+			? textureLoader.GetAllBlockTexturePaths()
+			: textureLoader.GetAllItemTexturePaths();
+			
+		foreach (var texturePath in texturePaths)
+		{
+			var fileName = System.IO.Path.GetFileNameWithoutExtension(texturePath);
+			
+			if (!string.IsNullOrEmpty(fileName))
+			{
+				var displayName = CleanBlockName(fileName);
+				if (!items.Contains(displayName))
+				{
+					items.Add(displayName);
+				}
+			}
+		}
+		
+		items.Sort();
+		_categories["Items"] = items;
+		
+		// Refresh the object list if Items category is selected
+		if (_selectedCategory == "Items")
+		{
+			UpdateObjectList("Items");
+		}
 	}
 
 	private void PopulateCategoryList()
@@ -224,6 +373,21 @@ public partial class SpawnMenu : PopupPanel
 	private void OnCategorySelected(long index)
 	{
 		var categoryName = _categoryList.GetItemText((int)index);
+		
+		// Show/hide the texture type dropdown and 3D plane checkbox based on category
+		if (categoryName == "Items")
+		{
+			_textureTypeDropdown.Visible = true;
+			_dropdownLabel.Visible = true;
+			_spawn3DPlaneCheckbox.Visible = true;
+		}
+		else
+		{
+			_textureTypeDropdown.Visible = false;
+			_dropdownLabel.Visible = false;
+			_spawn3DPlaneCheckbox.Visible = false;
+		}
+		
 		UpdateObjectList(categoryName);
 	}
 
@@ -265,7 +429,7 @@ public partial class SpawnMenu : PopupPanel
 		_selectedObjectIndex = (int)index;
 		_selectedVariantIndex = -1;
 		
-GD.Print($"Selected object index: {index}, category: {_selectedCategory}");
+		GD.Print($"Selected object index: {index}, category: {_selectedCategory}");
 		
 		// Update variants list if this is a block
 		if (_selectedCategory == "Blocks")
@@ -274,6 +438,13 @@ GD.Print($"Selected object index: {index}, category: {_selectedCategory}");
 			GD.Print($"Selected block: {objectName}");
 			UpdateVariantList(objectName);
 			// Don't set disabled here - let UpdateVariantList handle it
+		}
+		else if (_selectedCategory == "Items")
+		{
+			// For texture items, no variant selection needed
+			_variantList.Clear();
+			_spawnButton.Disabled = false;
+			GD.Print("Texture item selected - button enabled");
 		}
 		else
 		{
@@ -378,6 +549,13 @@ GD.Print($"Selected object index: {index}, category: {_selectedCategory}");
 		int nextNumber = GetNextAvailableObjectNumber(objectName);
 		string fullObjectName = nextNumber > 1 ? $"{objectName}{nextNumber}" : objectName;
 		
+		// Check if this is a character - needs special handling
+		if (_selectedCategory == "Characters")
+		{
+			CreateCharacter(objectName, fullObjectName);
+			return;
+		}
+		
 		// Create a new SceneObject
 		var sceneObject = new SceneObject();
 		sceneObject.Name = fullObjectName;
@@ -389,6 +567,11 @@ GD.Print($"Selected object index: {index}, category: {_selectedCategory}");
 		if (_selectedCategory == "Blocks")
 		{
 			visualNode = CreateMinecraftBlock(objectName);
+		}
+		else if (_selectedCategory == "Items")
+		{
+			// Create texture plane
+			visualNode = CreateTexturePlane(objectName);
 		}
 		else
 		{
@@ -403,7 +586,12 @@ GD.Print($"Selected object index: {index}, category: {_selectedCategory}");
 				// Create a material for the mesh
 				var material = new StandardMaterial3D();
 				material.AlbedoColor = new Color(0.8f, 0.8f, 0.8f);
-				meshInstance.MaterialOverride = material;
+				
+				// Apply material to mesh surface instead of using MaterialOverride
+				if (mesh is PrimitiveMesh primitiveMesh)
+				{
+					primitiveMesh.Material = material;
+				}
 				
 				// Set shadows
 				meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
@@ -524,11 +712,339 @@ GD.Print($"Selected object index: {index}, category: {_selectedCategory}");
 			_ => null
 		};
 	}
+	
+	private Node3D CreateTexturePlane(string itemName)
+	{
+		// Convert display name back to file name format
+		var fileName = itemName.ToLower().Replace(" ", "_");
+		
+		bool create3DPlane = _spawn3DPlaneCheckbox.ButtonPressed;
+		GD.Print($"Creating texture plane for: {fileName} (type: {_selectedTextureType}, 3D: {create3DPlane})");
+		
+		// Get the texture from the texture loader
+		var textureLoader = MinecraftTextureLoader.Instance;
+		ImageTexture texture = _selectedTextureType == "block"
+			? textureLoader.GetBlockTexture(fileName)
+			: textureLoader.GetItemTexture(fileName);
+		
+		if (texture == null)
+		{
+			GD.PrintErr($"Failed to load texture: {fileName}");
+			return null;
+		}
+		
+		// Get texture dimensions to scale the plane appropriately
+		var image = texture.GetImage();
+		float aspectRatio = (float)image.GetWidth() / image.GetHeight();
+		
+		// Calculate size ensuring it doesn't exceed 1 meter on XY axis
+		Vector2 planeSize;
+		if (aspectRatio > 1)
+		{
+			// Width is larger
+			planeSize = new Vector2(Mathf.Min(aspectRatio, 1.0f), Mathf.Min(1.0f / aspectRatio, 1.0f));
+		}
+		else
+		{
+			// Height is larger
+			planeSize = new Vector2(Mathf.Min(aspectRatio, 1.0f), Mathf.Min(1.0f / aspectRatio, 1.0f));
+		}
+		
+		Node3D resultNode;
+		
+		if (create3DPlane)
+		{
+			// Create a 3D extruded plane using a BoxMesh
+			resultNode = Create3DExtrudedPlane(texture, planeSize);
+		}
+		else
+		{
+			// Create a simple 2D plane
+			var meshInstance = new MeshInstance3D();
+			var planeMesh = new PlaneMesh();
+			planeMesh.Size = planeSize;
+			meshInstance.Mesh = planeMesh;
+			
+			// Rotate the plane to make it vertical (90 degrees around X axis)
+			meshInstance.RotationDegrees = new Vector3(90, 0, 0);
+			
+			// Create a material with the texture
+			var material = new StandardMaterial3D();
+			material.AlbedoTexture = texture;
+			material.TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest; // Pixelated look for Minecraft textures
+			material.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor; // Handle transparency
+			material.AlphaScissorThreshold = 0.5f;
+			material.CullMode = BaseMaterial3D.CullModeEnum.Disabled; // Show both sides of the plane
+			
+			// Apply material to mesh surface instead of using MaterialOverride
+			planeMesh.Material = material;
+			meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+			
+			resultNode = meshInstance;
+		}
+		
+		GD.Print($"Successfully created texture plane for: {itemName}");
+		return resultNode;
+	}
+	
+	private Node3D Create3DExtrudedPlane(ImageTexture texture, Vector2 planeSize)
+	{
+		// Create an extruded mesh from the pixel data as a vertical plane
+		const float thickness = 0.0625f;
+		
+		var image = texture.GetImage();
+		int width = image.GetWidth();
+		int height = image.GetHeight();
+		
+		// Calculate scale to fit within planeSize while maintaining aspect ratio
+		float scale = Mathf.Min(planeSize.X / width, planeSize.Y / height);
+		
+		// Create arrays for mesh data
+		var vertices = new List<Vector3>();
+		var normals = new List<Vector3>();
+		var uvs = new List<Vector2>();
+		var indices = new List<int>();
+		
+		// Process each pixel to create extruded quads
+		// For a vertical plane, X maps to horizontal, Y maps to vertical, Z is depth
+		for (int y = 0; y < height; y++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				var color = image.GetPixel(x, y);
+				
+				// Only create geometry for non-transparent pixels
+				if (color.A > 0.5f)
+				{
+					// Calculate position for vertical plane
+					// X: horizontal position (centered)
+					// Y: vertical position (centered, inverted because tex coords are top-down)
+					// Z: depth (extrusion direction)
+					float px = (x - width / 2.0f) * scale;
+					float py = -(y - height / 2.0f) * scale;  // Negative to flip Y
+					float halfThickness = thickness / 2.0f;
+					
+					// UV coordinates for this pixel
+					float uvX = (x + 0.5f) / width;
+					float uvY = (y + 0.5f) / height;
+					
+					int baseVertex = vertices.Count;
+					
+				// Create a box for this pixel (6 faces)
+				// Front face (facing +Z, towards camera) - CCW winding: bottom-left, bottom-right, top-right, top-left
+				AddQuad(vertices, normals, uvs, indices, baseVertex,
+					new Vector3(px - scale/2, py - scale/2, halfThickness),
+					new Vector3(px + scale/2, py - scale/2, halfThickness),
+					new Vector3(px + scale/2, py + scale/2, halfThickness),
+					new Vector3(px - scale/2, py + scale/2, halfThickness),
+					new Vector3(0, 0, 1), uvX, uvY);  // Normal pointing outward (positive Z)
+				
+				baseVertex = vertices.Count;
+				// Back face (facing -Z, away from camera) - CCW winding when viewed from outside
+				AddQuad(vertices, normals, uvs, indices, baseVertex,
+					new Vector3(px + scale/2, py - scale/2, -halfThickness),
+					new Vector3(px - scale/2, py - scale/2, -halfThickness),
+					new Vector3(px - scale/2, py + scale/2, -halfThickness),
+					new Vector3(px + scale/2, py + scale/2, -halfThickness),
+					new Vector3(0, 0, -1), uvX, uvY);  // Normal pointing outward (negative Z)
+					
+					// Only add side faces if adjacent pixels are transparent (edge pixels)
+					bool leftEmpty = x == 0 || image.GetPixel(x - 1, y).A <= 0.5f;
+					bool rightEmpty = x == width - 1 || image.GetPixel(x + 1, y).A <= 0.5f;
+					bool topEmpty = y == 0 || image.GetPixel(x, y - 1).A <= 0.5f;
+					bool bottomEmpty = y == height - 1 || image.GetPixel(x, y + 1).A <= 0.5f;
+					
+					if (leftEmpty)
+					{
+						baseVertex = vertices.Count;
+						AddQuad(vertices, normals, uvs, indices, baseVertex,
+							new Vector3(px - scale/2, py - scale/2, -halfThickness),
+							new Vector3(px - scale/2, py - scale/2, halfThickness),
+							new Vector3(px - scale/2, py + scale/2, halfThickness),
+							new Vector3(px - scale/2, py + scale/2, -halfThickness),
+							Vector3.Left, uvX, uvY);
+					}
+					
+					if (rightEmpty)
+					{
+						baseVertex = vertices.Count;
+						AddQuad(vertices, normals, uvs, indices, baseVertex,
+							new Vector3(px + scale/2, py - scale/2, halfThickness),
+							new Vector3(px + scale/2, py - scale/2, -halfThickness),
+							new Vector3(px + scale/2, py + scale/2, -halfThickness),
+							new Vector3(px + scale/2, py + scale/2, halfThickness),
+							Vector3.Right, uvX, uvY);
+					}
+					
+					if (topEmpty)
+					{
+						baseVertex = vertices.Count;
+						AddQuad(vertices, normals, uvs, indices, baseVertex,
+							new Vector3(px - scale/2, py + scale/2, -halfThickness),
+							new Vector3(px - scale/2, py + scale/2, halfThickness),
+							new Vector3(px + scale/2, py + scale/2, halfThickness),
+							new Vector3(px + scale/2, py + scale/2, -halfThickness),
+							Vector3.Up, uvX, uvY);
+					}
+					
+					if (bottomEmpty)
+					{
+						baseVertex = vertices.Count;
+						AddQuad(vertices, normals, uvs, indices, baseVertex,
+							new Vector3(px - scale/2, py - scale/2, -halfThickness),
+							new Vector3(px + scale/2, py - scale/2, -halfThickness),
+							new Vector3(px + scale/2, py - scale/2, halfThickness),
+							new Vector3(px - scale/2, py - scale/2, halfThickness),
+							Vector3.Down, uvX, uvY);
+					}
+				}
+			}
+		}
+		
+		// Create the mesh
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
+		arrays[(int)Mesh.ArrayType.Normal] = normals.ToArray();
+		arrays[(int)Mesh.ArrayType.TexUV] = uvs.ToArray();
+		arrays[(int)Mesh.ArrayType.Index] = indices.ToArray();
+		
+		var arrayMesh = new ArrayMesh();
+		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+		
+		var meshInstance = new MeshInstance3D();
+		meshInstance.Mesh = arrayMesh;
+		
+		// No rotation needed - mesh is already vertical
+		
+		// Create a material with the texture
+		var material = new StandardMaterial3D();
+		material.AlbedoTexture = texture;
+		material.TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest;
+		material.CullMode = BaseMaterial3D.CullModeEnum.Back;
+		
+		// Apply material to mesh surface instead of using MaterialOverride
+		if (arrayMesh.GetSurfaceCount() > 0)
+		{
+			arrayMesh.SurfaceSetMaterial(0, material);
+		}
+		meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
+		
+		return meshInstance;
+	}
+	
+	private void AddQuad(List<Vector3> vertices, List<Vector3> normals, List<Vector2> uvs, 
+		List<int> indices, int baseVertex, Vector3 v0, Vector3 v1, Vector3 v2, Vector3 v3, 
+		Vector3 normal, float uvX, float uvY)
+	{
+		// Add vertices
+		vertices.Add(v0);
+		vertices.Add(v1);
+		vertices.Add(v2);
+		vertices.Add(v3);
+		
+		// Add normals
+		normals.Add(normal);
+		normals.Add(normal);
+		normals.Add(normal);
+		normals.Add(normal);
+		
+		// Add UVs (use the pixel's texture coordinate)
+		uvs.Add(new Vector2(uvX, uvY));
+		uvs.Add(new Vector2(uvX, uvY));
+		uvs.Add(new Vector2(uvX, uvY));
+		uvs.Add(new Vector2(uvX, uvY));
+		
+		// Add indices for two triangles with correct winding order (counter-clockwise)
+		indices.Add(baseVertex + 0);
+		indices.Add(baseVertex + 2);
+		indices.Add(baseVertex + 1);
+		
+		indices.Add(baseVertex + 0);
+		indices.Add(baseVertex + 3);
+		indices.Add(baseVertex + 2);
+	}
 
 	public void ShowMenu(Vector2 position)
 	{
 		// Set popup position and size
 		var rect = new Rect2I((Vector2I)position, new Vector2I(900, 400));
 		PopupOnParent(rect);
+	}
+	
+	private void CreateCharacter(string characterName, string fullObjectName)
+	{
+		GD.Print($"Creating character: {characterName}");
+		
+		// Get the character GLB path
+		var characterLoader = CharacterLoader.Instance;
+		var glbPath = characterLoader.GetCharacterPath(characterName);
+		
+		if (string.IsNullOrEmpty(glbPath))
+		{
+			GD.PrintErr($"Could not find GLB file for character: {characterName}");
+			return;
+		}
+		
+		if (!System.IO.File.Exists(glbPath))
+		{
+			GD.PrintErr($"GLB file does not exist: {glbPath}");
+			return;
+		}
+		
+		GD.Print($"Loading GLB from: {glbPath}");
+		
+		// Load the GLB file using Godot's gltf_document and gltf_state
+		var gltfDocument = new GltfDocument();
+		var gltfState = new GltfState();
+		
+		var error = gltfDocument.AppendFromFile(glbPath, gltfState);
+		
+		if (error != Error.Ok)
+		{
+			GD.PrintErr($"Failed to load GLB file: {error}");
+			return;
+		}
+		
+		// Generate the scene from GLTF
+		var glbRoot = gltfDocument.GenerateScene(gltfState);
+		
+		if (glbRoot == null)
+		{
+			GD.PrintErr("Failed to generate scene from GLB");
+			return;
+		}
+		
+		// Cast to Node3D - GLB files typically contain 3D content
+		if (glbRoot is not Node3D glbRoot3D)
+		{
+			GD.PrintErr($"GLB root is not a Node3D, it's a {glbRoot.GetType().Name}");
+			glbRoot.QueueFree();
+			return;
+		}
+		
+		GD.Print($"Successfully loaded GLB scene: {glbRoot3D.Name}");
+		
+		// Create a CharacterSceneObject
+		var characterObject = new CharacterSceneObject();
+		characterObject.Name = fullObjectName;
+		characterObject.ObjectType = characterName;
+		
+		// Add to viewport first
+		Viewport.AddChild(characterObject);
+		
+		// Setup the character from the GLB data
+		characterObject.SetupFromGlb(glbRoot3D);
+		
+		// Position at world origin
+		characterObject.GlobalPosition = Vector3.Zero;
+		
+		// Notify the scene tree panel to refresh
+		if (GetTree().Root.GetNode<Main>("/root/Main") is Main main)
+		{
+			main.SceneTreePanel.Refresh();
+		}
+		
+		GD.Print($"Character '{fullObjectName}' spawned successfully with {characterObject.BoneObjects.Count} bones");
 	}
 }

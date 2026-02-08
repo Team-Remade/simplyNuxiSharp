@@ -29,7 +29,7 @@ public class MinecraftJsonLoader
 	
 	private MinecraftJsonLoader()
 	{
-		// Use Godot's user data directory system
+		// Use the user data directory path for assets
 		var userDataPath = OS.GetUserDataDir();
 		_assetsPath = Path.Combine(userDataPath, "data", "SimplyRemadeAssetsV1");
 		_loadedModels = new Dictionary<string, MinecraftModel>();

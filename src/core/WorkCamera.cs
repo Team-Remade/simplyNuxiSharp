@@ -85,8 +85,19 @@ public partial class WorkCamera : Camera3D
 		}
 
 		// Check if gizmo is being hovered or edited
-		bool gizmoInteracting = SelectionManager.Instance?.Gizmo != null && 
+		bool gizmoInteracting = SelectionManager.Instance?.Gizmo != null &&
 				(SelectionManager.Instance.Gizmo.Hovering || SelectionManager.Instance.Gizmo.Editing);
+
+		// Toggle local/global transform mode with 'G' key when hovering the viewport
+		if (@event is InputEventKey keyEvent && keyEvent.Keycode == Key.G && keyEvent.Pressed && !keyEvent.Echo)
+		{
+			if (SelectionManager.Instance?.Gizmo != null)
+			{
+				SelectionManager.Instance.Gizmo.UseLocalSpace = !SelectionManager.Instance.Gizmo.UseLocalSpace;
+				string mode = SelectionManager.Instance.Gizmo.UseLocalSpace ? "Local" : "Global";
+				GD.Print($"Transform mode: {mode}");
+			}
+		}
 
 		if (@event is InputEventMouseButton { ButtonIndex: MouseButton.Left } buttonEvent)
 		{

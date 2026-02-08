@@ -65,6 +65,7 @@ public partial class SceneTree : Panel
 		Tree.SelectMode = Tree.SelectModeEnum.Single;
 		Tree.AllowReselect = true;
 		Tree.AllowRmbSelect = true; // Enable right-click selection
+		Tree.DropModeFlags = (int)Tree.DropModeFlagsEnum.OnItem | (int)Tree.DropModeFlagsEnum.Inbetween;
 		
 		vbox.AddChild(Tree);
 		
@@ -81,6 +82,13 @@ public partial class SceneTree : Panel
 		Tree.ItemActivated += OnItemActivated;
 		Tree.ItemCollapsed += OnItemCollapsed;
 		Tree.ItemMouseSelected += OnItemMouseSelected;
+		
+		// Setup drag and drop
+		Tree.SetDragForwarding(
+			Callable.From<Vector2, Variant>(GetDragData),
+			Callable.From<Vector2, Variant, bool>(CanDropData),
+			Callable.From<Vector2, Variant>(DropData)
+		);
 	}
 
 	private Control CreateDraggingPreview()
@@ -141,6 +149,143 @@ public partial class SceneTree : Panel
 		{
 			item.Select(0);
 		}
+	}
+	
+	private Variant GetDragData(Vector2 position)
+	{
+		var item = Tree.GetItemAtPosition(position);
+		if (item != null && ObjectMap.TryGetValue(item, out var sceneObject))
+		{
+			// Create drag preview
+			var preview = new Label();
+			preview.Text = sceneObject.GetDisplayName();
+			preview.AddThemeColorOverride("font_color", new Color(1, 1, 1, 0.8f));
+			Tree.SetDragPreview(preview);
+			
+			// Return the scene object as drag data
+			return Variant.From(new Dictionary() { { "scene_object", sceneObject }, { "tree_item", item } });
+		}
+		return default;
+	}
+	
+	private bool CanDropData(Vector2 position, Variant data)
+	{
+		var dict = data.AsGodotDictionary();
+		if (dict == null || !dict.ContainsKey("scene_object"))
+			return false;
+		
+		var draggedObject = dict["scene_object"].As<SceneObject>();
+		if (draggedObject == null)
+			return false;
+		
+		var targetItem = Tree.GetItemAtPosition(position);
+		
+		// Can drop between items or on items
+		if (targetItem == null)
+		{
+			// Allow dropping at root level
+			return true;
+		}
+		
+		// Get target object
+		if (ObjectMap.TryGetValue(targetItem, out var targetObject))
+		{
+			// Can't drop on self
+			if (draggedObject == targetObject)
+				return false;
+			
+			// Can't drop on a child of self (would create circular dependency)
+			if (IsDescendantOf(targetObject, draggedObject))
+				return false;
+			
+			return true;
+		}
+		
+		return false;
+	}
+	
+	private void DropData(Vector2 position, Variant data)
+	{
+		var dict = data.AsGodotDictionary();
+		if (dict == null || !dict.ContainsKey("scene_object"))
+			return;
+		
+		var draggedObject = dict["scene_object"].As<SceneObject>();
+		if (draggedObject == null)
+			return;
+		
+		var targetItem = Tree.GetItemAtPosition(position);
+		var dropSection = Tree.GetDropSectionAtPosition(position);
+		
+		// Check if shift is held to preserve global transform
+		bool preserveGlobalTransform = Input.IsKeyPressed(Key.Shift);
+		
+		// Determine new parent based on drop position
+		Node newParent = null;
+		
+		if (targetItem == null)
+		{
+			// Dropped in empty space, reparent to viewport root
+			newParent = Viewport;
+		}
+		else if (ObjectMap.TryGetValue(targetItem, out var targetObject))
+		{
+			if (dropSection == 0)
+			{
+				// Dropped on item - make it a child
+				newParent = targetObject;
+			}
+			else
+			{
+				// Dropped above/below item - use same parent as target
+				newParent = targetObject.GetParent();
+			}
+		}
+		
+		if (newParent != null && newParent != draggedObject.GetParent())
+		{
+			// Reparent the object
+			ReparentObject(draggedObject, newParent, preserveGlobalTransform);
+		}
+	}
+	
+	private bool IsDescendantOf(Node potentialDescendant, Node potentialAncestor)
+	{
+		var parent = potentialDescendant.GetParent();
+		while (parent != null)
+		{
+			if (parent == potentialAncestor)
+				return true;
+			parent = parent.GetParent();
+		}
+		return false;
+	}
+	
+	private async void ReparentObject(SceneObject sceneObject, Node newParent, bool preserveGlobalTransform)
+	{
+		Transform3D? globalTransform = null;
+		
+		// Only store global transform if shift is held
+		if (preserveGlobalTransform)
+		{
+			globalTransform = sceneObject.GlobalTransform;
+		}
+		
+		// Reparent
+		sceneObject.Reparent(newParent);
+		
+		// Restore global transform if shift was held
+		if (globalTransform.HasValue)
+		{
+			sceneObject.GlobalTransform = globalTransform.Value;
+		}
+		
+		// Rebuild tree to reflect changes
+		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+		BuildTree();
+		
+		// Reselect the object
+		SelectObject(sceneObject);
 	}
 
 	private void OnItemSelected()

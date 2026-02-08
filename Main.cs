@@ -2,6 +2,7 @@ using Gizmo3DPlugin;
 using Godot;
 using simplyRemadeNuxi.core;
 using simplyRemadeNuxi.ui;
+using System.Linq;
 using SceneTree = simplyRemadeNuxi.core.SceneTree;
 
 namespace simplyRemadeNuxi;
@@ -42,8 +43,11 @@ public partial class Main : Control
 		
 		SceneTreePanel.ObjectSelected += OnSceneObjectSelected;
 		
-		// Check if Minecraft JSON files are loaded
+		// Check if Minecraft assets are loaded
 		var loader = MinecraftJsonLoader.Instance;
+		var textureLoader = MinecraftTextureLoader.Instance;
+		var characterLoader = CharacterLoader.Instance;
+		
 		if (loader.IsLoaded)
 		{
 			GD.Print($"Main scene started with {loader.TotalFilesLoaded} Minecraft JSON files loaded.");
@@ -51,6 +55,26 @@ public partial class Main : Control
 		else
 		{
 			GD.PrintErr("Warning: Main scene started without Minecraft JSON files loaded!");
+		}
+		
+		if (textureLoader.IsLoaded)
+		{
+			GD.Print($"Main scene started with {textureLoader.TotalTexturesLoaded} Minecraft textures loaded.");
+			GD.Print($"  - Block textures: {textureLoader.GetAllBlockTexturePaths().Count()}");
+			GD.Print($"  - Item textures: {textureLoader.GetAllItemTexturePaths().Count()}");
+		}
+		else
+		{
+			GD.PrintErr("Warning: Main scene started without Minecraft textures loaded!");
+		}
+		
+		if (characterLoader.IsLoaded)
+		{
+			GD.Print($"Main scene started with {characterLoader.TotalCharactersFound} character GLB files found.");
+		}
+		else
+		{
+			GD.PrintErr("Warning: Main scene started without character files scanned!");
 		}
 	}
 
