@@ -18,11 +18,12 @@ public partial class Main : Control
 	[Export] public MenuButton HelpButton;
 	
 	[Export] public TextureButton SpawnButton;
-	
-	[Export] public SubViewport Viewport;
-	[Export] public SceneTree SceneTreePanel;
-	[Export] public Control SceneTree;
-	[Export] public ObjectPropertiesPanel ObjectPropertyPanel;
+		
+		[Export] public SubViewport Viewport;
+		[Export] public SceneTree SceneTreePanel;
+		[Export] public Control SceneTree;
+		[Export] public ProjectPropertiesPanel ProjectPropertyPanel;
+		[Export] public ObjectPropertiesPanel ObjectPropertyPanel;
 	
 	private SpawnMenu _spawnMenu;
 	
