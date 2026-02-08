@@ -14,6 +14,8 @@ public partial class SceneTree : Panel
 	public Dictionary<TreeItem, SceneObject> ObjectMap = new Dictionary<TreeItem, SceneObject>();
 	
 	private bool _isProcessingSelection = false;
+	private PopupMenu _contextMenu;
+	private TreeItem _contextMenuItem;
 	
 	const string ItemMetaObject = "SceneObject";
 	const string ItemMetaExpanded = "IsExpanded";
@@ -54,30 +56,6 @@ public partial class SceneTree : Panel
 		vbox.SetAnchorsPreset(LayoutPreset.FullRect);
 		AddChild(vbox);
 		
-		var toolbox = new HBoxContainer();
-		toolbox.Name = "Toolbar";
-		toolbox.CustomMinimumSize = new Vector2(0, 24);
-		toolbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		vbox.AddChild(toolbox);
-
-		var addBtn = new Button();
-		addBtn.Name = "AddButton";
-		addBtn.Text = "+";
-		addBtn.TooltipText = "Add Object";
-		addBtn.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
-		toolbox.AddChild(addBtn);
-		
-		var deleteBtn = new Button();
-		deleteBtn.Name = "DeleteButton";
-		deleteBtn.Text = "-";
-		deleteBtn.TooltipText = "Delete Object";
-		deleteBtn.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
-		toolbox.AddChild(deleteBtn);
-
-		//Connect Buttons
-		addBtn.Pressed += OnAddPressed;
-		deleteBtn.Pressed += OnRemovePressed;
-		
 		Tree = new Tree();
 		Tree.Name = "Tree";
 		Tree.SizeFlagsHorizontal = SizeFlags.ExpandFill;
@@ -86,14 +64,23 @@ public partial class SceneTree : Panel
 		Tree.HideRoot = true;
 		Tree.SelectMode = Tree.SelectModeEnum.Single;
 		Tree.AllowReselect = true;
+		Tree.AllowRmbSelect = true; // Enable right-click selection
 		
 		vbox.AddChild(Tree);
+		
+		// Setup context menu
+		_contextMenu = new PopupMenu();
+		_contextMenu.Name = "ContextMenu";
+		_contextMenu.AddItem("Delete", 0);
+		_contextMenu.IndexPressed += OnContextMenuIndexPressed;
+		AddChild(_contextMenu);
 		
 		//Connect Tree
 		Tree.ItemSelected += OnItemSelected;
 		Tree.ItemEdited += OnItemEdited;
 		Tree.ItemActivated += OnItemActivated;
 		Tree.ItemCollapsed += OnItemCollapsed;
+		Tree.ItemMouseSelected += OnItemMouseSelected;
 	}
 
 	private Control CreateDraggingPreview()
@@ -199,6 +186,35 @@ public partial class SceneTree : Panel
 		var meta = (Dictionary)item.GetMetadata(0);
 		meta[ItemMetaExpanded] = item.Collapsed;
 	}
+	
+	private void OnItemMouseSelected(Vector2 position, long mouseButtonIndex)
+	{
+		// Right-click detected
+		if (mouseButtonIndex == (long)MouseButton.Right)
+		{
+			var selected = Tree.GetSelected();
+			if (selected != null && ObjectMap.ContainsKey(selected))
+			{
+				_contextMenuItem = selected;
+				// Show context menu using screen position
+				var screenPos = Tree.GetScreenPosition() + position;
+				_contextMenu.Position = (Vector2I)screenPos;
+				_contextMenu.Popup();
+			}
+		}
+	}
+	
+	private void OnContextMenuIndexPressed(long index)
+	{
+		if (index == 0) // Delete
+		{
+			if (_contextMenuItem != null && ObjectMap.TryGetValue(_contextMenuItem, out var sceneObject))
+			{
+				DeleteObject(sceneObject);
+				_contextMenuItem = null;
+			}
+		}
+	}
 
 	private int GetNextAvailableObjectNumber()
 	{
@@ -241,35 +257,6 @@ public partial class SceneTree : Panel
 		}
 		
 		return nextNumber;
-	}
-
-	private void OnAddPressed()
-	{
-		if (Viewport != null)
-		{
-			var obj = new SceneObject();
-			obj.Name = "Object" + GetNextAvailableObjectNumber();
-			Viewport.AddChild(obj);
-			var material = new StandardMaterial3D();
-			var meshInstance = new MeshInstance3D();
-			var mesh = new BoxMesh();
-			mesh.SurfaceSetMaterial(0, material);
-			meshInstance.Mesh = mesh;
-			obj.AddVisualInstance(meshInstance);
-			BuildTree();
-			_isProcessingSelection = true;
-			SelectObject(obj);
-			_isProcessingSelection = false;
-		}
-	}
-
-	private void OnRemovePressed()
-	{
-		var selected = Tree.GetSelected();
-		if (selected != null && ObjectMap.TryGetValue(selected, out var item))
-		{
-			DeleteObject(item);
-		}
 	}
 
 	private async void DeleteObject(SceneObject sceneObject)

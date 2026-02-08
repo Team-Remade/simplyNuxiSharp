@@ -6,10 +6,12 @@
 [ext_resource type="Script" uid="uid://c7r7ej2l8wj2e" path="res://addons/dockable_container/layout.gd" id="4_3dxm6"]
 [ext_resource type="Script" uid="uid://dcjai3itiedcl" path="res://addons/dockable_container/layout_split.gd" id="4_fos0i"]
 [ext_resource type="Script" uid="uid://1358ext44s8c" path="res://src/core/SceneTree.cs" id="6_3dxm6"]
+[ext_resource type="Environment" uid="uid://xn3wh5pxus5k" path="res://assets/Env.tres" id="6_20pc6"]
 [ext_resource type="Script" uid="uid://yk4xrjo1fpr7" path="res://src/core/WorkCamera.cs" id="6_lgr22"]
 [ext_resource type="Shader" uid="uid://btpopdqor5lee" path="res://assets/Shaders/Picking.gdshader" id="7_trn2v"]
 [ext_resource type="Script" uid="uid://gv1c5wwt7ydw" path="res://src/core/ObjectPropertiesPanel.cs" id="8_props"]
 [ext_resource type="Script" uid="uid://d1j8yvxoe0f0r" path="res://src/core/TimelinePanel.cs" id="8_wkp8b"]
+[ext_resource type="Texture2D" uid="uid://lyvreubvsmie" path="res://assets/img/bench.png" id="9_5vvyt"]
 
 [sub_resource type="Resource" id="Resource_3dxm6"]
 resource_name = "Tabs"
@@ -66,11 +68,7 @@ resource_name = "Layout"
 script = ExtResource("4_3dxm6")
 root = SubResource("Resource_c6i3y")
 
-[sub_resource type="Environment" id="Environment_fos0i"]
-background_mode = 3
-background_canvas_max_layer = 1
-
-[node name="Main" type="Control" unique_id=718552606 node_paths=PackedStringArray("FileButton", "EditButton", "ViewButton", "RenderButton", "HelpButton", "Viewport", "SceneTreePanel", "SceneTree", "ObjectPropertyPanel")]
+[node name="Main" type="Control" unique_id=718552606 node_paths=PackedStringArray("FileButton", "EditButton", "ViewButton", "RenderButton", "HelpButton", "SpawnButton", "Viewport", "SceneTreePanel", "SceneTree", "ObjectPropertyPanel")]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -83,6 +81,7 @@ EditButton = NodePath("Content/Menubar/EditButton")
 ViewButton = NodePath("Content/Menubar/ViewButton")
 RenderButton = NodePath("Content/Menubar/RenderButton")
 HelpButton = NodePath("Content/Menubar/HelpButton")
+SpawnButton = NodePath("Content/MainContent/Viewport/ViewportUI/SpawnMenuButton")
 Viewport = NodePath("Content/MainContent/Viewport/MainViewport/SubViewport")
 SceneTreePanel = NodePath("Content/MainContent/Scene Tree")
 SceneTree = NodePath("Content/MainContent/Scene Tree")
@@ -169,19 +168,9 @@ handle_input_locally = false
 msaa_3d = 1
 screen_space_aa = 2
 use_debanding = true
+anisotropic_filtering_level = 3
 size = Vector2i(915, 392)
 render_target_update_mode = 4
-
-[node name="WorkCam" type="Camera3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=1302633907]
-transform = Transform3D(0.70710677, -0.49999997, 0.49999997, 0, 0.70710677, 0.70710677, -0.70710677, -0.49999997, 0.49999997, 3, 3, 3)
-script = ExtResource("6_lgr22")
-PickingShader = ExtResource("7_trn2v")
-
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=920564239]
-transform = Transform3D(0.8660254, -0.25, 0.4330127, 0, 0.8660254, 0.5, -0.5, -0.4330127, 0.75, 0, 0, 0)
-
-[node name="WorldEnvironment" type="WorldEnvironment" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=1863678213]
-environment = SubResource("Environment_fos0i")
 
 [node name="CanvasLayer" type="CanvasLayer" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=1815694963]
 
@@ -199,6 +188,34 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+
+[node name="WorkCam" type="Camera3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=1302633907]
+transform = Transform3D(0.70710677, -0.49999997, 0.49999997, 0, 0.70710677, 0.70710677, -0.70710677, -0.49999997, 0.49999997, 3, 3, 3)
+script = ExtResource("6_lgr22")
+PickingShader = ExtResource("7_trn2v")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=920564239]
+transform = Transform3D(0.8660254, -0.25, 0.4330127, 0, 0.8660254, 0.5, -0.5, -0.4330127, 0.75, 0, 0, 0)
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=966723163]
+environment = ExtResource("6_20pc6")
+
+[node name="ViewportUI" type="Control" parent="Content/MainContent/Viewport" unique_id=103339591]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="SpawnMenuButton" type="TextureButton" parent="Content/MainContent/Viewport/ViewportUI" unique_id=337365828]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = 96.0
+offset_bottom = 96.0
+texture_normal = ExtResource("9_5vvyt")
 
 [node name="Timeline" type="Panel" parent="Content/MainContent" unique_id=1397746994]
 layout_mode = 2

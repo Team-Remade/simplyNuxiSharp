@@ -1,6 +1,7 @@
 using Gizmo3DPlugin;
 using Godot;
 using simplyRemadeNuxi.core;
+using simplyRemadeNuxi.ui;
 using SceneTree = simplyRemadeNuxi.core.SceneTree;
 
 namespace simplyRemadeNuxi;
@@ -15,10 +16,14 @@ public partial class Main : Control
 	[Export] public MenuButton RenderButton;
 	[Export] public MenuButton HelpButton;
 	
+	[Export] public TextureButton SpawnButton;
+	
 	[Export] public SubViewport Viewport;
 	[Export] public SceneTree SceneTreePanel;
 	[Export] public Control SceneTree;
 	[Export] public ObjectPropertiesPanel ObjectPropertyPanel;
+	
+	private SpawnMenu _spawnMenu;
 	
 	public override void _EnterTree()
 	{
@@ -28,6 +33,7 @@ public partial class Main : Control
 	public override async void _Ready()
 	{
 		SetupMenus();
+		SetupSpawnMenu();
 		SceneTreePanel.SetViewport(Viewport);
 		
 		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
@@ -96,6 +102,24 @@ public partial class Main : Control
 		helpPopup.AddItem("Help", 0);
 		helpPopup.AddItem("Tutorials", 1);
 		//connect
+	}
+
+	private void SetupSpawnMenu()
+	{
+		_spawnMenu = new SpawnMenu();
+		_spawnMenu.Viewport = Viewport;
+		AddChild(_spawnMenu);
+		_spawnMenu.Hide();
+		
+		// Connect the SpawnButton pressed signal to show the menu
+		SpawnButton.Pressed += OnSpawnButtonPressed;
+	}
+	
+	private void OnSpawnButtonPressed()
+	{
+		// Show the spawn menu at the global position of the spawn button
+		var menuPosition = SpawnButton.GlobalPosition;
+		_spawnMenu.ShowMenu(menuPosition);
 	}
 
 	private void OnFileMenuPressed(int id)
