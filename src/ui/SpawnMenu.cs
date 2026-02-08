@@ -11,11 +11,13 @@ public partial class SpawnMenu : PopupPanel
 	private ItemList _objectList;
 	private ItemList _variantList;
 	private Button _spawnButton;
+	private LineEdit _searchBar;
 	private Dictionary<string, List<string>> _categories;
 	private string _selectedCategory = "Primitives";
 	private int _selectedObjectIndex = -1;
 	private int _selectedVariantIndex = -1;
 	private string _selectedBlockState = "";
+	private string _searchQuery = "";
 	
 	public SubViewport Viewport { get; set; }
 
@@ -27,6 +29,26 @@ public partial class SpawnMenu : PopupPanel
 		var overallContainer = new VBoxContainer();
 		overallContainer.SetAnchorsPreset(Control.LayoutPreset.FullRect);
 		AddChild(overallContainer);
+		
+		// Add search bar at the top
+		var searchContainer = new HBoxContainer();
+		searchContainer.AddThemeConstantOverride("separation", 10);
+		overallContainer.AddChild(searchContainer);
+		
+		var searchLabel = new Label();
+		searchLabel.Text = "Search:";
+		searchContainer.AddChild(searchLabel);
+		
+		_searchBar = new LineEdit();
+		_searchBar.PlaceholderText = "Type to search objects...";
+		_searchBar.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		_searchBar.TextChanged += OnSearchTextChanged;
+		searchContainer.AddChild(_searchBar);
+		
+		var clearButton = new Button();
+		clearButton.Text = "Clear";
+		clearButton.Pressed += OnClearSearchPressed;
+		searchContainer.AddChild(clearButton);
 		
 		// Create main container for categories, objects, and variants
 		var mainContainer = new HBoxContainer();
@@ -213,11 +235,29 @@ public partial class SpawnMenu : PopupPanel
 		{
 			foreach (var objectName in _categories[categoryName])
 			{
-				_objectList.AddItem(objectName);
+				// Filter based on search query
+				if (string.IsNullOrEmpty(_searchQuery) || 
+				    objectName.Contains(_searchQuery, System.StringComparison.OrdinalIgnoreCase))
+				{
+					_objectList.AddItem(objectName);
+				}
 			}
 		}
 		
 		_selectedCategory = categoryName;
+	}
+	
+	private void OnSearchTextChanged(string newText)
+	{
+		_searchQuery = newText;
+		UpdateObjectList(_selectedCategory);
+	}
+	
+	private void OnClearSearchPressed()
+	{
+		_searchBar.Text = "";
+		_searchQuery = "";
+		UpdateObjectList(_selectedCategory);
 	}
 
 	private void OnObjectListItemSelected(long index)

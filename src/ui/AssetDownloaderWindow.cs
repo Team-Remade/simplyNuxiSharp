@@ -94,6 +94,11 @@ public partial class AssetDownloaderWindow : Window
 		if (hasAssets && !_hasInternet)
 		{
 			UpdateStatus("No internet connection detected. Loading existing assets...", 0);
+			// Disable buttons while loading
+			if (DownloadButton != null)
+				DownloadButton.Disabled = true;
+			if (SkipButton != null)
+				SkipButton.Disabled = true;
 			await Task.Delay(500);
 			await LoadMinecraftJsonFiles();
 			CloseAndLoadMainScene();
@@ -107,6 +112,11 @@ public partial class AssetDownloaderWindow : Window
 			if (isLatest)
 			{
 				UpdateStatus("Latest assets already downloaded. Loading...", 0);
+				// Disable buttons while loading
+				if (DownloadButton != null)
+					DownloadButton.Disabled = true;
+				if (SkipButton != null)
+					SkipButton.Disabled = true;
 				await Task.Delay(500);
 				await LoadMinecraftJsonFiles();
 				CloseAndLoadMainScene();
@@ -256,6 +266,12 @@ public partial class AssetDownloaderWindow : Window
 	
 	private async void OnSkipButtonPressed()
 	{
+		// Disable buttons while loading
+		if (DownloadButton != null)
+			DownloadButton.Disabled = true;
+		if (SkipButton != null)
+			SkipButton.Disabled = true;
+		
 		await LoadMinecraftJsonFiles();
 		CloseAndLoadMainScene();
 	}
