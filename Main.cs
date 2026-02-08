@@ -41,6 +41,17 @@ public partial class Main : Control
 		SetupGizmo();
 		
 		SceneTreePanel.ObjectSelected += OnSceneObjectSelected;
+		
+		// Check if Minecraft JSON files are loaded
+		var loader = MinecraftJsonLoader.Instance;
+		if (loader.IsLoaded)
+		{
+			GD.Print($"Main scene started with {loader.TotalFilesLoaded} Minecraft JSON files loaded.");
+		}
+		else
+		{
+			GD.PrintErr("Warning: Main scene started without Minecraft JSON files loaded!");
+		}
 	}
 
 	private void SetupGizmo()

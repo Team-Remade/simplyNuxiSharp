@@ -1,5 +1,6 @@
 using Godot;
 using System.Collections.Generic;
+using System.Linq;
 using simplyRemadeNuxi.core;
 
 namespace simplyRemadeNuxi.ui;
@@ -8,23 +9,26 @@ public partial class SpawnMenu : PopupPanel
 {
 	private ItemList _categoryList;
 	private ItemList _objectList;
+	private ItemList _variantList;
 	private Button _spawnButton;
 	private Dictionary<string, List<string>> _categories;
 	private string _selectedCategory = "Primitives";
 	private int _selectedObjectIndex = -1;
+	private int _selectedVariantIndex = -1;
+	private string _selectedBlockState = "";
 	
 	public SubViewport Viewport { get; set; }
 
 	public override void _Ready()
 	{
-		SetSize(new Vector2I(600, 400));
+		SetSize(new Vector2I(900, 400));
 		
 		// Create overall vertical container
 		var overallContainer = new VBoxContainer();
 		overallContainer.SetAnchorsPreset(Control.LayoutPreset.FullRect);
 		AddChild(overallContainer);
 		
-		// Create main container for categories and objects
+		// Create main container for categories, objects, and variants
 		var mainContainer = new HBoxContainer();
 		mainContainer.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
 		overallContainer.AddChild(mainContainer);
@@ -44,21 +48,38 @@ public partial class SpawnMenu : PopupPanel
 		_categoryList.ItemSelected += OnCategorySelected;
 		leftContainer.AddChild(_categoryList);
 		
-		// Right column - Objects
-		var rightContainer = new VBoxContainer();
-		rightContainer.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-		mainContainer.AddChild(rightContainer);
+		// Middle column - Objects/Blocks
+		var middleContainer = new VBoxContainer();
+		middleContainer.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		mainContainer.AddChild(middleContainer);
 		
 		var objectLabel = new Label();
 		objectLabel.Text = "Objects";
 		objectLabel.AddThemeStyleboxOverride("normal", new StyleBoxFlat());
-		rightContainer.AddChild(objectLabel);
+		middleContainer.AddChild(objectLabel);
 		
 		_objectList = new ItemList();
 		_objectList.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
 		_objectList.ItemActivated += OnObjectDoubleClicked;
 		_objectList.ItemSelected += OnObjectListItemSelected;
-		rightContainer.AddChild(_objectList);
+		middleContainer.AddChild(_objectList);
+		
+		// Right column - Variants
+		var rightContainer = new VBoxContainer();
+		rightContainer.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		rightContainer.CustomMinimumSize = new Vector2(250, 0);
+		mainContainer.AddChild(rightContainer);
+		
+		var variantLabel = new Label();
+		variantLabel.Text = "Variants";
+		variantLabel.AddThemeStyleboxOverride("normal", new StyleBoxFlat());
+		rightContainer.AddChild(variantLabel);
+		
+		_variantList = new ItemList();
+		_variantList.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+		_variantList.ItemActivated += OnVariantDoubleClicked;
+		_variantList.ItemSelected += OnVariantListItemSelected;
+		rightContainer.AddChild(_variantList);
 		
 		// Add bottom container with spawn button
 		var bottomContainer = new HBoxContainer();
@@ -100,6 +121,67 @@ public partial class SpawnMenu : PopupPanel
 				} 
 			}
 		};
+		
+		// Add Blocks category from loaded Minecraft models
+		LoadMinecraftBlocks();
+	}
+	
+	private void LoadMinecraftBlocks()
+	{
+		var loader = MinecraftJsonLoader.Instance;
+		if (!loader.IsLoaded)
+		{
+			GD.PrintErr("Cannot load Minecraft blocks - JSON files not loaded yet!");
+			return;
+		}
+		
+		var blocks = new List<string>();
+		
+		// Get all blockstate paths
+		foreach (var blockStatePath in loader.GetAllBlockStatePaths())
+		{
+			// Look for blockstates in the "blockstates" directory
+			if (blockStatePath.Contains("blockstates", System.StringComparison.OrdinalIgnoreCase))
+			{
+				// Extract the block name from the path
+				var fileName = System.IO.Path.GetFileNameWithoutExtension(blockStatePath);
+				
+				// Clean up the name for display
+				var displayName = CleanBlockName(fileName);
+				if (!blocks.Contains(displayName))
+				{
+					blocks.Add(displayName);
+				}
+			}
+		}
+		
+		// Sort alphabetically for easier browsing
+		blocks.Sort();
+		
+		if (blocks.Count > 0)
+		{
+			_categories["Blocks"] = blocks;
+			GD.Print($"Added {blocks.Count} Minecraft blocks to spawn menu from blockstates");
+		}
+		else
+		{
+			GD.Print("No Minecraft blockstates found");
+		}
+	}
+	
+	private string CleanBlockName(string fileName)
+	{
+		// Convert underscores to spaces and capitalize words
+		var cleaned = fileName.Replace("_", " ");
+		var words = cleaned.Split(' ');
+		for (int i = 0; i < words.Length; i++)
+		{
+			if (words[i].Length > 0)
+			{
+				words[i] = char.ToUpper(words[i][0]) + words[i].Substring(1);
+			}
+		}
+		return string.Join(" ", words);
 	}
 
 	private void PopulateCategoryList()
@@ -141,13 +223,90 @@ public partial class SpawnMenu : PopupPanel
 	private void OnObjectListItemSelected(long index)
 	{
 		_selectedObjectIndex = (int)index;
-		_spawnButton.Disabled = false;
+		_selectedVariantIndex = -1;
+		
+GD.Print($"Selected object index: {index}, category: {_selectedCategory}");
+		
+		// Update variants list if this is a block
+		if (_selectedCategory == "Blocks")
+		{
+			var objectName = _objectList.GetItemText((int)index);
+			GD.Print($"Selected block: {objectName}");
+			UpdateVariantList(objectName);
+			// Don't set disabled here - let UpdateVariantList handle it
+		}
+		else
+		{
+			// For primitives, no variant selection needed
+			_variantList.Clear();
+			_spawnButton.Disabled = false;
+			GD.Print("Primitive selected - button enabled");
+		}
 	}
 	
 	private void OnObjectDoubleClicked(long index)
 	{
 		_selectedObjectIndex = (int)index;
+		
+		// For non-block items, spawn immediately
+		if (_selectedCategory != "Blocks")
+		{
+			SpawnSelectedObject();
+		}
+	}
+	
+	private void OnVariantListItemSelected(long index)
+	{
+		_selectedVariantIndex = (int)index;
+		_spawnButton.Disabled = false;
+	}
+	
+	private void OnVariantDoubleClicked(long index)
+	{
+		_selectedVariantIndex = (int)index;
 		SpawnSelectedObject();
+	}
+	
+	private void UpdateVariantList(string blockName)
+	{
+		_variantList.Clear();
+		
+		// Convert display name back to file name format
+		var fileName = blockName.ToLower().Replace(" ", "_");
+		
+		GD.Print($"Loading variants for blockstate: {fileName}");
+		
+		// Get variants for this blockstate
+		var variants = MinecraftModelHelper.GetBlockStateVariants(fileName);
+		
+		GD.Print($"Found {variants?.Count ?? 0} variants");
+		
+		if (variants != null && variants.Count > 0)
+		{
+			foreach (var variant in variants)
+			{
+				// Display the variant, or "Default" if empty string
+				var displayName = string.IsNullOrEmpty(variant) ? "Default" : variant;
+				_variantList.AddItem(displayName);
+			}
+			
+			// Auto-select first variant and enable spawn button
+			if (_variantList.ItemCount > 0)
+			{
+				_variantList.Select(0);
+				_selectedVariantIndex = 0;
+				_spawnButton.Disabled = false;
+				GD.Print("Spawn button enabled with variant auto-selected");
+			}
+		}
+		else
+		{
+			_variantList.AddItem("(No variants found)");
+			_spawnButton.Disabled = true;
+			GD.Print("No variants found - spawn button disabled");
+		}
+		
+		_selectedBlockState = fileName;
 	}
 	
 	private void OnSpawnButtonPressed()
@@ -184,24 +343,39 @@ public partial class SpawnMenu : PopupPanel
 		sceneObject.Name = fullObjectName;
 		sceneObject.ObjectType = objectName;
 		
-		// Create the appropriate mesh
-		var meshInstance = new MeshInstance3D();
-		var mesh = CreatePrimitiveMesh(objectName);
+		Node3D visualNode = null;
 		
-		if (mesh != null)
+		// Check if this is a Minecraft block
+		if (_selectedCategory == "Blocks")
 		{
-			meshInstance.Mesh = mesh;
+			visualNode = CreateMinecraftBlock(objectName);
+		}
+		else
+		{
+			// Create primitive mesh
+			var meshInstance = new MeshInstance3D();
+			var mesh = CreatePrimitiveMesh(objectName);
 			
-			// Create a material for the mesh
-			var material = new StandardMaterial3D();
-			material.AlbedoColor = new Color(0.8f, 0.8f, 0.8f);
-			meshInstance.MaterialOverride = material;
-			
-			// Set shadows
-			meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
-			
-			// Add the mesh to the scene object's visual
-			sceneObject.AddVisualInstance(meshInstance);
+			if (mesh != null)
+			{
+				meshInstance.Mesh = mesh;
+				
+				// Create a material for the mesh
+				var material = new StandardMaterial3D();
+				material.AlbedoColor = new Color(0.8f, 0.8f, 0.8f);
+				meshInstance.MaterialOverride = material;
+				
+				// Set shadows
+				meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
+				
+				visualNode = meshInstance;
+			}
+		}
+		
+		if (visualNode != null)
+		{
+			// Add the visual to the scene object
+			sceneObject.AddVisualInstance(visualNode);
 			
 			// Add to viewport
 			Viewport.AddChild(sceneObject);
@@ -218,8 +392,32 @@ public partial class SpawnMenu : PopupPanel
 		else
 		{
 			sceneObject.QueueFree();
-			GD.PrintErr($"Could not create mesh for {objectName}");
+			GD.PrintErr($"Could not create visual for {objectName}");
 		}
+	}
+	
+	private Node3D CreateMinecraftBlock(string blockName)
+	{
+		// Get the selected variant
+		string variant = "";
+		if (_selectedVariantIndex >= 0 && _selectedVariantIndex < _variantList.ItemCount)
+		{
+			var variantName = _variantList.GetItemText(_selectedVariantIndex);
+			// If it says "Default", use empty string
+			variant = variantName == "Default" ? "" : variantName;
+		}
+		
+		// Create the node from the blockstate
+		var blockNode = MinecraftModelHelper.CreateNodeFromBlockState(_selectedBlockState, variant);
+		
+		if (blockNode != null)
+		{
+			GD.Print($"Successfully created Minecraft block: {blockName} (variant: {(string.IsNullOrEmpty(variant) ? "default" : variant)})");
+			return blockNode;
+		}
+		
+		GD.PrintErr($"Failed to create Minecraft block: {blockName}");
+		return null;
 	}
 	
 	private int GetNextAvailableObjectNumber(string objectType)
@@ -290,7 +488,7 @@ public partial class SpawnMenu : PopupPanel
 	public void ShowMenu(Vector2 position)
 	{
 		// Set popup position and size
-		var rect = new Rect2I((Vector2I)position, new Vector2I(600, 400));
+		var rect = new Rect2I((Vector2I)position, new Vector2I(900, 400));
 		PopupOnParent(rect);
 	}
 }

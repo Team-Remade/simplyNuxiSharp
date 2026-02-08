@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cxfhvkx0bkbl"]
+
+[ext_resource type="Script" path="res://Launcher.cs" id="1_launcher"]
+
+[node name="Launcher" type="Node"]
+script = ExtResource("1_launcher")
