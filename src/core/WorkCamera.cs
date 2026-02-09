@@ -199,6 +199,8 @@ public partial class WorkCamera : Camera3D
 				UpdateObjectForPicking(so);
 			}
 		}
+
+		Main.Instance.ProjectPropertyPanel.FloorNode.Visible = false;
 		
 		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
 		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
@@ -217,6 +219,8 @@ public partial class WorkCamera : Camera3D
 				RestoreObjectMaterial(so);
 			}
 		}
+		
+		Main.Instance.ProjectPropertyPanel.FloorNode.Visible = true;
 		
 		PickViewport.ProcessMode = ProcessModeEnum.Disabled;
 		PickViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;

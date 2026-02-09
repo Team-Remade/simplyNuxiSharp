@@ -8,6 +8,14 @@ namespace simplyRemadeNuxi.core;
 public partial class ProjectPropertiesPanel : Panel
 {
 	private VBoxContainer _vboxContainer;
+	
+	// Project settings controls
+	private LineEdit _projectNameEdit;
+	private SpinBox _resolutionWidthSpinBox;
+	private SpinBox _resolutionHeightSpinBox;
+	private SpinBox _framerateSpinBox;
+	private CollapsibleSection _projectSettingsSection;
+	
 	private ColorPickerButton _backgroundColorPicker;
 	private Button _backgroundImageButton;
 	private Label _backgroundImageLabel;
@@ -27,6 +35,7 @@ public partial class ProjectPropertiesPanel : Panel
 	// Reference to the floor node
 	private Node3D _floorNode;
 	private MeshInstance3D _floorMeshInstance;
+	public Node3D FloorNode => _floorNode;
 	
 	// Store the current background image path
 	private string _currentBackgroundImagePath = "";
@@ -73,6 +82,167 @@ public partial class ProjectPropertiesPanel : Panel
 		var spacer1 = new Control();
 		spacer1.CustomMinimumSize = new Vector2(0, 10);
 		vbox.AddChild(spacer1);
+
+		// Project Settings section
+		_projectSettingsSection = new CollapsibleSection("Project Settings");
+		_projectSettingsSection.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		vbox.AddChild(_projectSettingsSection);
+		
+		// Hide the reset button for project properties
+		_projectSettingsSection.GetResetButton().Visible = false;
+		
+		var projectSettingsContainer = _projectSettingsSection.GetContentContainer();
+		
+		// Project Name
+		var nameRow = new VBoxContainer();
+		projectSettingsContainer.AddChild(nameRow);
+		
+		var nameLabel = new Label();
+		nameLabel.Text = "Project Name:";
+		nameRow.AddChild(nameLabel);
+		
+		_projectNameEdit = new LineEdit();
+		_projectNameEdit.Name = "ProjectNameEdit";
+		_projectNameEdit.PlaceholderText = "My Animation Project";
+		_projectNameEdit.Text = "My Animation Project";
+		_projectNameEdit.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_projectNameEdit.TextChanged += OnProjectNameChanged;
+		nameRow.AddChild(_projectNameEdit);
+		
+		// Add spacing
+		var spacerName = new Control();
+		spacerName.CustomMinimumSize = new Vector2(0, 8);
+		projectSettingsContainer.AddChild(spacerName);
+		
+		// Resolution
+		var resolutionRow = new VBoxContainer();
+		projectSettingsContainer.AddChild(resolutionRow);
+		
+		var resolutionLabel = new Label();
+		resolutionLabel.Text = "Resolution:";
+		resolutionRow.AddChild(resolutionLabel);
+		
+		var resolutionInputRow = new HBoxContainer();
+		resolutionInputRow.AddThemeConstantOverride("separation", 8);
+		resolutionRow.AddChild(resolutionInputRow);
+		
+		_resolutionWidthSpinBox = new SpinBox();
+		_resolutionWidthSpinBox.Name = "ResolutionWidthSpinBox";
+		_resolutionWidthSpinBox.MinValue = 16;
+		_resolutionWidthSpinBox.MaxValue = 7680;
+		_resolutionWidthSpinBox.Value = 1920;
+		_resolutionWidthSpinBox.Step = 1;
+		_resolutionWidthSpinBox.CustomMinimumSize = new Vector2(100, 0);
+		_resolutionWidthSpinBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_resolutionWidthSpinBox.ValueChanged += OnResolutionChanged;
+		resolutionInputRow.AddChild(_resolutionWidthSpinBox);
+		
+		var xLabel = new Label();
+		xLabel.Text = "×";
+		xLabel.VerticalAlignment = VerticalAlignment.Center;
+		resolutionInputRow.AddChild(xLabel);
+		
+		_resolutionHeightSpinBox = new SpinBox();
+		_resolutionHeightSpinBox.Name = "ResolutionHeightSpinBox";
+		_resolutionHeightSpinBox.MinValue = 16;
+		_resolutionHeightSpinBox.MaxValue = 4320;
+		_resolutionHeightSpinBox.Value = 1080;
+		_resolutionHeightSpinBox.Step = 1;
+		_resolutionHeightSpinBox.CustomMinimumSize = new Vector2(100, 0);
+		_resolutionHeightSpinBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_resolutionHeightSpinBox.ValueChanged += OnResolutionChanged;
+		resolutionInputRow.AddChild(_resolutionHeightSpinBox);
+		
+		// Add preset resolution buttons
+		var presetsResolutionLabel = new Label();
+		presetsResolutionLabel.Text = "Presets:";
+		presetsResolutionLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
+		presetsResolutionLabel.AddThemeFontSizeOverride("font_size", 11);
+		resolutionRow.AddChild(presetsResolutionLabel);
+		
+		var presetsResolutionRow = new HBoxContainer();
+		presetsResolutionRow.AddThemeConstantOverride("separation", 4);
+		resolutionRow.AddChild(presetsResolutionRow);
+		
+		var resolutionPresets = new (string name, int width, int height)[]
+		{
+			("720p", 1280, 720),
+			("1080p", 1920, 1080),
+			("1440p", 2560, 1440),
+			("4K", 3840, 2160)
+		};
+		
+		foreach (var preset in resolutionPresets)
+		{
+			var presetButton = new Button();
+			presetButton.Text = preset.name;
+			presetButton.CustomMinimumSize = new Vector2(60, 24);
+			presetButton.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+			
+			var capturedWidth = preset.width;
+			var capturedHeight = preset.height;
+			presetButton.Pressed += () => OnResolutionPresetPressed(capturedWidth, capturedHeight);
+			
+			presetsResolutionRow.AddChild(presetButton);
+		}
+		
+		// Add spacing
+		var spacerResolution = new Control();
+		spacerResolution.CustomMinimumSize = new Vector2(0, 8);
+		projectSettingsContainer.AddChild(spacerResolution);
+		
+		// Framerate
+		var framerateRow = new VBoxContainer();
+		projectSettingsContainer.AddChild(framerateRow);
+		
+		var framerateLabel = new Label();
+		framerateLabel.Text = "Framerate (FPS):";
+		framerateRow.AddChild(framerateLabel);
+		
+		var framerateInputRow = new HBoxContainer();
+		framerateInputRow.AddThemeConstantOverride("separation", 8);
+		framerateRow.AddChild(framerateInputRow);
+		
+		_framerateSpinBox = new SpinBox();
+		_framerateSpinBox.Name = "FramerateSpinBox";
+		_framerateSpinBox.MinValue = 1;
+		_framerateSpinBox.MaxValue = 120;
+		_framerateSpinBox.Value = 30;
+		_framerateSpinBox.Step = 1;
+		_framerateSpinBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_framerateSpinBox.ValueChanged += OnFramerateChanged;
+		framerateInputRow.AddChild(_framerateSpinBox);
+		
+		// Add preset framerate buttons
+		var presetsFramerateLabel = new Label();
+		presetsFramerateLabel.Text = "Presets:";
+		presetsFramerateLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
+		presetsFramerateLabel.AddThemeFontSizeOverride("font_size", 11);
+		framerateRow.AddChild(presetsFramerateLabel);
+		
+		var presetsFramerateRow = new HBoxContainer();
+		presetsFramerateRow.AddThemeConstantOverride("separation", 4);
+		framerateRow.AddChild(presetsFramerateRow);
+		
+		var frameratePresets = new int[] { 24, 30, 60, 120 };
+		
+		foreach (var fps in frameratePresets)
+		{
+			var presetButton = new Button();
+			presetButton.Text = $"{fps}";
+			presetButton.CustomMinimumSize = new Vector2(50, 24);
+			presetButton.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+			
+			var capturedFps = fps;
+			presetButton.Pressed += () => OnFrameratePresetPressed(capturedFps);
+			
+			presetsFramerateRow.AddChild(presetButton);
+		}
+		
+		// Add spacing
+		var spacerFramerate = new Control();
+		spacerFramerate.CustomMinimumSize = new Vector2(0, 10);
+		vbox.AddChild(spacerFramerate);
 
 		// Background section with collapsible dropdown
 		_backgroundSection = new CollapsibleSection("Background");
@@ -338,6 +508,9 @@ public partial class ProjectPropertiesPanel : Panel
 		{
 			_backgroundColorNode.Color = color;
 			GD.Print($"Background color changed to: {color}");
+			
+			// Sync to preview viewport
+			Main.Instance?.SyncPreviewBackground();
 		}
 	}
 
@@ -393,6 +566,9 @@ public partial class ProjectPropertiesPanel : Panel
 			OnStretchToFitToggled(_stretchToFitCheckbox.ButtonPressed);
 			
 			GD.Print($"Background image changed to: {path}");
+			
+			// Sync to preview viewport
+			Main.Instance?.SyncPreviewBackground();
 		}
 	}
 
@@ -414,6 +590,9 @@ public partial class ProjectPropertiesPanel : Panel
 				_backgroundImageNode.StretchMode = TextureRect.StretchModeEnum.Keep;
 				GD.Print("Background image stretch mode: Keep Aspect");
 			}
+			
+			// Sync to preview viewport
+			Main.Instance?.SyncPreviewBackground();
 		}
 	}
 
@@ -425,6 +604,9 @@ public partial class ProjectPropertiesPanel : Panel
 			_currentBackgroundImagePath = "";
 			_backgroundImageLabel.Text = "No image selected";
 			GD.Print("Background image cleared");
+			
+			// Sync to preview viewport
+			Main.Instance?.SyncPreviewBackground();
 		}
 	}
 	
@@ -631,5 +813,41 @@ public partial class ProjectPropertiesPanel : Panel
 		}
 		
 		return false;
+	}
+	
+	private void OnProjectNameChanged(string newName)
+	{
+		GD.Print($"Project name changed to: {newName}");
+		// TODO: Save to project file or settings
+	}
+	
+	private void OnResolutionChanged(double value)
+	{
+		var width = (int)_resolutionWidthSpinBox.Value;
+		var height = (int)_resolutionHeightSpinBox.Value;
+		GD.Print($"Resolution changed to: {width}x{height}");
+		// TODO: Apply resolution to render viewport
+	}
+	
+	private void OnResolutionPresetPressed(int width, int height)
+	{
+		_resolutionWidthSpinBox.Value = width;
+		_resolutionHeightSpinBox.Value = height;
+		GD.Print($"Resolution preset applied: {width}x{height}");
+		// OnResolutionChanged will be called automatically via ValueChanged signal
+	}
+	
+	private void OnFramerateChanged(double value)
+	{
+		var fps = (int)value;
+		GD.Print($"Framerate changed to: {fps} FPS");
+		// TODO: Apply framerate to animation timeline
+	}
+	
+	private void OnFrameratePresetPressed(int fps)
+	{
+		_framerateSpinBox.Value = fps;
+		GD.Print($"Framerate preset applied: {fps} FPS");
+		// OnFramerateChanged will be called automatically via ValueChanged signal
 	}
 }

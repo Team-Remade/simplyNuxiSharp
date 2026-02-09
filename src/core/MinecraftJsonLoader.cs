@@ -17,6 +17,7 @@ public class MinecraftJsonLoader
 	public static MinecraftJsonLoader Instance => _instance ??= new MinecraftJsonLoader();
 	
 	private readonly string _assetsPath;
+	private readonly string _dataPath;
 	private Dictionary<string, MinecraftModel> _loadedModels;
 	private Dictionary<string, BlockState> _loadedBlockStates;
 	private bool _isLoaded = false;
@@ -31,7 +32,8 @@ public class MinecraftJsonLoader
 	{
 		// Use the user data directory path for assets
 		var userDataPath = OS.GetUserDataDir();
-		_assetsPath = Path.Combine(userDataPath, "data", "SimplyRemadeAssetsV1");
+		_dataPath = Path.Combine(userDataPath, "data");
+		_assetsPath = Path.Combine(_dataPath, "SimplyRemadeAssetsV1");
 		_loadedModels = new Dictionary<string, MinecraftModel>();
 		_loadedBlockStates = new Dictionary<string, BlockState>();
 		
@@ -66,9 +68,23 @@ public class MinecraftJsonLoader
 			
 			progressCallback?.Invoke("Scanning for JSON files...", 5);
 			
-			// Load all JSON files recursively
-			var jsonFiles = Directory.GetFiles(_assetsPath, "*.json", SearchOption.AllDirectories).ToList();
-			GD.Print($"Found {jsonFiles.Count} JSON files to load.");
+			// Find all asset folders in the data directory
+			var assetFolders = GetAssetFolders();
+			GD.Print($"Found {assetFolders.Count} asset folder(s) to load from: {string.Join(", ", assetFolders.Select(Path.GetFileName))}");
+			
+			// Load all JSON files recursively from all asset folders
+			var jsonFiles = new List<string>();
+			foreach (var assetFolder in assetFolders)
+			{
+				if (Directory.Exists(assetFolder))
+				{
+					var folderFiles = Directory.GetFiles(assetFolder, "*.json", SearchOption.AllDirectories);
+					jsonFiles.AddRange(folderFiles);
+					GD.Print($"Found {folderFiles.Length} JSON files in {Path.GetFileName(assetFolder)}");
+				}
+			}
+			
+			GD.Print($"Found {jsonFiles.Count} JSON files total to load.");
 			
 			progressCallback?.Invoke($"Found {jsonFiles.Count} files to load", 10);
 			
@@ -241,14 +257,59 @@ public class MinecraftJsonLoader
 	}
 	
 	/// <summary>
+	/// Gets all asset folders in the data directory (SimplyRemadeAssetsV1 and any additional folders)
+	/// </summary>
+	private List<string> GetAssetFolders()
+	{
+		var assetFolders = new List<string>();
+		
+		// Always include the main assets folder first
+		if (Directory.Exists(_assetsPath))
+		{
+			assetFolders.Add(_assetsPath);
+		}
+		
+		// Look for additional asset folders in the data directory
+		if (Directory.Exists(_dataPath))
+		{
+			var allFolders = Directory.GetDirectories(_dataPath);
+			foreach (var folder in allFolders)
+			{
+				var folderName = Path.GetFileName(folder);
+				// Include folders that end with "Assets" (e.g., "FarmersDelightAssets")
+				// but not the main SimplyRemadeAssetsV1 folder (already added)
+				if (folderName != "SimplyRemadeAssetsV1" && 
+				    (folderName.EndsWith("Assets", StringComparison.OrdinalIgnoreCase) || 
+				     folderName.Contains("Assets", StringComparison.OrdinalIgnoreCase)))
+				{
+					assetFolders.Add(folder);
+					GD.Print($"Found additional asset folder: {folderName}");
+				}
+			}
+		}
+		
+		return assetFolders;
+	}
+	
+	/// <summary>
 	/// Gets a relative path from the assets directory
 	/// </summary>
 	private string GetRelativePath(string fullPath)
 	{
+		// Try to get relative path from any of the asset folders
 		if (fullPath.StartsWith(_assetsPath))
 		{
 			return fullPath.Substring(_assetsPath.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 		}
+		
+		// Check if it's from an additional asset folder in the data directory
+		if (fullPath.StartsWith(_dataPath))
+		{
+			var relativePath = fullPath.Substring(_dataPath.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			// Prepend the asset folder name to maintain uniqueness
+			return relativePath;
+		}
+		
 		return fullPath;
 	}
 	

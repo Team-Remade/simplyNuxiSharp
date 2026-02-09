@@ -16,6 +16,7 @@ public class MinecraftTextureLoader
 	public static MinecraftTextureLoader Instance => _instance ??= new MinecraftTextureLoader();
 	
 	private readonly string _projectAssetsPath;
+	private readonly string _dataPath;
 	private Dictionary<string, ImageTexture> _loadedTextures;
 	private bool _isLoaded = false;
 	private int _totalTexturesLoaded = 0;
@@ -29,7 +30,8 @@ public class MinecraftTextureLoader
 	{
 		// Use the user data directory path for assets
 		var userDataPath = OS.GetUserDataDir();
-		_projectAssetsPath = Path.Combine(userDataPath, "data", "SimplyRemadeAssetsV1");
+		_dataPath = Path.Combine(userDataPath, "data");
+		_projectAssetsPath = Path.Combine(_dataPath, "SimplyRemadeAssetsV1");
 		_loadedTextures = new Dictionary<string, ImageTexture>();
 		
 		GD.Print($"MinecraftTextureLoader initialized with assets path: {_projectAssetsPath}");
@@ -49,15 +51,6 @@ public class MinecraftTextureLoader
 		
 		GD.Print($"Starting to load Minecraft textures from: {_projectAssetsPath}");
 		
-		var texturesPath = Path.Combine(_projectAssetsPath, "assets", "minecraft", "textures");
-		
-		if (!Directory.Exists(texturesPath))
-		{
-			GD.PrintErr($"Textures path does not exist: {texturesPath}");
-			progressCallback?.Invoke($"Error: Textures directory not found", 0);
-			return false;
-		}
-		
 		try
 		{
 			_totalTexturesLoaded = 0;
@@ -65,42 +58,91 @@ public class MinecraftTextureLoader
 			
 			progressCallback?.Invoke("Scanning for texture files...", 5);
 			
-			// Get all PNG files from block and item folders
-			var blockPath = Path.Combine(texturesPath, "block");
-			var itemPath = Path.Combine(texturesPath, "item");
+			// Find all asset folders in the data directory
+			var assetFolders = GetAssetFolders();
+			GD.Print($"Found {assetFolders.Count} asset folder(s) to load textures from: {string.Join(", ", assetFolders.Select(Path.GetFileName))}");
 			
-			var textureFiles = new List<string>();
+			// Keep track of texture files with their base paths and namespace
+			var textureFilesWithBasePath = new List<(string filePath, string basePath, string namespaceName)>();
 			
-			if (Directory.Exists(blockPath))
+			// Load textures from each asset folder
+			foreach (var assetFolder in assetFolders)
 			{
-				textureFiles.AddRange(Directory.GetFiles(blockPath, "*.png", SearchOption.TopDirectoryOnly));
+				var assetsRootPath = Path.Combine(assetFolder, "assets");
+				
+				if (!Directory.Exists(assetsRootPath))
+				{
+					GD.PrintRich($"[color=yellow]Assets path does not exist in {Path.GetFileName(assetFolder)}: {assetsRootPath}[/color]");
+					continue;
+				}
+				
+				// Look for all namespace folders (e.g., "minecraft", "farmersdelight", etc.)
+				var namespaceFolders = Directory.GetDirectories(assetsRootPath);
+				
+				foreach (var namespaceFolder in namespaceFolders)
+				{
+					var namespaceName = Path.GetFileName(namespaceFolder);
+					var texturesPath = Path.Combine(namespaceFolder, "textures");
+					
+					if (!Directory.Exists(texturesPath))
+					{
+						continue;
+					}
+					
+					// Get all PNG files from block and item folders
+					var blockPath = Path.Combine(texturesPath, "block");
+					var itemPath = Path.Combine(texturesPath, "item");
+					
+					int blockCount = 0;
+					int itemCount = 0;
+					
+					if (Directory.Exists(blockPath))
+					{
+						var blockFiles = Directory.GetFiles(blockPath, "*.png", SearchOption.TopDirectoryOnly);
+						foreach (var file in blockFiles)
+						{
+							textureFilesWithBasePath.Add((file, texturesPath, namespaceName));
+						}
+						blockCount = blockFiles.Length;
+					}
+					
+					if (Directory.Exists(itemPath))
+					{
+						var itemFiles = Directory.GetFiles(itemPath, "*.png", SearchOption.TopDirectoryOnly);
+						foreach (var file in itemFiles)
+						{
+							textureFilesWithBasePath.Add((file, texturesPath, namespaceName));
+						}
+						itemCount = itemFiles.Length;
+					}
+					
+					if (blockCount > 0 || itemCount > 0)
+					{
+						GD.Print($"Found {blockCount} block and {itemCount} item textures in {namespaceName} namespace ({Path.GetFileName(assetFolder)})");
+					}
+				}
 			}
 			
-			if (Directory.Exists(itemPath))
-			{
-				textureFiles.AddRange(Directory.GetFiles(itemPath, "*.png", SearchOption.TopDirectoryOnly));
-			}
-			
-			GD.Print($"Found {textureFiles.Count} texture files to load.");
-			progressCallback?.Invoke($"Found {textureFiles.Count} texture files to load", 10);
+			GD.Print($"Found {textureFilesWithBasePath.Count} texture files total to load.");
+			progressCallback?.Invoke($"Found {textureFilesWithBasePath.Count} texture files to load", 10);
 			
 			int processed = 0;
-			foreach (var filePath in textureFiles)
+			foreach (var (filePath, basePath, namespaceName) in textureFilesWithBasePath)
 			{
 				processed++;
 				
 				// Report progress periodically
-				if (processed % 50 == 0 || processed == textureFiles.Count)
+				if (processed % 50 == 0 || processed == textureFilesWithBasePath.Count)
 				{
-					var progress = 10 + (int)((processed / (float)textureFiles.Count) * 85);
-					var message = $"Loading textures: {processed}/{textureFiles.Count}";
+					var progress = 10 + (int)((processed / (float)textureFilesWithBasePath.Count) * 85);
+					var message = $"Loading textures: {processed}/{textureFilesWithBasePath.Count}";
 					progressCallback?.Invoke(message, progress);
-					GD.Print($"Processing texture {processed}/{textureFiles.Count}...");
+					GD.Print($"Processing texture {processed}/{textureFilesWithBasePath.Count}...");
 					// Allow other operations to run
 					await Task.Delay(1);
 				}
 				
-				await LoadTextureFile(filePath, texturesPath);
+				await LoadTextureFile(filePath, basePath, namespaceName);
 			}
 			
 			_isLoaded = true;
@@ -120,9 +162,44 @@ public class MinecraftTextureLoader
 	}
 	
 	/// <summary>
+	/// Gets all asset folders in the data directory (SimplyRemadeAssetsV1 and any additional folders)
+	/// </summary>
+	private List<string> GetAssetFolders()
+	{
+		var assetFolders = new List<string>();
+		
+		// Always include the main assets folder first
+		if (Directory.Exists(_projectAssetsPath))
+		{
+			assetFolders.Add(_projectAssetsPath);
+		}
+		
+		// Look for additional asset folders in the data directory
+		if (Directory.Exists(_dataPath))
+		{
+			var allFolders = Directory.GetDirectories(_dataPath);
+			foreach (var folder in allFolders)
+			{
+				var folderName = Path.GetFileName(folder);
+				// Include folders that end with "Assets" (e.g., "FarmersDelightAssets")
+				// but not the main SimplyRemadeAssetsV1 folder (already added)
+				if (folderName != "SimplyRemadeAssetsV1" && 
+				    (folderName.EndsWith("Assets", StringComparison.OrdinalIgnoreCase) || 
+				     folderName.Contains("Assets", StringComparison.OrdinalIgnoreCase)))
+				{
+					assetFolders.Add(folder);
+					GD.Print($"Found additional asset folder: {folderName}");
+				}
+			}
+		}
+		
+		return assetFolders;
+	}
+	
+	/// <summary>
 	/// Loads a single texture file
 	/// </summary>
-	private async Task LoadTextureFile(string filePath, string texturesBasePath)
+	private async Task LoadTextureFile(string filePath, string texturesBasePath, string namespaceName)
 	{
 		try
 		{
@@ -142,8 +219,9 @@ public class MinecraftTextureLoader
 			// Get relative path from textures directory for the key
 			var relativePath = GetRelativePath(filePath, texturesBasePath);
 			
-			// Store the texture
-			_loadedTextures[relativePath] = texture;
+			// Store the texture with namespace prefix (e.g., "farmersdelight/block/stove.png")
+			var textureKey = $"{namespaceName}/{relativePath}";
+			_loadedTextures[textureKey] = texture;
 			_totalTexturesLoaded++;
 			
 			await Task.CompletedTask; // Satisfy async requirement
@@ -188,21 +266,39 @@ public class MinecraftTextureLoader
 	/// <summary>
 	/// Gets a texture by block name (searches in block folder)
 	/// </summary>
-	/// <param name="blockName">Block name without path, e.g., "stone"</param>
+	/// <param name="blockName">Block name without path, e.g., "stone" or "farmersdelight:stove"</param>
 	public ImageTexture GetBlockTexture(string blockName)
 	{
-		var texturePath = $"block/{blockName}.png";
-		return GetTexture(texturePath);
+		// Check if namespace is specified
+		if (blockName.Contains(":"))
+		{
+			var parts = blockName.Split(':', 2);
+			var texturePath = $"{parts[0]}/block/{parts[1]}.png";
+			return GetTexture(texturePath);
+		}
+		
+		// Default to minecraft namespace
+		var defaultPath = $"minecraft/block/{blockName}.png";
+		return GetTexture(defaultPath);
 	}
 	
 	/// <summary>
 	/// Gets a texture by item name (searches in item folder)
 	/// </summary>
-	/// <param name="itemName">Item name without path, e.g., "diamond"</param>
+	/// <param name="itemName">Item name without path, e.g., "diamond" or "farmersdelight:tomato"</param>
 	public ImageTexture GetItemTexture(string itemName)
 	{
-		var texturePath = $"item/{itemName}.png";
-		return GetTexture(texturePath);
+		// Check if namespace is specified
+		if (itemName.Contains(":"))
+		{
+			var parts = itemName.Split(':', 2);
+			var texturePath = $"{parts[0]}/item/{parts[1]}.png";
+			return GetTexture(texturePath);
+		}
+		
+		// Default to minecraft namespace
+		var defaultPath = $"minecraft/item/{itemName}.png";
+		return GetTexture(defaultPath);
 	}
 	
 	/// <summary>
@@ -218,7 +314,7 @@ public class MinecraftTextureLoader
 	/// </summary>
 	public IEnumerable<string> GetAllBlockTexturePaths()
 	{
-		return _loadedTextures.Keys.Where(path => path.StartsWith("block/"));
+		return _loadedTextures.Keys.Where(path => path.Contains("/block/"));
 	}
 	
 	/// <summary>
@@ -226,7 +322,7 @@ public class MinecraftTextureLoader
 	/// </summary>
 	public IEnumerable<string> GetAllItemTexturePaths()
 	{
-		return _loadedTextures.Keys.Where(path => path.StartsWith("item/"));
+		return _loadedTextures.Keys.Where(path => path.Contains("/item/"));
 	}
 	
 	/// <summary>

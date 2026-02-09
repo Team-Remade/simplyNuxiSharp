@@ -19,7 +19,7 @@ public partial class SceneObject : Node3D
 	// Dictionary key format: "propertyPath" (e.g., "visible", "position.x", "rotation.y")
 	public Dictionary<string, List<ObjectKeyframe>> Keyframes = new Dictionary<string, List<ObjectKeyframe>>();
 	
-	private Vector3 _pivotOffset = new Vector3(0, -0.5f, 0);
+	private Vector3 _pivotOffset = Vector3.Zero;
 	public Vector3 PivotOffset
 	{
 		get => _pivotOffset;

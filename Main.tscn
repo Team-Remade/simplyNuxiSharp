@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://c3g35x51isfy2" path="res://Main.cs" id="1_glv2v"]
 [ext_resource type="Script" uid="uid://d3sbpgo0rl5pc" path="res://addons/dockable_container/dockable_container.gd" id="2_cm0pq"]
+[ext_resource type="Texture2D" uid="uid://bj2x7qagxoiuq" path="res://assets/img/chegg.png" id="2_fpfj3"]
 [ext_resource type="Script" uid="uid://qbhpr5tlanct" path="res://addons/dockable_container/layout_panel.gd" id="3_fos0i"]
 [ext_resource type="Script" uid="uid://c7r7ej2l8wj2e" path="res://addons/dockable_container/layout.gd" id="4_3dxm6"]
 [ext_resource type="Script" uid="uid://dcjai3itiedcl" path="res://addons/dockable_container/layout_split.gd" id="4_fos0i"]
@@ -14,6 +15,7 @@
 [ext_resource type="Script" uid="uid://d1j8yvxoe0f0r" path="res://src/core/TimelinePanel.cs" id="8_wkp8b"]
 [ext_resource type="Texture2D" uid="uid://lyvreubvsmie" path="res://assets/img/bench.png" id="9_5vvyt"]
 [ext_resource type="Texture2D" uid="uid://ds8cqt4u4ojkv" path="res://assets/img/bee_nest_front.png" id="9_c2ibq"]
+[ext_resource type="PackedScene" uid="uid://c0preview1234" path="res://src/core/PreviewViewport.tscn" id="10_preview"]
 
 [sub_resource type="Resource" id="Resource_3dxm6"]
 resource_name = "Tabs"
@@ -60,7 +62,7 @@ metadata/_custom_type_script = "uid://dcjai3itiedcl"
 [sub_resource type="Resource" id="Resource_c6i3y"]
 resource_name = "Split"
 script = ExtResource("4_fos0i")
-percent = 0.8
+percent = 0.666
 first = SubResource("Resource_03owx")
 second = SubResource("Resource_5vvyt")
 metadata/_custom_type_script = "uid://dcjai3itiedcl"
@@ -81,7 +83,7 @@ texture_filter = 0
 [sub_resource type="PlaneMesh" id="PlaneMesh_fpfj3"]
 size = Vector2(64, 64)
 
-[node name="Main" type="Control" unique_id=718552606 node_paths=PackedStringArray("FileButton", "EditButton", "ViewButton", "RenderButton", "HelpButton", "SpawnButton", "Viewport", "SceneTreePanel", "SceneTree", "ProjectPropertyPanel", "ObjectPropertyPanel")]
+[node name="Main" type="Control" unique_id=718552606 node_paths=PackedStringArray("FileButton", "EditButton", "ViewButton", "RenderButton", "HelpButton", "SpawnButton", "PreviewViewportControl", "Viewport", "SceneTreePanel", "SceneTree", "ProjectPropertyPanel", "ObjectPropertyPanel")]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -89,12 +91,14 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_glv2v")
+CheggTexture = ExtResource("2_fpfj3")
 FileButton = NodePath("Content/Menubar/FileButton")
 EditButton = NodePath("Content/Menubar/EditButton")
 ViewButton = NodePath("Content/Menubar/ViewButton")
 RenderButton = NodePath("Content/Menubar/RenderButton")
 HelpButton = NodePath("Content/Menubar/HelpButton")
 SpawnButton = NodePath("Content/MainContent/Viewport/ViewportUI/SpawnMenuButton")
+PreviewViewportControl = NodePath("Content/MainContent/Viewport/ViewportUI/PreviewViewport")
 Viewport = NodePath("Content/MainContent/Viewport/MainViewport/SubViewport")
 SceneTreePanel = NodePath("Content/MainContent/Scene Tree")
 SceneTree = NodePath("Content/MainContent/Scene Tree")
@@ -183,7 +187,7 @@ msaa_3d = 1
 screen_space_aa = 2
 use_debanding = true
 anisotropic_filtering_level = 3
-size = Vector2i(915, 392)
+size = Vector2i(1272, 694)
 render_target_update_mode = 4
 
 [node name="CanvasLayer" type="CanvasLayer" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=1815694963]
@@ -238,6 +242,20 @@ offset_top = 10.0
 offset_right = 96.0
 offset_bottom = 96.0
 texture_normal = ExtResource("9_5vvyt")
+
+[node name="PreviewViewport" parent="Content/MainContent/Viewport/ViewportUI" unique_id=1808599426 instance=ExtResource("10_preview")]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -400.0
+offset_top = -299.99997
+offset_right = 0.0
+offset_bottom = 0.0
+grow_horizontal = 0
+grow_vertical = 0
 
 [node name="Timeline" type="Panel" parent="Content/MainContent" unique_id=1397746994]
 layout_mode = 2

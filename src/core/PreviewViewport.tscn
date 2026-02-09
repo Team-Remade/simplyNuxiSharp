@@ -1,0 +1,130 @@
+[gd_scene load_steps=2 format=3 uid="uid://c0preview1234"]
+
+[ext_resource type="Script" path="res://src/core/PreviewViewport.cs" id="1_preview"]
+
+[node name="PreviewViewport" type="Control" node_paths=PackedStringArray("ViewportContainer", "PreviewSubViewport", "PreviewCamera", "ToggleModeButton", "HeaderBar", "MainPanel", "ResizeBorder")]
+custom_minimum_size = Vector2(200, 150)
+layout_mode = 3
+anchors_preset = 0
+offset_right = 400.0
+offset_bottom = 300.0
+script = ExtResource("1_preview")
+ViewportContainer = NodePath("MainPanel/VBox/ViewportContainer")
+PreviewSubViewport = NodePath("MainPanel/VBox/ViewportContainer/PreviewSubViewport")
+PreviewCamera = NodePath("MainPanel/VBox/ViewportContainer/PreviewSubViewport/PreviewCamera")
+ToggleModeButton = NodePath("MainPanel/VBox/HeaderBar/ToggleModeButton")
+HeaderBar = NodePath("MainPanel/VBox/HeaderBar")
+MainPanel = NodePath("MainPanel")
+ResizeBorder = NodePath("ResizeBorder")
+
+[node name="ResizeBorder" type="ReferenceRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+border_color = Color(0.4, 0.4, 0.5, 0.5)
+border_width = 2.0
+
+[node name="MainPanel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 4.0
+offset_top = 4.0
+offset_right = -4.0
+offset_bottom = -4.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="MainPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 0
+
+[node name="HeaderBar" type="Control" parent="MainPanel/VBox"]
+custom_minimum_size = Vector2(0, 30)
+layout_mode = 2
+mouse_default_cursor_shape = 13
+
+[node name="HeaderBackground" type="ColorRect" parent="MainPanel/VBox/HeaderBar"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.2, 0.2, 0.25, 1)
+
+[node name="HeaderLabel" type="Label" parent="MainPanel/VBox/HeaderBar"]
+layout_mode = 1
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_left = 8.0
+offset_top = -11.5
+offset_right = 123.0
+offset_bottom = 11.5
+grow_vertical = 2
+mouse_filter = 2
+text = "Preview"
+vertical_alignment = 1
+
+[node name="ToggleModeButton" type="Button" parent="MainPanel/VBox/HeaderBar"]
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -88.0
+offset_top = -12.0
+offset_right = -8.0
+offset_bottom = 12.0
+grow_horizontal = 0
+grow_vertical = 2
+text = "Pop Out"
+
+[node name="ViewportContainer" type="SubViewportContainer" parent="MainPanel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+stretch = true
+
+[node name="PreviewSubViewport" type="SubViewport" parent="MainPanel/VBox/ViewportContainer"]
+handle_input_locally = false
+msaa_3d = 1
+screen_space_aa = 2
+use_debanding = true
+anisotropic_filtering_level = 3
+size = Vector2i(400, 270)
+render_target_update_mode = 4
+
+[node name="CanvasLayer" type="CanvasLayer" parent="MainPanel/VBox/ViewportContainer/PreviewSubViewport"]
+
+[node name="BackgroundColor" type="ColorRect" parent="MainPanel/VBox/ViewportContainer/PreviewSubViewport/CanvasLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.5764706, 0.5764706, 1, 1)
+
+[node name="BackgroundImage" type="TextureRect" parent="MainPanel/VBox/ViewportContainer/PreviewSubViewport/CanvasLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+expand_mode = 1
+
+[node name="PreviewCamera" type="Camera3D" parent="MainPanel/VBox/ViewportContainer/PreviewSubViewport"]
+transform = Transform3D(0.70710677, -0.49999997, 0.49999997, 0, 0.70710677, 0.70710677, -0.70710677, -0.49999997, 0.49999997, 3, 3, 3)
+cull_mask = 1048573

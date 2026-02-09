@@ -20,6 +20,7 @@ config/features=PackedStringArray("4.6", "C#", "Forward Plus")
 run/low_processor_mode=true
 boot_splash/show_image=false
 config/icon="uid://bldbm3le7r54m"
+config/windows_native_icon="res://assets/img/appIcon01.ico"
 
 [autoload]
 
@@ -31,10 +32,12 @@ file_logging/log_path="user://logs/nuxi.log"
 
 [display]
 
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/size/mode=2
 window/subwindows/embed_subwindows=false
 window/stretch/mode="viewport"
 window/stretch/aspect="expand"
-window/stretch/scale=0.75
 
 [dotnet]
 

@@ -567,11 +567,16 @@ public partial class SpawnMenu : PopupPanel
 		if (_selectedCategory == "Blocks")
 		{
 			visualNode = CreateMinecraftBlock(objectName);
+			// Minecraft blocks are already positioned correctly in their models
+			sceneObject.PivotOffset = new Vector3(0.5f, 0, 0.5f);
 		}
 		else if (_selectedCategory == "Items")
 		{
 			// Create texture plane
 			visualNode = CreateTexturePlane(objectName);
+			// Texture planes are centered
+			sceneObject.PivotOffset = new Vector3(0.5f, 0, 0.03125f);
+			visualNode.Position = new Vector3(0.5f, 0.5f, -0.03125f);
 		}
 		else
 		{
@@ -598,6 +603,9 @@ public partial class SpawnMenu : PopupPanel
 				
 				visualNode = meshInstance;
 			}
+			
+			// Set pivot offset for primitives so they sit on the ground
+			sceneObject.PivotOffset = new Vector3(0, -0.5f, 0);
 		}
 		
 		if (visualNode != null)

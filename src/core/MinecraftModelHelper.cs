@@ -113,7 +113,7 @@ public static class MinecraftModelHelper
 	/// <summary>
 	/// Converts a Minecraft model element to a Godot MeshInstance3D with textures
 	/// </summary>
-	public static MeshInstance3D CreateMeshFromElement(ModelElement element, Dictionary<string, string> textures)
+	public static MeshInstance3D CreateMeshFromElement(ModelElement element, Dictionary<string, string> textures, Vector3 pivotOffset)
 	{
 		if (element == null || element.From == null || element.To == null)
 		{
@@ -129,14 +129,14 @@ public static class MinecraftModelHelper
 		var from = new Vector3(element.From[0], element.From[1], element.From[2]) * scale;
 		var to = new Vector3(element.To[0], element.To[1], element.To[2]) * scale;
 		
-		var size = to - from;
 		var center = (from + to) / 2.0f;
 		
-		// Create a custom mesh with proper UV mapping
+		// Create a custom mesh with proper UV mapping and materials
 		var arrayMesh = CreateCubeMeshWithTextures(from, to, element.Faces, textures);
 		
 		meshInstance.Mesh = arrayMesh;
-		meshInstance.Position = center;
+		// Apply the centering offset so the whole model centers at [8,0,8] -> [0,0,0]
+		meshInstance.Position = center + pivotOffset;
 		
 		// Apply rotation if present
 		if (element.Rotation != null)
@@ -165,64 +165,26 @@ public static class MinecraftModelHelper
 	
 	/// <summary>
 	/// Creates a cube mesh with proper UV mapping for textures
+	/// Each face can have its own texture via separate surfaces
 	/// </summary>
 	private static ArrayMesh CreateCubeMeshWithTextures(Vector3 from, Vector3 to, Dictionary<string, ElementFace> faces, Dictionary<string, string> textures)
 	{
-		float scale = 1.0f / 16.0f;
+		// The mesh vertices are created centered around origin (0,0,0)
+		// The caller will position the mesh at the correct location
 		var size = to - from;
-		
-		// Create arrays for mesh data
-		var vertices = new List<Vector3>();
-		var uvs = new List<Vector2>();
-		var normals = new List<Vector3>();
-		var indices = new List<int>();
-		
-		// Helper to add a quad (counter-clockwise winding for outward facing)
-		void AddQuad(Vector3 v0, Vector3 v1, Vector3 v2, Vector3 v3, Vector3 normal, Vector2 uv0, Vector2 uv1, Vector2 uv2, Vector2 uv3)
-		{
-			int baseIndex = vertices.Count;
-			
-			vertices.Add(v0);
-			vertices.Add(v1);
-			vertices.Add(v2);
-			vertices.Add(v3);
-			
-			uvs.Add(uv0);
-			uvs.Add(uv1);
-			uvs.Add(uv2);
-			uvs.Add(uv3);
-			
-			normals.Add(normal);
-			normals.Add(normal);
-			normals.Add(normal);
-			normals.Add(normal);
-			
-			// Two triangles for the quad - reversed winding order
-			indices.Add(baseIndex);
-			indices.Add(baseIndex + 2);
-			indices.Add(baseIndex + 1);
-			
-			indices.Add(baseIndex);
-			indices.Add(baseIndex + 3);
-			indices.Add(baseIndex + 2);
-		}
+		var halfSize = size / 2.0f;
 		
 		// Calculate UV coordinates from face data (normalized 0-1 range)
-		// Minecraft UV format: [x1, y1, x2, y2] where (x1,y1) is top-left and (x2,y2) is bottom-right in texture space
 		Vector2[] GetFaceUVs(ElementFace face)
 		{
 			if (face?.UV != null && face.UV.Length == 4)
 			{
 				// Minecraft UV is in 0-16 range, convert to 0-1
-				// Also note: Minecraft Y axis is inverted (0 is top, 16 is bottom)
-				// But Godot UV space has 0 at top, 1 at bottom, so we need to invert Y
 				float u1 = face.UV[0] / 16.0f;
 				float v1 = face.UV[1] / 16.0f;
 				float u2 = face.UV[2] / 16.0f;
 				float v2 = face.UV[3] / 16.0f;
 				
-				// Return in order: bottom-left, top-left, top-right, bottom-right
-				// This matches the vertex order we use in AddQuad calls
 				return new Vector2[]
 				{
 					new Vector2(u1, v2),  // bottom-left
@@ -241,105 +203,134 @@ public static class MinecraftModelHelper
 			};
 		}
 		
-		// Center the mesh at origin (will be positioned by parent)
-		var halfSize = size / 2.0f;
+		// Create material for a face
+		StandardMaterial3D CreateMaterial(string texturePath)
+		{
+			var material = new StandardMaterial3D();
+			
+			if (!string.IsNullOrEmpty(texturePath))
+			{
+				var texture = LoadMinecraftTexture(texturePath);
+				if (texture != null)
+				{
+					material.AlbedoColor = Colors.White;
+					material.AlbedoTexture = texture;
+					material.TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest;
+					material.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
+					material.AlphaScissorThreshold = 0.5f;
+					return material;
+				}
+			}
+			
+			// Fallback material
+			material.AlbedoColor = new Color(0.8f, 0.8f, 0.8f);
+			return material;
+		}
 		
-		// Down face (y-) - Bottom face, normal pointing down (0, -1, 0)
-		// When looking up at the bottom, we see it from below
+		// Helper to add a surface for a single face
+		void AddFaceSurface(ArrayMesh arrayMesh, Vector3 v0, Vector3 v1, Vector3 v2, Vector3 v3,
+		                    Vector3 normal, Vector2[] faceUVs, string faceName)
+		{
+			var vertices = new List<Vector3> { v0, v1, v2, v3 };
+			var uvs = new List<Vector2> { faceUVs[0], faceUVs[1], faceUVs[2], faceUVs[3] };
+			var normals = new List<Vector3> { normal, normal, normal, normal };
+			var indices = new List<int> { 0, 2, 1, 0, 3, 2 };
+			
+			var arrays = new Godot.Collections.Array();
+			arrays.Resize((int)Mesh.ArrayType.Max);
+			arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
+			arrays[(int)Mesh.ArrayType.Normal] = normals.ToArray();
+			arrays[(int)Mesh.ArrayType.TexUV] = uvs.ToArray();
+			arrays[(int)Mesh.ArrayType.Index] = indices.ToArray();
+			
+			arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+			
+			// Apply material to this surface
+			if (faces != null && faces.ContainsKey(faceName))
+			{
+				var face = faces[faceName];
+				if (face?.Texture != null)
+				{
+					var texturePath = ResolveTexturePath(face.Texture, textures);
+					var material = CreateMaterial(texturePath);
+					arrayMesh.SurfaceSetMaterial(arrayMesh.GetSurfaceCount() - 1, material);
+				}
+			}
+		}
+		
+		var arrayMesh = new ArrayMesh();
+		
+		// Down face (y-) - Bottom
 		if (faces != null && faces.ContainsKey("down"))
 		{
 			var faceUVs = GetFaceUVs(faces["down"]);
-			AddQuad(
-				new Vector3(halfSize.X, -halfSize.Y, -halfSize.Z),   // v0: front-right
-				new Vector3(halfSize.X, -halfSize.Y, halfSize.Z),    // v1: back-right
-				new Vector3(-halfSize.X, -halfSize.Y, halfSize.Z),   // v2: back-left
-				new Vector3(-halfSize.X, -halfSize.Y, -halfSize.Z),  // v3: front-left
-				new Vector3(0, -1, 0),  // Normal pointing down
-				faceUVs[0], faceUVs[1], faceUVs[2], faceUVs[3]
-			);
+			AddFaceSurface(arrayMesh,
+				new Vector3(halfSize.X, -halfSize.Y, -halfSize.Z),
+				new Vector3(halfSize.X, -halfSize.Y, halfSize.Z),
+				new Vector3(-halfSize.X, -halfSize.Y, halfSize.Z),
+				new Vector3(-halfSize.X, -halfSize.Y, -halfSize.Z),
+				new Vector3(0, -1, 0), faceUVs, "down");
 		}
 		
-		// Up face (y+) - Top face, normal pointing up (0, 1, 0)
-		// When looking down at the top, we see it from above
+		// Up face (y+) - Top
 		if (faces != null && faces.ContainsKey("up"))
 		{
 			var faceUVs = GetFaceUVs(faces["up"]);
-			AddQuad(
-				new Vector3(-halfSize.X, halfSize.Y, -halfSize.Z),   // v0: front-left
-				new Vector3(-halfSize.X, halfSize.Y, halfSize.Z),    // v1: back-left
-				new Vector3(halfSize.X, halfSize.Y, halfSize.Z),     // v2: back-right
-				new Vector3(halfSize.X, halfSize.Y, -halfSize.Z),    // v3: front-right
-				new Vector3(0, 1, 0),  // Normal pointing up
-				faceUVs[0], faceUVs[1], faceUVs[2], faceUVs[3]
-			);
+			AddFaceSurface(arrayMesh,
+				new Vector3(-halfSize.X, halfSize.Y, -halfSize.Z),
+				new Vector3(-halfSize.X, halfSize.Y, halfSize.Z),
+				new Vector3(halfSize.X, halfSize.Y, halfSize.Z),
+				new Vector3(halfSize.X, halfSize.Y, -halfSize.Z),
+				new Vector3(0, 1, 0), faceUVs, "up");
 		}
 		
-		// North face (z-) - Front face in Minecraft coords, normal pointing forward (0, 0, -1)
+		// North face (z-)
 		if (faces != null && faces.ContainsKey("north"))
 		{
 			var faceUVs = GetFaceUVs(faces["north"]);
-			AddQuad(
-				new Vector3(-halfSize.X, -halfSize.Y, -halfSize.Z),  // v0: bottom-left
-				new Vector3(-halfSize.X, halfSize.Y, -halfSize.Z),   // v1: top-left
-				new Vector3(halfSize.X, halfSize.Y, -halfSize.Z),    // v2: top-right
-				new Vector3(halfSize.X, -halfSize.Y, -halfSize.Z),   // v3: bottom-right
-				new Vector3(0, 0, -1),  // Normal pointing north (negative Z)
-				faceUVs[0], faceUVs[1], faceUVs[2], faceUVs[3]
-			);
+			AddFaceSurface(arrayMesh,
+				new Vector3(-halfSize.X, -halfSize.Y, -halfSize.Z),
+				new Vector3(-halfSize.X, halfSize.Y, -halfSize.Z),
+				new Vector3(halfSize.X, halfSize.Y, -halfSize.Z),
+				new Vector3(halfSize.X, -halfSize.Y, -halfSize.Z),
+				new Vector3(0, 0, -1), faceUVs, "north");
 		}
 		
-		// South face (z+) - Back face in Minecraft coords, normal pointing back (0, 0, 1)
+		// South face (z+)
 		if (faces != null && faces.ContainsKey("south"))
 		{
 			var faceUVs = GetFaceUVs(faces["south"]);
-			AddQuad(
-				new Vector3(halfSize.X, -halfSize.Y, halfSize.Z),    // v0: bottom-right
-				new Vector3(halfSize.X, halfSize.Y, halfSize.Z),     // v1: top-right
-				new Vector3(-halfSize.X, halfSize.Y, halfSize.Z),    // v2: top-left
-				new Vector3(-halfSize.X, -halfSize.Y, halfSize.Z),   // v3: bottom-left
-				new Vector3(0, 0, 1),  // Normal pointing south (positive Z)
-				faceUVs[0], faceUVs[1], faceUVs[2], faceUVs[3]
-			);
+			AddFaceSurface(arrayMesh,
+				new Vector3(halfSize.X, -halfSize.Y, halfSize.Z),
+				new Vector3(halfSize.X, halfSize.Y, halfSize.Z),
+				new Vector3(-halfSize.X, halfSize.Y, halfSize.Z),
+				new Vector3(-halfSize.X, -halfSize.Y, halfSize.Z),
+				new Vector3(0, 0, 1), faceUVs, "south");
 		}
 		
-		// West face (x-) - Left face, normal pointing left (-1, 0, 0)
+		// West face (x-)
 		if (faces != null && faces.ContainsKey("west"))
 		{
 			var faceUVs = GetFaceUVs(faces["west"]);
-			AddQuad(
-				new Vector3(-halfSize.X, -halfSize.Y, halfSize.Z),   // v0: bottom-back
-				new Vector3(-halfSize.X, halfSize.Y, halfSize.Z),    // v1: top-back
-				new Vector3(-halfSize.X, halfSize.Y, -halfSize.Z),   // v2: top-front
-				new Vector3(-halfSize.X, -halfSize.Y, -halfSize.Z),  // v3: bottom-front
-				new Vector3(-1, 0, 0),  // Normal pointing west (negative X)
-				faceUVs[0], faceUVs[1], faceUVs[2], faceUVs[3]
-			);
+			AddFaceSurface(arrayMesh,
+				new Vector3(-halfSize.X, -halfSize.Y, halfSize.Z),
+				new Vector3(-halfSize.X, halfSize.Y, halfSize.Z),
+				new Vector3(-halfSize.X, halfSize.Y, -halfSize.Z),
+				new Vector3(-halfSize.X, -halfSize.Y, -halfSize.Z),
+				new Vector3(-1, 0, 0), faceUVs, "west");
 		}
 		
-		// East face (x+) - Right face, normal pointing right (1, 0, 0)
+		// East face (x+)
 		if (faces != null && faces.ContainsKey("east"))
 		{
 			var faceUVs = GetFaceUVs(faces["east"]);
-			AddQuad(
-				new Vector3(halfSize.X, -halfSize.Y, -halfSize.Z),   // v0: bottom-front
-				new Vector3(halfSize.X, halfSize.Y, -halfSize.Z),    // v1: top-front
-				new Vector3(halfSize.X, halfSize.Y, halfSize.Z),     // v2: top-back
-				new Vector3(halfSize.X, -halfSize.Y, halfSize.Z),    // v3: bottom-back
-				new Vector3(1, 0, 0),  // Normal pointing east (positive X)
-				faceUVs[0], faceUVs[1], faceUVs[2], faceUVs[3]
-			);
+			AddFaceSurface(arrayMesh,
+				new Vector3(halfSize.X, -halfSize.Y, -halfSize.Z),
+				new Vector3(halfSize.X, halfSize.Y, -halfSize.Z),
+				new Vector3(halfSize.X, halfSize.Y, halfSize.Z),
+				new Vector3(halfSize.X, -halfSize.Y, halfSize.Z),
+				new Vector3(1, 0, 0), faceUVs, "east");
 		}
-		
-		// Create ArrayMesh
-		var arrays = new Godot.Collections.Array();
-		arrays.Resize((int)Mesh.ArrayType.Max);
-		arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
-		arrays[(int)Mesh.ArrayType.Normal] = normals.ToArray();
-		arrays[(int)Mesh.ArrayType.TexUV] = uvs.ToArray();
-		arrays[(int)Mesh.ArrayType.Index] = indices.ToArray();
-		
-		var arrayMesh = new ArrayMesh();
-		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
 		
 		return arrayMesh;
 	}
@@ -374,12 +365,45 @@ public static class MinecraftModelHelper
 		
 		GD.Print($"Successfully resolved model with {resolvedModel.Elements.Count} elements");
 		
+		float scale = 1.0f / 16.0f;
+		
+		// Calculate the bounding box of all elements to find the model bounds
+		float minY = float.MaxValue;
+		float maxY = float.MinValue;
+		float minX = float.MaxValue;
+		float maxX = float.MinValue;
+		float minZ = float.MaxValue;
+		float maxZ = float.MinValue;
+		
+		foreach (var element in resolvedModel.Elements)
+		{
+			if (element.From != null && element.To != null)
+			{
+				minX = Mathf.Min(minX, element.From[0]);
+				maxX = Mathf.Max(maxX, element.To[0]);
+				minY = Mathf.Min(minY, element.From[1]);
+				maxY = Mathf.Max(maxY, element.To[1]);
+				minZ = Mathf.Min(minZ, element.From[2]);
+				maxZ = Mathf.Max(maxZ, element.To[2]);
+			}
+		}
+		
+		GD.Print($"Model bounds: X[{minX}, {maxX}], Y[{minY}, {maxY}], Z[{minZ}, {maxZ}]");
+		
+		// Calculate the pivot offset to center the model at [8, 0, 8] in Minecraft coords
+		// This ensures all blocks have a consistent pivot point at the bottom center
+		Vector3 mcPivot = new Vector3(8, 0, 8);
+		Vector3 mcCenter = new Vector3((minX + maxX) / 2.0f, minY, (minZ + maxZ) / 2.0f);
+		Vector3 pivotOffset = (mcPivot - mcCenter) * scale;
+		
+		GD.Print($"MC Center: {mcCenter}, MC Pivot: {mcPivot}, Pivot Offset: {pivotOffset}");
+		
 		var root = new Node3D();
 		
 		// Create meshes for each element
 		foreach (var element in resolvedModel.Elements)
 		{
-			var mesh = CreateMeshFromElement(element, resolvedModel.Textures);
+			var mesh = CreateMeshFromElement(element, resolvedModel.Textures, pivotOffset);
 			if (mesh != null)
 			{
 				// Apply textures to the mesh
@@ -399,51 +423,9 @@ public static class MinecraftModelHelper
 		if (faces == null || textures == null || meshInstance.Mesh == null)
 			return;
 		
-		// Collect all unique textures used by this element
-		var usedTextures = new HashSet<string>();
-		foreach (var face in faces.Values)
-		{
-			if (face?.Texture != null)
-			{
-				var texturePath = ResolveTexturePath(face.Texture, textures);
-				if (texturePath != null)
-				{
-					usedTextures.Add(texturePath);
-				}
-			}
-		}
-		
-		// For now, use the first texture found (later we can implement multi-material support)
-		if (usedTextures.Count > 0)
-		{
-			var texturePath = usedTextures.First();
-			var texture = LoadMinecraftTexture(texturePath);
-			
-			StandardMaterial3D material;
-			if (texture != null)
-			{
-				material = new StandardMaterial3D();
-				material.AlbedoColor = Colors.White;  // Use white to show texture as-is
-				material.AlbedoTexture = texture;
-				material.TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest; // Pixel-perfect for Minecraft style
-				
-				// Enable alpha clipping for transparency
-				material.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
-				material.AlphaScissorThreshold = 0.5f;
-			}
-			else
-			{
-				// Fallback to default material
-				material = new StandardMaterial3D();
-				material.AlbedoColor = new Color(0.8f, 0.8f, 0.8f);
-			}
-			
-			// Apply material to mesh surface instead of using MaterialOverride
-			if (meshInstance.Mesh is ArrayMesh arrayMesh && arrayMesh.GetSurfaceCount() > 0)
-			{
-				arrayMesh.SurfaceSetMaterial(0, material);
-			}
-		}
+		// The mesh already has materials applied per surface in CreateCubeMeshWithTextures
+		// This method is now a no-op but kept for backwards compatibility
+		// Materials are applied during mesh creation to support different textures per face
 	}
 	
 	/// <summary>
@@ -478,41 +460,69 @@ public static class MinecraftModelHelper
 		if (string.IsNullOrEmpty(texturePath))
 			return null;
 		
-		// Remove minecraft: namespace if present
-		if (texturePath.StartsWith("minecraft:"))
-			texturePath = texturePath.Substring("minecraft:".Length);
+		// Extract namespace if present (e.g., "farmersdelight:block/stove" -> namespace="farmersdelight", path="block/stove")
+		string namespaceName = "minecraft"; // default namespace
+		string actualPath = texturePath;
 		
-		// Build possible paths to check
-		var userDataPath = OS.GetUserDataDir();
-		var assetsPath = System.IO.Path.Combine(userDataPath, "data", "SimplyRemadeAssetsV1");
-		
-		var possiblePaths = new List<string>
+		if (texturePath.Contains(":"))
 		{
-			System.IO.Path.Combine(assetsPath, texturePath + ".png"),
-			System.IO.Path.Combine(assetsPath, "textures", texturePath + ".png"),
-			System.IO.Path.Combine(assetsPath, "minecraft", "textures", texturePath + ".png"),
-			System.IO.Path.Combine(assetsPath, "assets", "minecraft", "textures", texturePath + ".png"),
-			System.IO.Path.Combine(assetsPath, texturePath.Replace("/", "\\") + ".png"),
-			System.IO.Path.Combine(assetsPath, "textures", texturePath.Replace("/", "\\") + ".png"),
-		};
+			var parts = texturePath.Split(':', 2);
+			namespaceName = parts[0];
+			actualPath = parts[1];
+		}
 		
-		foreach (var path in possiblePaths)
+		// Try using the texture loader first (which has all textures cached by namespace)
+		var textureLoader = MinecraftTextureLoader.Instance;
+		if (textureLoader.IsLoaded)
 		{
-			if (System.IO.File.Exists(path))
+			// Build the key as stored in the texture loader: "namespace/path.png"
+			var textureKey = $"{namespaceName}/{actualPath}.png";
+			var cachedTexture = textureLoader.GetTexture(textureKey);
+			if (cachedTexture != null)
 			{
-				try
+				GD.Print($"  ✓ Loaded texture from cache: {textureKey}");
+				return cachedTexture;
+			}
+		}
+		
+		// Fallback: Try to load from file system directly
+		var userDataPath = OS.GetUserDataDir();
+		var dataPath = System.IO.Path.Combine(userDataPath, "data");
+		
+		// Search in multiple asset folders
+		var assetFolders = new List<string>();
+		if (System.IO.Directory.Exists(dataPath))
+		{
+			assetFolders.AddRange(System.IO.Directory.GetDirectories(dataPath)
+				.Where(f => System.IO.Path.GetFileName(f).Contains("Assets", StringComparison.OrdinalIgnoreCase)));
+		}
+		
+		foreach (var assetFolder in assetFolders)
+		{
+			var possiblePaths = new List<string>
+			{
+				System.IO.Path.Combine(assetFolder, "assets", namespaceName, "textures", actualPath + ".png"),
+				System.IO.Path.Combine(assetFolder, "assets", namespaceName, "textures", actualPath.Replace("/", "\\") + ".png"),
+			};
+			
+			foreach (var path in possiblePaths)
+			{
+				if (System.IO.File.Exists(path))
 				{
-					var image = Image.LoadFromFile(path);
-					if (image != null)
+					try
 					{
-						var texture = ImageTexture.CreateFromImage(image);
-						GD.Print($"  ✓ Loaded texture: {path}");
-						return texture;
+						var image = Image.LoadFromFile(path);
+						if (image != null)
+						{
+							var texture = ImageTexture.CreateFromImage(image);
+							GD.Print($"  ✓ Loaded texture from file: {path}");
+							return texture;
+						}
 					}
-				}
-				catch (Exception ex)
-				{
-					GD.PrintErr($"Error loading texture {path}: {ex.Message}");
+					catch (Exception ex)
+					{
+						GD.PrintErr($"Error loading texture {path}: {ex.Message}");
+					}
 				}
 			}
 		}
@@ -811,10 +821,22 @@ public static class MinecraftModelHelper
 	public static List<string> GetBlockStateVariants(string blockStateName)
 	{
 		var blockState = GetBlockStateByName(blockStateName);
-		if (blockState == null || blockState.Variants == null)
+		if (blockState == null)
 			return new List<string>();
 		
-		return blockState.Variants.Keys.ToList();
+		// For multipart blockstates, return a single "Default" variant
+		if (blockState.Multipart != null && blockState.Multipart.Count > 0)
+		{
+			return new List<string> { "" }; // Empty string represents default state
+		}
+		
+		// For variants blockstates
+		if (blockState.Variants != null)
+		{
+			return blockState.Variants.Keys.ToList();
+		}
+		
+		return new List<string>();
 	}
 	
 	/// <summary>
@@ -831,7 +853,14 @@ public static class MinecraftModelHelper
 			return null;
 		}
 		
-		// Get the variant data
+		// Check if it's a multipart blockstate
+		if (blockState.Multipart != null && blockState.Multipart.Count > 0)
+		{
+			GD.Print("Creating multipart blockstate node");
+			return CreateNodeFromMultipartBlockState(blockState);
+		}
+		
+		// Handle standard variant blockstate
 		VariantModel variantData = GetVariantData(blockState, variant);
 		
 		if (variantData == null || string.IsNullOrEmpty(variantData.Model))
@@ -861,20 +890,120 @@ public static class MinecraftModelHelper
 		
 		if (node != null)
 		{
+			// NOTE: Blockstate rotations are commented out for now to ensure consistent pivots
+			// Users can manually rotate blocks as needed
+			// TODO: Implement proper rotation that maintains pivot point
+			
 			// Apply rotations from the variant
-			if (variantData.X != 0)
-			{
-				node.RotateX(Mathf.DegToRad(variantData.X));
-			}
-			if (variantData.Y != 0)
-			{
-				node.RotateY(Mathf.DegToRad(variantData.Y));
-			}
+			//if (variantData.X != 0)
+			//{
+			//	node.RotateX(Mathf.DegToRad(variantData.X));
+			//}
+			//if (variantData.Y != 0)
+			//{
+			//	node.RotateY(Mathf.DegToRad(variantData.Y));
+			//}
 			
 			GD.Print("Node created successfully");
 		}
 		
 		return node;
+	}
+	
+	/// <summary>
+	/// Creates a 3D node from a multipart blockstate (like fences, which assemble from multiple models)
+	/// </summary>
+	private static Node3D CreateNodeFromMultipartBlockState(BlockState blockState)
+	{
+		GD.Print($"CreateNodeFromMultipartBlockState: processing {blockState.Multipart.Count} parts");
+		
+		var rootNode = new Node3D();
+		
+		// For basic multipart support, we'll apply all parts that don't have conditions
+		// or apply the first part of each conditional group
+		foreach (var part in blockState.Multipart)
+		{
+			VariantModel variantData = null;
+			
+			// Parse the Apply property
+			try
+			{
+				if (part.Apply is System.Text.Json.JsonElement jsonElement)
+				{
+					if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+					{
+						// Array of models - pick the first one
+						var variants = JsonSerializer.Deserialize<List<VariantModel>>(jsonElement.GetRawText());
+						variantData = variants?.FirstOrDefault();
+					}
+					else if (jsonElement.ValueKind == System.Text.Json.JsonValueKind.Object)
+					{
+						variantData = JsonSerializer.Deserialize<VariantModel>(jsonElement.GetRawText());
+					}
+				}
+				else if (part.Apply is VariantModel vm)
+				{
+					variantData = vm;
+				}
+			}
+			catch (Exception ex)
+			{
+				GD.PrintErr($"Error parsing multipart apply data: {ex.Message}");
+				continue;
+			}
+			
+			if (variantData == null || string.IsNullOrEmpty(variantData.Model))
+			{
+				GD.PrintErr("Multipart has no valid model reference");
+				continue;
+			}
+			
+			// For basic support: apply all parts without conditions (When == null)
+			// For parts with conditions, only apply if it's the first part (index 0) or has no conditions
+			bool shouldApply = part.When == null || part.When.Count == 0;
+			
+			// If the part has no conditions, always apply it (like fence_post)
+			if (shouldApply)
+			{
+				GD.Print($"  Applying model: {variantData.Model}");
+				
+				var modelPath = NormalizeModelPath(variantData.Model);
+				var model = GetModelByPath(modelPath);
+				
+				if (model != null)
+				{
+					var partNode = CreateNodeFromModel(model);
+					if (partNode != null)
+					{
+						// Apply rotations from the variant
+						if (variantData.X != 0)
+						{
+							partNode.RotateX(Mathf.DegToRad(variantData.X));
+						}
+						if (variantData.Y != 0)
+						{
+							partNode.RotateY(Mathf.DegToRad(variantData.Y));
+						}
+						
+						rootNode.AddChild(partNode);
+					}
+				}
+				else
+				{
+					GD.PrintErr($"  Could not load model: {variantData.Model}");
+				}
+			}
+		}
+		
+		if (rootNode.GetChildCount() == 0)
+		{
+			GD.PrintErr("No models were successfully loaded for this multipart blockstate");
+			rootNode.QueueFree();
+			return null;
+		}
+		
+		GD.Print($"Successfully created multipart node with {rootNode.GetChildCount()} parts");
+		return rootNode;
 	}
 	
 	/// <summary>
