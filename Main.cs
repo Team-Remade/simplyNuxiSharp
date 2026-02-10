@@ -23,6 +23,8 @@ public partial class Main : Control
 	
 	[Export] public TextureButton SpawnButton;
 	[Export] public PreviewViewport PreviewViewportControl;
+	[Export] public Button PreviewToggleButton;
+	[Export] public Label MainViewportFpsLabel;
 		
 	[Export] public SubViewport Viewport;
 	[Export] public SceneTree SceneTreePanel;
@@ -31,6 +33,7 @@ public partial class Main : Control
 	[Export] public ObjectPropertiesPanel ObjectPropertyPanel;
 	
 	private SpawnMenu _spawnMenu;
+	private bool _renderModeEnabled = false;
 	
 	public override void _EnterTree()
 	{
@@ -43,6 +46,7 @@ public partial class Main : Control
 		
 		SetupMenus();
 		SetupSpawnMenu();
+		SetupPreviewToggleButton();
 		SceneTreePanel.SetViewport(Viewport);
 		
 		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
@@ -223,6 +227,25 @@ public partial class Main : Control
 		SpawnButton.Pressed += OnSpawnButtonPressed;
 	}
 	
+	private void SetupPreviewToggleButton()
+	{
+		if (PreviewToggleButton != null)
+		{
+			PreviewToggleButton.Pressed += OnPreviewToggleButtonPressed;
+		}
+		
+		// Set initial visibility to false for both preview and render mode
+		if (PreviewViewportControl != null)
+		{
+			PreviewViewportControl.Visible = false;
+		}
+	}
+	
+	private void OnPreviewToggleButtonPressed()
+	{
+		TogglePreviewViewportVisibility();
+	}
+	
 	private void OnSpawnButtonPressed()
 	{
 		// Show the spawn menu at the global position of the spawn button
@@ -264,5 +287,127 @@ public partial class Main : Control
 	{
 		SelectionManager.Instance.ClearSelection();
 		SelectionManager.Instance.SelectObject(sceneObject);
+	}
+	
+	public override void _Input(InputEvent @event)
+	{
+		if (@event is InputEventKey keyEvent && keyEvent.Pressed && !keyEvent.Echo)
+		{
+			// F5 to toggle render mode
+			if (keyEvent.Keycode == Key.F5)
+			{
+				ToggleRenderMode();
+				GetViewport().SetInputAsHandled();
+			}
+		}
+	}
+	
+	public bool IsRenderModeEnabled()
+	{
+		return _renderModeEnabled;
+	}
+	
+	private void ToggleRenderMode()
+	{
+		_renderModeEnabled = !_renderModeEnabled;
+		GD.Print($"Render mode: {(_renderModeEnabled ? "Enabled" : "Disabled")}");
+		
+		// Check if preview is visible
+		bool previewVisible = PreviewViewportControl != null && PreviewViewportControl.Visible;
+		
+		// Update all lights in the scene
+		UpdateLightsRenderMode(Viewport, _renderModeEnabled);
+		
+		// Update FPS labels visibility based on which viewport is rendering
+		if (_renderModeEnabled && previewVisible)
+		{
+			// Preview is visible, show FPS on preview
+			if (MainViewportFpsLabel != null)
+				MainViewportFpsLabel.Visible = false;
+			if (PreviewViewportControl != null)
+				PreviewViewportControl.SetFpsLabelVisible(true);
+		}
+		else if (_renderModeEnabled && !previewVisible)
+		{
+			// Preview is hidden, show FPS on main viewport
+			if (MainViewportFpsLabel != null)
+				MainViewportFpsLabel.Visible = true;
+			if (PreviewViewportControl != null)
+				PreviewViewportControl.SetFpsLabelVisible(false);
+		}
+		else
+		{
+			// Render mode disabled, hide all FPS labels
+			if (MainViewportFpsLabel != null)
+				MainViewportFpsLabel.Visible = false;
+			if (PreviewViewportControl != null)
+				PreviewViewportControl.SetFpsLabelVisible(false);
+		}
+		
+		// If preview is visible and render mode is enabled, show the preview
+		if (_renderModeEnabled && !previewVisible && PreviewViewportControl != null)
+		{
+			PreviewViewportControl.Visible = true;
+			GD.Print("Preview viewport enabled with render mode");
+		}
+	}
+	
+	private void UpdateLightsRenderMode(Node node, bool enabled)
+	{
+		foreach (var child in node.GetChildren())
+		{
+			if (child is LightSceneObject lightObject)
+			{
+				lightObject.SetRenderMode(enabled);
+			}
+			
+			// Recursively update child nodes
+			if (child is Node childNode && childNode.GetChildCount() > 0)
+			{
+				UpdateLightsRenderMode(childNode, enabled);
+			}
+		}
+	}
+	
+	public void TogglePreviewViewportVisibility()
+	{
+		if (PreviewViewportControl == null)
+			return;
+		
+		bool wasVisible = PreviewViewportControl.Visible;
+		PreviewViewportControl.Visible = !wasVisible;
+		
+		GD.Print($"Preview viewport: {(PreviewViewportControl.Visible ? "Visible" : "Hidden")}");
+		
+		// Update FPS label visibility if render mode is on
+		if (_renderModeEnabled)
+		{
+			if (PreviewViewportControl.Visible)
+			{
+				// Preview now visible, show FPS on preview
+				if (MainViewportFpsLabel != null)
+					MainViewportFpsLabel.Visible = false;
+				PreviewViewportControl.SetFpsLabelVisible(true);
+			}
+			else
+			{
+				// Preview now hidden, show FPS on main viewport
+				if (MainViewportFpsLabel != null)
+					MainViewportFpsLabel.Visible = true;
+				PreviewViewportControl.SetFpsLabelVisible(false);
+			}
+		}
+	}
+	
+	public override void _Process(double delta)
+	{
+		base._Process(delta);
+		
+		// Update main viewport FPS counter if visible
+		if (MainViewportFpsLabel != null && MainViewportFpsLabel.Visible)
+		{
+			int fps = (int)Engine.GetFramesPerSecond();
+			MainViewportFpsLabel.Text = $"FPS: {fps}";
+		}
 	}
 }

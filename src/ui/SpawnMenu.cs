@@ -168,6 +168,16 @@ public partial class SpawnMenu : PopupPanel
 	{
 		_categories = new Dictionary<string, List<string>>()
 		{
+			{ "Camera", new List<string>()
+				{
+					"Camera"
+				}
+			},
+			{ "Light", new List<string>()
+				{
+					"Point Light"
+				}
+			},
 			{ "Primitives", new List<string>()
 				{
 					"Cube",
@@ -616,8 +626,59 @@ public partial class SpawnMenu : PopupPanel
 			return;
 		}
 		
-		// Create a new SceneObject
-		var sceneObject = new SceneObject();
+		// Create appropriate scene object (Camera, Light, or regular SceneObject)
+		SceneObject sceneObject;
+		
+		// Handle camera spawning specially
+		if (objectName == "Camera")
+		{
+			var cameraObject = new CameraSceneObject();
+			cameraObject.Name = fullObjectName;
+			Viewport.AddChild(cameraObject);
+			
+			// Get the work camera and spawn the camera at its position and rotation
+			var workCamera = Viewport.GetNodeOrNull<WorkCamera>("WorkCam");
+			if (workCamera != null)
+			{
+				cameraObject.GlobalTransform = workCamera.GlobalTransform;
+				GD.Print($"Camera spawned at work camera position: {workCamera.GlobalPosition}");
+			}
+			else
+			{
+				cameraObject.GlobalPosition = Vector3.Zero;
+				GD.PrintErr("Could not find WorkCam - spawning at origin");
+			}
+			
+			// Notify PreviewViewport about new camera
+			if (GetTree().Root.GetNode<Main>("/root/Main") is Main main)
+			{
+				main.PreviewViewportControl?.OnCameraSpawned(cameraObject);
+				main.SceneTreePanel.Refresh();
+			}
+			
+			return;
+		}
+		
+		// Handle light spawning specially
+		if (objectName == "Point Light")
+		{
+			var lightObject = new LightSceneObject();
+			lightObject.Name = fullObjectName;
+			Viewport.AddChild(lightObject);
+			
+			// Position at world origin
+			lightObject.GlobalPosition = Vector3.Zero;
+			
+			// Notify the scene tree panel to refresh
+			if (GetTree().Root.GetNode<Main>("/root/Main") is Main main)
+			{
+				main.SceneTreePanel.Refresh();
+			}
+			
+			return;
+		}
+		
+		sceneObject = new SceneObject();
 		sceneObject.Name = fullObjectName;
 		sceneObject.ObjectType = objectName;
 		

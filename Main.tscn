@@ -73,6 +73,7 @@ script = ExtResource("4_3dxm6")
 root = SubResource("Resource_c6i3y")
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_j4qnp"]
+render_priority = -1
 transparency = 1
 vertex_color_use_as_albedo = true
 albedo_texture = ExtResource("9_c2ibq")
@@ -83,7 +84,7 @@ texture_filter = 0
 [sub_resource type="PlaneMesh" id="PlaneMesh_fpfj3"]
 size = Vector2(64, 64)
 
-[node name="Main" type="Control" unique_id=718552606 node_paths=PackedStringArray("FileButton", "EditButton", "ViewButton", "RenderButton", "HelpButton", "SpawnButton", "PreviewViewportControl", "Viewport", "SceneTreePanel", "SceneTree", "ProjectPropertyPanel", "ObjectPropertyPanel")]
+[node name="Main" type="Control" unique_id=718552606 node_paths=PackedStringArray("FileButton", "EditButton", "ViewButton", "RenderButton", "HelpButton", "SpawnButton", "PreviewViewportControl", "PreviewToggleButton", "MainViewportFpsLabel", "Viewport", "SceneTreePanel", "SceneTree", "ProjectPropertyPanel", "ObjectPropertyPanel")]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -99,6 +100,8 @@ RenderButton = NodePath("Content/Menubar/RenderButton")
 HelpButton = NodePath("Content/Menubar/HelpButton")
 SpawnButton = NodePath("Content/MainContent/Viewport/ViewportUI/SpawnMenuButton")
 PreviewViewportControl = NodePath("Content/MainContent/Viewport/ViewportUI/PreviewViewport")
+PreviewToggleButton = NodePath("Content/MainContent/Viewport/ViewportUI/PreviewToggleButton")
+MainViewportFpsLabel = NodePath("Content/MainContent/Viewport/ViewportUI/FpsLabel")
 Viewport = NodePath("Content/MainContent/Viewport/MainViewport/SubViewport")
 SceneTreePanel = NodePath("Content/MainContent/Scene Tree")
 SceneTree = NodePath("Content/MainContent/Scene Tree")
@@ -242,6 +245,32 @@ offset_top = 10.0
 offset_right = 96.0
 offset_bottom = 96.0
 texture_normal = ExtResource("9_5vvyt")
+
+[node name="PreviewToggleButton" type="Button" parent="Content/MainContent/Viewport/ViewportUI" unique_id=847362918]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -120.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = 40.0
+grow_horizontal = 0
+text = "Toggle Preview"
+
+[node name="FpsLabel" type="Label" parent="Content/MainContent/Viewport/ViewportUI" unique_id=198734652]
+visible = false
+layout_mode = 1
+offset_left = 10.0
+offset_top = 100.0
+offset_right = 100.0
+offset_bottom = 130.0
+theme_override_colors/font_color = Color(1, 1, 0, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 1
+theme_override_constants/shadow_offset_y = 1
+theme_override_font_sizes/font_size = 20
+text = "FPS: 60"
 
 [node name="PreviewViewport" parent="Content/MainContent/Viewport/ViewportUI" unique_id=1808599426 instance=ExtResource("10_preview")]
 layout_mode = 1

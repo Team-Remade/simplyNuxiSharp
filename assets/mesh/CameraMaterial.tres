@@ -1,0 +1,10 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://c2qsrv0ylp7bt"]
+
+[ext_resource type="Texture2D" uid="uid://di4rv4blo1kqe" path="res://assets/mesh/Camera_Untitled.png" id="1_goeif"]
+
+[resource]
+resource_name = "Material"
+cull_mode = 2
+no_depth_test = true
+shading_mode = 0
+albedo_texture = ExtResource("1_goeif")

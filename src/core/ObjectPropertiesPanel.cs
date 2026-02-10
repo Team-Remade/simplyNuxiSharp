@@ -8,6 +8,8 @@ public partial class ObjectPropertiesPanel : Panel
 	private VBoxContainer _vboxContainer;
 	private Label _objectNameLabel;
 	private CheckBox _visibilityCheckbox;
+	private HBoxContainer _colorPickerContainer;
+	private ColorPickerButton _colorPicker;
 	private SpinBox _positionX;
 	private SpinBox _positionY;
 	private SpinBox _positionZ;
@@ -98,6 +100,24 @@ public partial class ObjectPropertiesPanel : Panel
 		_visibilityCheckbox.Toggled += OnVisibilityChanged;
 		visibilityContainer.AddChild(_visibilityCheckbox);
 
+		// Color picker for lights (initially hidden)
+		_colorPickerContainer = new HBoxContainer();
+		_colorPickerContainer.Visible = false;
+		vbox.AddChild(_colorPickerContainer);
+		
+		var colorLabel = new Label();
+		colorLabel.Text = "Color:";
+		colorLabel.CustomMinimumSize = new Vector2(60, 0);
+		_colorPickerContainer.AddChild(colorLabel);
+		
+		_colorPicker = new ColorPickerButton();
+		_colorPicker.Name = "ColorPicker";
+		_colorPicker.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_colorPicker.CustomMinimumSize = new Vector2(0, 30);
+		_colorPicker.EditAlpha = false; // Don't allow alpha editing for light colors
+		_colorPicker.ColorChanged += OnColorChanged;
+		_colorPickerContainer.AddChild(_colorPicker);
+
 		// Position section with toggle arrow
 		_positionSection = new CollapsibleSection("Position");
 		_positionSection.SizeFlagsHorizontal = SizeFlags.ExpandFill;
@@ -177,6 +197,7 @@ public partial class ObjectPropertiesPanel : Panel
 		{
 			_currentObject = null;
 			_objectNameLabel.Text = "No object selected";
+			_colorPickerContainer.Visible = false;
 			ClearSpinBoxes();
 		}
 	}
@@ -189,6 +210,17 @@ public partial class ObjectPropertiesPanel : Panel
 
 		// Visibility
 		_visibilityCheckbox.SetPressedNoSignal(_currentObject.ObjectVisible);
+
+		// Show color picker only for lights
+		if (_currentObject is LightSceneObject lightObj)
+		{
+			_colorPickerContainer.Visible = true;
+			_colorPicker.Color = lightObj.LightColor;
+		}
+		else
+		{
+			_colorPickerContainer.Visible = false;
+		}
 
 		// For bones, show TargetPosition and TargetRotation (offset from base pose)
 		// For other objects, show regular Position and Rotation
@@ -252,6 +284,18 @@ public partial class ObjectPropertiesPanel : Panel
 		
 		// Auto-keyframe when property changes
 		AutoKeyframe("visible");
+	}
+
+	private void OnColorChanged(Color color)
+	{
+		if (_currentObject == null) return;
+		
+		if (_currentObject is LightSceneObject lightObj)
+		{
+			lightObj.LightColor = color;
+		}
+		
+		// Note: Light color could be keyframed in the future if needed
 	}
 
 	private void OnPositionChanged()

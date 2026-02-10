@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using System.Collections.Generic;
 
 namespace simplyRemadeNuxi.core;
 
@@ -9,9 +10,11 @@ public partial class PreviewViewport : Control
 	[Export] public SubViewport PreviewSubViewport;
 	[Export] public Camera3D PreviewCamera;
 	[Export] public Button ToggleModeButton;
+	[Export] public OptionButton CameraDropdown;
 	[Export] public Control HeaderBar;
 	[Export] public Panel MainPanel;
 	[Export] public Control ResizeBorder;
+	[Export] public Label FpsLabel;
 	
 	private Window _dedicatedWindow;
 	private bool _isInDedicatedWindow = false;
@@ -57,6 +60,11 @@ public partial class PreviewViewport : Control
 	private SubViewport _mainViewport;
 	private Camera3D _mainCamera;
 	
+	// Camera tracking
+	private List<CameraSceneObject> _sceneCameras = new List<CameraSceneObject>();
+	private CameraSceneObject _activeSceneCamera = null;
+	private bool _useWorkCamera = true;
+	
 	public override void _Ready()
 	{
 		// Setup camera with all cull layers except layer 2
@@ -83,6 +91,13 @@ public partial class PreviewViewport : Control
 		{
 			ToggleModeButton.Pressed += OnToggleModePressed;
 			ToggleModeButton.Text = "Pop Out";
+		}
+		
+		// Setup camera dropdown
+		if (CameraDropdown != null)
+		{
+			CameraDropdown.ItemSelected += OnCameraDropdownChanged;
+			RefreshCameraDropdown();
 		}
 		
 		// Setup dragging on header bar
@@ -549,11 +564,36 @@ public partial class PreviewViewport : Control
 	{
 		base._Process(delta);
 		
-		// Sync camera transform continuously
-		if (_mainCamera != null && PreviewCamera != null && IsInstanceValid(_mainCamera))
+		// Sync camera transform based on active camera
+		if (PreviewCamera != null)
 		{
-			PreviewCamera.GlobalTransform = _mainCamera.GlobalTransform;
-			PreviewCamera.Fov = _mainCamera.Fov;
+			if (_useWorkCamera && _mainCamera != null && IsInstanceValid(_mainCamera))
+			{
+				// Use work camera
+				PreviewCamera.GlobalTransform = _mainCamera.GlobalTransform;
+				PreviewCamera.Fov = _mainCamera.Fov;
+			}
+			else if (!_useWorkCamera && _activeSceneCamera != null && IsInstanceValid(_activeSceneCamera))
+			{
+				// Use scene camera - teleport to its position
+				PreviewCamera.GlobalTransform = _activeSceneCamera.GlobalTransform;
+				PreviewCamera.Fov = _activeSceneCamera.Fov;
+			}
+		}
+		
+		// Update FPS counter if visible
+		if (FpsLabel != null && FpsLabel.Visible)
+		{
+			int fps = (int)Engine.GetFramesPerSecond();
+			FpsLabel.Text = $"FPS: {fps}";
+		}
+	}
+	
+	public void SetFpsLabelVisible(bool visible)
+	{
+		if (FpsLabel != null)
+		{
+			FpsLabel.Visible = visible;
 		}
 	}
 	
@@ -565,6 +605,125 @@ public partial class PreviewViewport : Control
 			if (_dedicatedWindow != null && IsInstanceValid(_dedicatedWindow))
 			{
 				_dedicatedWindow.QueueFree();
+			}
+		}
+	}
+	
+	// Camera management methods
+	public void OnCameraSpawned(CameraSceneObject camera)
+	{
+		if (camera == null || _sceneCameras.Contains(camera))
+			return;
+			
+		_sceneCameras.Add(camera);
+		RefreshCameraDropdown();
+		GD.Print($"Camera '{camera.Name}' added to preview viewport");
+	}
+	
+	public void OnCameraRemoved(CameraSceneObject camera)
+	{
+		if (camera == null || !_sceneCameras.Contains(camera))
+			return;
+			
+		_sceneCameras.Remove(camera);
+		
+		// If the removed camera was active, switch back to work camera
+		if (_activeSceneCamera == camera)
+		{
+			_activeSceneCamera = null;
+			_useWorkCamera = true;
+		}
+		
+		RefreshCameraDropdown();
+		GD.Print($"Camera '{camera.Name}' removed from preview viewport");
+	}
+	
+	private void RefreshCameraDropdown()
+	{
+		if (CameraDropdown == null)
+			return;
+			
+		CameraDropdown.Clear();
+		
+		// Add work camera as first option
+		CameraDropdown.AddItem("Work Camera", 0);
+		
+		// Add all scene cameras
+		for (int i = 0; i < _sceneCameras.Count; i++)
+		{
+			var camera = _sceneCameras[i];
+			if (IsInstanceValid(camera))
+			{
+				CameraDropdown.AddItem(camera.Name, i + 1);
+			}
+		}
+		
+		// Select the correct camera
+		if (_useWorkCamera)
+		{
+			CameraDropdown.Selected = 0;
+		}
+		else if (_activeSceneCamera != null)
+		{
+			int index = _sceneCameras.IndexOf(_activeSceneCamera);
+			if (index >= 0)
+			{
+				CameraDropdown.Selected = index + 1;
+			}
+		}
+	}
+	
+	private void OnCameraDropdownChanged(long index)
+	{
+		if (index == 0)
+		{
+			// Switch to work camera
+			_useWorkCamera = true;
+			_activeSceneCamera = null;
+			GD.Print("Switched to Work Camera");
+		}
+		else
+		{
+			// Switch to scene camera
+			int cameraIndex = (int)index - 1;
+			if (cameraIndex >= 0 && cameraIndex < _sceneCameras.Count)
+			{
+				_useWorkCamera = false;
+				_activeSceneCamera = _sceneCameras[cameraIndex];
+				GD.Print($"Switched to camera: {_activeSceneCamera.Name}");
+			}
+		}
+	}
+	
+	public void RefreshCameraList()
+	{
+		// Scan the viewport for all camera scene objects
+		_sceneCameras.Clear();
+		
+		if (_mainViewport != null)
+		{
+			ScanForCameras(_mainViewport);
+		}
+		
+		RefreshCameraDropdown();
+	}
+	
+	private void ScanForCameras(Node node)
+	{
+		foreach (var child in node.GetChildren())
+		{
+			if (child is CameraSceneObject camera)
+			{
+				if (!_sceneCameras.Contains(camera))
+				{
+					_sceneCameras.Add(camera);
+				}
+			}
+			
+			// Recursively scan children
+			if (child.GetChildCount() > 0)
+			{
+				ScanForCameras(child);
 			}
 		}
 	}
