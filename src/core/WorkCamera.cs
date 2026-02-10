@@ -200,6 +200,8 @@ public partial class WorkCamera : Camera3D
 			}
 		}
 
+		// Store the original floor visibility state
+		bool originalFloorVisibility = Main.Instance.ProjectPropertyPanel.FloorNode.Visible;
 		Main.Instance.ProjectPropertyPanel.FloorNode.Visible = false;
 		
 		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
@@ -220,7 +222,8 @@ public partial class WorkCamera : Camera3D
 			}
 		}
 		
-		Main.Instance.ProjectPropertyPanel.FloorNode.Visible = true;
+		// Restore the original floor visibility state instead of forcing it to true
+		Main.Instance.ProjectPropertyPanel.FloorNode.Visible = originalFloorVisibility;
 		
 		PickViewport.ProcessMode = ProcessModeEnum.Disabled;
 		PickViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
