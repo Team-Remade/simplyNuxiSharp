@@ -23,6 +23,12 @@ public partial class SpawnMenu : PopupPanel
 	private string _searchQuery = "";
 	private string _selectedTextureType = "item"; // "block" or "item"
 	
+	// Custom model history
+	private List<string> _customModelHistory = new List<string>();
+	private Dictionary<string, string> _customModelPaths = new Dictionary<string, string>(); // Display name -> full path
+	private const string CustomModelHistoryPath = "user://custom_model_history.json";
+	private const int MaxHistoryItems = 20;
+	
 	public SubViewport Viewport { get; set; }
 
 	public override void _Ready()
@@ -172,8 +178,16 @@ public partial class SpawnMenu : PopupPanel
 					"Plane",
 					"Capsule"
 				}
+			},
+			{ "Custom Models", new List<string>()
+				{
+					"Load..."
+				}
 			}
 		};
+		
+		// Load custom model history
+		LoadCustomModelHistory();
 		
 		// Add Blocks category from loaded Minecraft models
 		LoadMinecraftBlocks();
@@ -431,6 +445,27 @@ public partial class SpawnMenu : PopupPanel
 		
 		GD.Print($"Selected object index: {index}, category: {_selectedCategory}");
 		
+		// Check if this is the "Load..." option in Custom Models
+		if (_selectedCategory == "Custom Models")
+		{
+			var objectName = _objectList.GetItemText((int)index);
+			if (objectName == "Load...")
+			{
+				_variantList.Clear();
+				_spawnButton.Disabled = true;
+				// Open file dialog on single-click
+				OpenCustomModelFileDialog();
+				return;
+			}
+			else
+			{
+				// It's a custom model from history, enable spawn button
+				_variantList.Clear();
+				_spawnButton.Disabled = false;
+				return;
+			}
+		}
+		
 		// Update variants list if this is a block
 		if (_selectedCategory == "Blocks")
 		{
@@ -458,6 +493,23 @@ public partial class SpawnMenu : PopupPanel
 	private void OnObjectDoubleClicked(long index)
 	{
 		_selectedObjectIndex = (int)index;
+		
+		// Check if this is the "Load..." option in Custom Models
+		if (_selectedCategory == "Custom Models")
+		{
+			var objectName = _objectList.GetItemText((int)index);
+			if (objectName == "Load...")
+			{
+				OpenCustomModelFileDialog();
+				return;
+			}
+			else
+			{
+				// It's a custom model from history, spawn it
+				SpawnSelectedObject();
+				return;
+			}
+		}
 		
 		// For non-block items, spawn immediately
 		if (_selectedCategory != "Blocks")
@@ -553,6 +605,14 @@ public partial class SpawnMenu : PopupPanel
 		if (_selectedCategory == "Characters")
 		{
 			CreateCharacter(objectName, fullObjectName);
+			return;
+		}
+		
+		// Check if this is a custom model from history
+		if (_selectedCategory == "Custom Models" && _customModelPaths.ContainsKey(objectName))
+		{
+			var glbPath = _customModelPaths[objectName];
+			LoadAndSpawnCustomModel(glbPath);
 			return;
 		}
 		
@@ -1054,5 +1114,306 @@ public partial class SpawnMenu : PopupPanel
 		}
 		
 		GD.Print($"Character '{fullObjectName}' spawned successfully with {characterObject.BoneObjects.Count} bones");
+	}
+	
+	private void OpenCustomModelFileDialog()
+	{
+		GD.Print("Opening file dialog for custom 3D model...");
+		
+		NativeFileDialog.ShowOpenFile(
+			"Select 3D Model (GLB/GLTF)",
+			NativeFileDialog.Filters.Glb,
+			(success, filePath) =>
+			{
+				if (success && !string.IsNullOrEmpty(filePath))
+				{
+					GD.Print($"Selected 3D model file: {filePath}");
+					LoadAndSpawnCustomModel(filePath);
+				}
+				else
+				{
+					GD.Print("3D model file selection cancelled");
+				}
+			}
+		);
+	}
+	
+	private void LoadAndSpawnCustomModel(string glbPath)
+	{
+		if (!System.IO.File.Exists(glbPath))
+		{
+			GD.PrintErr($"Model file does not exist: {glbPath}");
+			return;
+		}
+		
+		GD.Print($"Loading custom 3D model from: {glbPath}");
+		
+		// Get a display name from the file
+		var fileName = System.IO.Path.GetFileNameWithoutExtension(glbPath);
+		var displayName = CleanBlockName(fileName);
+		
+		// Get the next available number for this object type
+		int nextNumber = GetNextAvailableObjectNumber(displayName);
+		string fullObjectName = nextNumber > 1 ? $"{displayName}{nextNumber}" : displayName;
+		
+		// Load the GLB file using Godot's gltf_document and gltf_state
+		var gltfDocument = new GltfDocument();
+		var gltfState = new GltfState();
+		
+		var error = gltfDocument.AppendFromFile(glbPath, gltfState);
+		
+		if (error != Error.Ok)
+		{
+			GD.PrintErr($"Failed to load 3D model file: {error}");
+			return;
+		}
+		
+		// Generate the scene from GLTF
+		var glbRoot = gltfDocument.GenerateScene(gltfState);
+		
+		if (glbRoot == null)
+		{
+			GD.PrintErr("Failed to generate scene from 3D model");
+			return;
+		}
+		
+		// Cast to Node3D - GLB/GLTF files typically contain 3D content
+		if (glbRoot is not Node3D glbRoot3D)
+		{
+			GD.PrintErr($"Model root is not a Node3D, it's a {glbRoot.GetType().Name}");
+			glbRoot.QueueFree();
+			return;
+		}
+		
+		GD.Print($"Successfully loaded 3D model scene: {glbRoot3D.Name}");
+		
+		// Check if the model has a skeleton
+		bool hasSkeleton = HasSkeleton(glbRoot3D);
+		
+		SceneObject customModelObject;
+		
+		if (hasSkeleton)
+		{
+			GD.Print("Model has skeleton - using CharacterSceneObject");
+			// Create a CharacterSceneObject for rigged models
+			var characterObject = new CharacterSceneObject();
+			characterObject.Name = fullObjectName;
+			characterObject.ObjectType = displayName;
+			
+			// Add to viewport first
+			Viewport.AddChild(characterObject);
+			
+			// Setup the character from the GLB data
+			characterObject.SetupFromGlb(glbRoot3D);
+			
+			customModelObject = characterObject;
+		}
+		else
+		{
+			GD.Print("Model has no skeleton - using regular SceneObject");
+			// Create a regular SceneObject for static models
+			customModelObject = new SceneObject();
+			customModelObject.Name = fullObjectName;
+			customModelObject.ObjectType = displayName;
+			customModelObject.PivotOffset = Vector3.Zero;
+			
+			// Add to viewport first
+			Viewport.AddChild(customModelObject);
+			
+			// Add the GLB root directly to the visual node
+			customModelObject.AddVisualInstance(glbRoot3D);
+		}
+		
+		// Position at world origin
+		customModelObject.GlobalPosition = Vector3.Zero;
+		
+		// Notify the scene tree panel to refresh
+		if (GetTree().Root.GetNode<Main>("/root/Main") is Main main)
+		{
+			main.SceneTreePanel.Refresh();
+		}
+		
+		GD.Print($"Custom model '{fullObjectName}' spawned successfully");
+		
+		// Add to history
+		AddToCustomModelHistory(glbPath, displayName);
+		
+		// Hide the menu after spawning
+		Hide();
+	}
+	
+	/// <summary>
+	/// Checks if a Node3D hierarchy contains a Skeleton3D
+	/// </summary>
+	private bool HasSkeleton(Node node)
+	{
+		if (node is Skeleton3D)
+		{
+			return true;
+		}
+		
+		foreach (var child in node.GetChildren())
+		{
+			if (HasSkeleton(child))
+			{
+				return true;
+			}
+		}
+		
+		return false;
+	}
+	
+	private void LoadCustomModelHistory()
+	{
+		try
+		{
+			if (FileAccess.FileExists(CustomModelHistoryPath))
+			{
+				using var file = FileAccess.Open(CustomModelHistoryPath, FileAccess.ModeFlags.Read);
+				var jsonText = file.GetAsText();
+				var json = Json.ParseString(jsonText);
+				
+				if (json.VariantType == Variant.Type.Dictionary)
+				{
+					var dict = json.AsGodotDictionary();
+					if (dict.ContainsKey("history"))
+					{
+						var historyArray = dict["history"].AsGodotArray();
+						foreach (var item in historyArray)
+						{
+							var itemDict = item.AsGodotDictionary();
+							if (itemDict.ContainsKey("path") && itemDict.ContainsKey("name"))
+							{
+								var path = itemDict["path"].ToString();
+								var name = itemDict["name"].ToString();
+								
+								// Only add if file still exists
+								if (System.IO.File.Exists(path))
+								{
+									_customModelHistory.Add(path);
+									_customModelPaths[name] = path;
+								}
+							}
+						}
+						
+						GD.Print($"Loaded {_customModelHistory.Count} custom models from history");
+					}
+				}
+			}
+		}
+		catch (System.Exception ex)
+		{
+			GD.PrintErr($"Error loading custom model history: {ex.Message}");
+		}
+		
+		// Update the Custom Models category list
+		UpdateCustomModelsCategory();
+	}
+	
+	private void SaveCustomModelHistory()
+	{
+		try
+		{
+			var historyArray = new Godot.Collections.Array();
+			
+			// Build array of history items
+			foreach (var path in _customModelHistory)
+			{
+				// Find the display name for this path
+				string displayName = "";
+				foreach (var kvp in _customModelPaths)
+				{
+					if (kvp.Value == path)
+					{
+						displayName = kvp.Key;
+						break;
+					}
+				}
+				
+				if (!string.IsNullOrEmpty(displayName))
+				{
+					var itemDict = new Godot.Collections.Dictionary
+					{
+						{ "path", path },
+						{ "name", displayName }
+					};
+					historyArray.Add(itemDict);
+				}
+			}
+			
+			var rootDict = new Godot.Collections.Dictionary
+			{
+				{ "history", historyArray }
+			};
+			
+			var jsonText = Json.Stringify(rootDict, "\t");
+			
+			using var file = FileAccess.Open(CustomModelHistoryPath, FileAccess.ModeFlags.Write);
+			file.StoreString(jsonText);
+			
+			GD.Print($"Saved {_customModelHistory.Count} custom models to history");
+		}
+		catch (System.Exception ex)
+		{
+			GD.PrintErr($"Error saving custom model history: {ex.Message}");
+		}
+	}
+	
+	private void AddToCustomModelHistory(string glbPath, string displayName)
+	{
+		// Remove if already in history (we'll re-add at the top)
+		if (_customModelHistory.Contains(glbPath))
+		{
+			_customModelHistory.Remove(glbPath);
+			// Remove old display name entry
+			var oldKey = _customModelPaths.FirstOrDefault(x => x.Value == glbPath).Key;
+			if (!string.IsNullOrEmpty(oldKey))
+			{
+				_customModelPaths.Remove(oldKey);
+			}
+		}
+		
+		// Add to the beginning of the list (most recent first)
+		_customModelHistory.Insert(0, glbPath);
+		_customModelPaths[displayName] = glbPath;
+		
+		// Limit history size
+		while (_customModelHistory.Count > MaxHistoryItems)
+		{
+			var removePath = _customModelHistory[_customModelHistory.Count - 1];
+			_customModelHistory.RemoveAt(_customModelHistory.Count - 1);
+			
+			// Remove from paths dictionary
+			var removeKey = _customModelPaths.FirstOrDefault(x => x.Value == removePath).Key;
+			if (!string.IsNullOrEmpty(removeKey))
+			{
+				_customModelPaths.Remove(removeKey);
+			}
+		}
+		
+		// Save to disk
+		SaveCustomModelHistory();
+		
+		// Update the category list
+		UpdateCustomModelsCategory();
+		
+		// Refresh the object list if Custom Models is the selected category
+		if (_selectedCategory == "Custom Models")
+		{
+			UpdateObjectList("Custom Models");
+		}
+	}
+	
+	private void UpdateCustomModelsCategory()
+	{
+		var customModelsList = new List<string> { "Load..." };
+		
+		// Add all items from history
+		foreach (var kvp in _customModelPaths)
+		{
+			customModelsList.Add(kvp.Key);
+		}
+		
+		_categories["Custom Models"] = customModelsList;
 	}
 }
