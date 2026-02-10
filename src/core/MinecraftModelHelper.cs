@@ -138,7 +138,7 @@ public static class MinecraftModelHelper
 		// Apply the centering offset so the whole model centers at [8,0,8] -> [0,0,0]
 		meshInstance.Position = center + pivotOffset;
 		
-		// Apply rotation if present
+		// Apply rotation if present (element-level rotation)
 		if (element.Rotation != null)
 		{
 			var rotation = element.Rotation;
@@ -338,14 +338,14 @@ public static class MinecraftModelHelper
 	/// <summary>
 	/// Creates a complete 3D node from a Minecraft model with parent resolution
 	/// </summary>
-	public static Node3D CreateNodeFromModel(MinecraftModel model)
+	public static Node3D CreateNodeFromModel(MinecraftModel model, float xRotation = 0, float yRotation = 0)
 	{
 		if (model == null)
 		{
 			return null;
 		}
 		
-		GD.Print($"CreateNodeFromModel: Starting with model (parent: {model.Parent ?? "none"})");
+		GD.Print($"CreateNodeFromModel: Starting with model (parent: {model.Parent ?? "none"}), rotations X={xRotation}, Y={yRotation}");
 		
 		// Resolve the complete model with parents
 		var resolvedModel = ResolveModelParents(model);
@@ -409,6 +409,22 @@ public static class MinecraftModelHelper
 				// Apply textures to the mesh
 				ApplyTexturesToMesh(mesh, element.Faces, resolvedModel.Textures);
 				root.AddChild(mesh);
+			}
+		}
+		
+		// Apply blockstate rotations to the root node if needed
+		if (xRotation != 0 || yRotation != 0)
+		{
+			GD.Print($"Applying blockstate rotations X={xRotation}, Y={yRotation}");
+			
+			// Apply rotations in the correct order (Y then X, matching Minecraft)
+			if (yRotation != 0)
+			{
+				root.RotateY(Mathf.DegToRad(yRotation));
+			}
+			if (xRotation != 0)
+			{
+				root.RotateX(Mathf.DegToRad(xRotation));
 			}
 		}
 		
@@ -885,26 +901,12 @@ public static class MinecraftModelHelper
 		
 		GD.Print("Model loaded successfully, creating node...");
 		
-		// Create the node from the model
-		var node = CreateNodeFromModel(model);
+		// Create the node from the model, passing rotations to maintain pivot point
+		var node = CreateNodeFromModel(model, variantData.X, variantData.Y);
 		
 		if (node != null)
 		{
-			// NOTE: Blockstate rotations are commented out for now to ensure consistent pivots
-			// Users can manually rotate blocks as needed
-			// TODO: Implement proper rotation that maintains pivot point
-			
-			// Apply rotations from the variant
-			//if (variantData.X != 0)
-			//{
-			//	node.RotateX(Mathf.DegToRad(variantData.X));
-			//}
-			//if (variantData.Y != 0)
-			//{
-			//	node.RotateY(Mathf.DegToRad(variantData.Y));
-			//}
-			
-			GD.Print("Node created successfully");
+			GD.Print("Node created successfully with rotations applied to geometry");
 		}
 		
 		return node;
@@ -972,19 +974,10 @@ public static class MinecraftModelHelper
 				
 				if (model != null)
 				{
-					var partNode = CreateNodeFromModel(model);
+					// Pass rotations to CreateNodeFromModel to maintain pivot point
+					var partNode = CreateNodeFromModel(model, variantData.X, variantData.Y);
 					if (partNode != null)
 					{
-						// Apply rotations from the variant
-						if (variantData.X != 0)
-						{
-							partNode.RotateX(Mathf.DegToRad(variantData.X));
-						}
-						if (variantData.Y != 0)
-						{
-							partNode.RotateY(Mathf.DegToRad(variantData.Y));
-						}
-						
 						rootNode.AddChild(partNode);
 					}
 				}
