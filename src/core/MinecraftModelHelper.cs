@@ -113,7 +113,7 @@ public static class MinecraftModelHelper
 	/// <summary>
 	/// Converts a Minecraft model element to a Godot MeshInstance3D with textures
 	/// </summary>
-	public static MeshInstance3D CreateMeshFromElement(ModelElement element, Dictionary<string, string> textures, Vector3 pivotOffset)
+	public static MeshInstance3D CreateMeshFromElement(ModelElement element, Dictionary<string, string> textures, Vector3 pivotOffset, Basis rotationBasis = default, bool hasRotation = false)
 	{
 		if (element == null || element.From == null || element.To == null)
 		{
@@ -132,11 +132,20 @@ public static class MinecraftModelHelper
 		var center = (from + to) / 2.0f;
 		
 		// Create a custom mesh with proper UV mapping and materials
-		var arrayMesh = CreateCubeMeshWithTextures(from, to, element.Faces, textures);
+		var arrayMesh = CreateCubeMeshWithTextures(from, to, element.Faces, textures, rotationBasis, hasRotation);
 		
 		meshInstance.Mesh = arrayMesh;
-		// Apply the centering offset so the whole model centers at [8,0,8] -> [0,0,0]
-		meshInstance.Position = center + pivotOffset;
+		
+		// Calculate position
+		var position = center + pivotOffset;
+		
+		// If we have rotation, transform the position
+		if (hasRotation)
+		{
+			position = rotationBasis * position;
+		}
+		
+		meshInstance.Position = position;
 		
 		// Apply rotation if present (element-level rotation)
 		if (element.Rotation != null)
@@ -167,7 +176,7 @@ public static class MinecraftModelHelper
 	/// Creates a cube mesh with proper UV mapping for textures
 	/// Each face can have its own texture via separate surfaces
 	/// </summary>
-	private static ArrayMesh CreateCubeMeshWithTextures(Vector3 from, Vector3 to, Dictionary<string, ElementFace> faces, Dictionary<string, string> textures)
+	private static ArrayMesh CreateCubeMeshWithTextures(Vector3 from, Vector3 to, Dictionary<string, ElementFace> faces, Dictionary<string, string> textures, Basis rotationBasis = default, bool hasRotation = false)
 	{
 		// The mesh vertices are created centered around origin (0,0,0)
 		// The caller will position the mesh at the correct location
@@ -231,6 +240,16 @@ public static class MinecraftModelHelper
 		void AddFaceSurface(ArrayMesh arrayMesh, Vector3 v0, Vector3 v1, Vector3 v2, Vector3 v3,
 		                    Vector3 normal, Vector2[] faceUVs, string faceName)
 		{
+			// Apply rotation to vertices and normals if needed
+			if (hasRotation)
+			{
+				v0 = rotationBasis * v0;
+				v1 = rotationBasis * v1;
+				v2 = rotationBasis * v2;
+				v3 = rotationBasis * v3;
+				normal = rotationBasis * normal;
+			}
+			
 			var vertices = new List<Vector3> { v0, v1, v2, v3 };
 			var uvs = new List<Vector2> { faceUVs[0], faceUVs[1], faceUVs[2], faceUVs[3] };
 			var normals = new List<Vector3> { normal, normal, normal, normal };
@@ -400,31 +419,32 @@ public static class MinecraftModelHelper
 		
 		var root = new Node3D();
 		
+		// Build rotation transform if needed
+		Basis rotationBasis = Basis.Identity;
+		if (yRotation != 0 || xRotation != 0)
+		{
+			GD.Print($"Creating blockstate rotation basis X={xRotation}, Y={yRotation}");
+			
+			// Apply rotations in the correct order (Y then X, matching Minecraft)
+			if (yRotation != 0)
+			{
+				rotationBasis = rotationBasis.Rotated(Vector3.Up, Mathf.DegToRad(yRotation));
+			}
+			if (xRotation != 0)
+			{
+				rotationBasis = rotationBasis.Rotated(Vector3.Right, Mathf.DegToRad(xRotation));
+			}
+		}
+		
 		// Create meshes for each element
 		foreach (var element in resolvedModel.Elements)
 		{
-			var mesh = CreateMeshFromElement(element, resolvedModel.Textures, pivotOffset);
+			var mesh = CreateMeshFromElement(element, resolvedModel.Textures, pivotOffset, rotationBasis, xRotation != 0 || yRotation != 0);
 			if (mesh != null)
 			{
 				// Apply textures to the mesh
 				ApplyTexturesToMesh(mesh, element.Faces, resolvedModel.Textures);
 				root.AddChild(mesh);
-			}
-		}
-		
-		// Apply blockstate rotations to the root node if needed
-		if (xRotation != 0 || yRotation != 0)
-		{
-			GD.Print($"Applying blockstate rotations X={xRotation}, Y={yRotation}");
-			
-			// Apply rotations in the correct order (Y then X, matching Minecraft)
-			if (yRotation != 0)
-			{
-				root.RotateY(Mathf.DegToRad(yRotation));
-			}
-			if (xRotation != 0)
-			{
-				root.RotateX(Mathf.DegToRad(xRotation));
 			}
 		}
 		
