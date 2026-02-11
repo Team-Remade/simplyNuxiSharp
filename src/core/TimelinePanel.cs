@@ -40,6 +40,9 @@ public partial class TimelinePanel : Panel
 	// Keyframe tracking by property path
 	private Dictionary<string, List<Keyframe>> _propertyKeyframes = new Dictionary<string, List<Keyframe>>();
 	
+	// Track all single property tracks for updating
+	private List<Control> _singlePropertyTracks = new List<Control>();
+	
 	public override void _Ready()
 	{
 		_instance = this;
@@ -64,9 +67,21 @@ public partial class TimelinePanel : Panel
 		{
 			// Advance playhead when playing
 			_currentFrame++;
-			if (_currentFrame > _maxFrames)
+			// Find the furthest keyframe to determine loop point
+			int furthestKeyframe = _maxFrames;
+			foreach (var kvp in _propertyKeyframes)
 			{
-				_currentFrame = 0; // Loop back to start
+				foreach (var keyframe in kvp.Value)
+				{
+					if (keyframe.Frame > furthestKeyframe)
+					{
+						furthestKeyframe = keyframe.Frame;
+					}
+				}
+			}
+			if (_currentFrame > furthestKeyframe)
+			{
+				_currentFrame = 0; // Loop back to start after furthest keyframe
 			}
 		}
 		
@@ -191,8 +206,10 @@ public partial class TimelinePanel : Panel
 		frameRulerContainer.AddChild(_frameRulerScroll);
 
 		_frameRuler = new Control();
-		_frameRuler.CustomMinimumSize = new Vector2(_maxFrames * _pixelsPerFrame, 25);
-		_frameRuler.Size = new Vector2(_maxFrames * _pixelsPerFrame, 25);
+		// Add extra scroll space beyond max frames (50% more) to allow placing keyframes beyond
+		var scrollableWidth = _maxFrames * _pixelsPerFrame * 1.5f;
+		_frameRuler.CustomMinimumSize = new Vector2(scrollableWidth, 25);
+		_frameRuler.Size = new Vector2(scrollableWidth, 25);
 		_frameRulerScroll.AddChild(_frameRuler);
 
 		// Draw frame markers on ruler
@@ -220,7 +237,9 @@ public partial class TimelinePanel : Panel
 		_keyframesTracksContainer = new VBoxContainer();
 		_keyframesTracksContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		_keyframesTracksContainer.SizeFlagsVertical = SizeFlags.ShrinkBegin; // Shrink to content
-		_keyframesTracksContainer.CustomMinimumSize = new Vector2(_maxFrames * _pixelsPerFrame, 0);
+		// Add extra scroll space beyond max frames (50% more) to allow placing keyframes beyond
+		var tracksScrollableWidth = _maxFrames * _pixelsPerFrame * 1.5f;
+		_keyframesTracksContainer.CustomMinimumSize = new Vector2(tracksScrollableWidth, 0);
 		_keyframesScroll.AddChild(_keyframesTracksContainer);
 
 		// Playhead container overlay (on top of scroll, positioned to align with scroll content)
@@ -396,7 +415,7 @@ public partial class TimelinePanel : Panel
 
 	private void OnStepForward()
 	{
-		_currentFrame = Mathf.Min(_maxFrames, _currentFrame + 1);
+		_currentFrame++; // No limit, allow going past max frames
 		_isPlaying = false;
 		UpdatePlayPauseButton();
 		ApplyKeyframesAtCurrentFrame();
@@ -404,7 +423,19 @@ public partial class TimelinePanel : Panel
 
 	private void OnJumpToEnd()
 	{
-		_currentFrame = _maxFrames;
+		// Jump to the furthest keyframe, or maxFrames if no keyframes beyond it
+		int furthestKeyframe = _maxFrames;
+		foreach (var kvp in _propertyKeyframes)
+		{
+			foreach (var keyframe in kvp.Value)
+			{
+				if (keyframe.Frame > furthestKeyframe)
+				{
+					furthestKeyframe = keyframe.Frame;
+				}
+			}
+		}
+		_currentFrame = furthestKeyframe;
 		_isPlaying = false;
 		UpdatePlayPauseButton();
 		ApplyKeyframesAtCurrentFrame();
@@ -503,9 +534,9 @@ public partial class TimelinePanel : Panel
 		{
 			if (mouseButton.ButtonIndex == MouseButton.Left && mouseButton.Pressed)
 			{
-				// Click to move playhead
-				float localX = mouseButton.Position.X;
-				int newFrame = Mathf.Clamp(Mathf.RoundToInt(localX / _pixelsPerFrame), 0, _maxFrames);
+				// Click to move playhead - account for horizontal scroll
+				float localX = mouseButton.Position.X + _keyframesScroll.ScrollHorizontal;
+				int newFrame = Mathf.Max(0, Mathf.RoundToInt(localX / _pixelsPerFrame));
 				
 				if (newFrame != _currentFrame)
 				{
@@ -522,11 +553,12 @@ public partial class TimelinePanel : Panel
 		if (_isDraggingPlayhead && @event is InputEventMouseMotion mouseMotion)
 		{
 			// Get mouse position relative to keyframes container
+			// The scroll is already accounted for in the position, so don't add it again
 			var globalPos = mouseMotion.GlobalPosition;
-			var localPos = _keyframesTracksContainer.GlobalPosition;
+			var localPos = _keyframesScroll.GlobalPosition;
 			float localX = globalPos.X - localPos.X + _keyframesScroll.ScrollHorizontal;
 			
-			int newFrame = Mathf.Clamp(Mathf.RoundToInt(localX / _pixelsPerFrame), 0, _maxFrames);
+			int newFrame = Mathf.Max(0, Mathf.RoundToInt(localX / _pixelsPerFrame));
 			
 			if (newFrame != _currentFrame)
 			{
@@ -586,6 +618,7 @@ public partial class TimelinePanel : Panel
 			child.QueueFree();
 		}
 		_properties.Clear();
+		_singlePropertyTracks.Clear();
 		// Don't clear _propertyKeyframes - keep it for now but load from objects instead
 		_propertyKeyframes.Clear();
 
@@ -672,9 +705,12 @@ public partial class TimelinePanel : Panel
 		
 		// Create the right keyframe track (single track, no collapsing)
 		var track = new Control();
-		track.CustomMinimumSize = new Vector2(_maxFrames * _pixelsPerFrame, 31);
+		// Add extra scroll space beyond max frames (50% more) to allow placing keyframes beyond
+		var trackScrollableWidth = _maxFrames * _pixelsPerFrame * 1.5f;
+		track.CustomMinimumSize = new Vector2(trackScrollableWidth, 31);
 		track.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		_keyframesTracksContainer.AddChild(track);
+		_singlePropertyTracks.Add(track); // Store reference for updates
 		
 		// Draw grid background and keyframes
 		track.Draw += () =>
@@ -735,7 +771,7 @@ public partial class TimelinePanel : Panel
 				{
 					float localX = mouseButton.Position.X;
 					int frame = Mathf.RoundToInt(localX / _pixelsPerFrame);
-					frame = Mathf.Clamp(frame, 0, _maxFrames);
+					frame = Mathf.Max(0, frame); // Only clamp to 0, allow going past max
 					
 					if (mouseButton.Pressed)
 					{
@@ -775,7 +811,7 @@ public partial class TimelinePanel : Panel
 			{
 				float localX = mouseMotion.Position.X;
 				int newFrame = Mathf.RoundToInt(localX / _pixelsPerFrame);
-				newFrame = Mathf.Clamp(newFrame, 0, _maxFrames);
+				newFrame = Mathf.Max(0, newFrame); // Only clamp to 0, allow going past max
 				
 				if (newFrame != draggedKeyframe.Frame)
 				{
@@ -867,6 +903,33 @@ public partial class TimelinePanel : Panel
 				});
 			}
 			_propertyKeyframes[fullPath].Sort((a, b) => a.Frame.CompareTo(b.Frame));
+			
+			// Check if any keyframe extends past current max
+			RecalculateTimelineLength();
+		}
+	}
+	
+	/// <summary>
+	/// Recalculate timeline length based on the furthest keyframe
+	/// </summary>
+	private void RecalculateTimelineLength()
+	{
+		int maxKeyframeFrame = 300; // Default minimum
+		
+		foreach (var kvp in _propertyKeyframes)
+		{
+			foreach (var keyframe in kvp.Value)
+			{
+				if (keyframe.Frame > maxKeyframeFrame)
+				{
+					maxKeyframeFrame = keyframe.Frame;
+				}
+			}
+		}
+		
+		if (maxKeyframeFrame > _maxFrames)
+		{
+			ExtendTimeline(maxKeyframeFrame);
 		}
 	}
 	
@@ -937,6 +1000,12 @@ public partial class TimelinePanel : Panel
 			_propertyKeyframes[fullPath].Sort((a, b) => a.Frame.CompareTo(b.Frame));
 		}
 		
+		// Extend timeline if keyframe is past the current max
+		if (frame > _maxFrames)
+		{
+			ExtendTimeline(frame);
+		}
+		
 		// Save to SceneObject
 		SaveKeyframesToObject(obj, propertyPath);
 		
@@ -983,6 +1052,12 @@ public partial class TimelinePanel : Panel
 				// Update frame and re-sort
 				keyframe.Frame = toFrame;
 				_propertyKeyframes[fullPath].Sort((a, b) => a.Frame.CompareTo(b.Frame));
+				
+				// Extend timeline if keyframe is past the current max
+				if (toFrame > _maxFrames)
+				{
+					ExtendTimeline(toFrame);
+				}
 				
 				// Save to SceneObject
 				SaveKeyframesToObject(obj, propertyPath);
@@ -1049,6 +1124,48 @@ public partial class TimelinePanel : Panel
 		}
 		
 		return 0f;
+	}
+	
+	private void ExtendTimeline(int newMaxFrame)
+	{
+		// Update max frames to accommodate the new keyframe
+		_maxFrames = newMaxFrame;
+		
+		// Add extra scroll space beyond max frames (50% more) to allow placing keyframes beyond
+		var scrollableWidth = _maxFrames * _pixelsPerFrame * 1.5f;
+		
+		// Update frame ruler size
+		if (_frameRuler != null)
+		{
+			_frameRuler.CustomMinimumSize = new Vector2(scrollableWidth, 25);
+			_frameRuler.Size = new Vector2(scrollableWidth, 25);
+			_frameRuler.QueueRedraw();
+		}
+		
+		// Update keyframe tracks container size
+		if (_keyframesTracksContainer != null)
+		{
+			_keyframesTracksContainer.CustomMinimumSize = new Vector2(scrollableWidth, 0);
+		}
+		
+		// Update all single property track controls
+		foreach (var track in _singlePropertyTracks)
+		{
+			if (track != null)
+			{
+				track.CustomMinimumSize = new Vector2(scrollableWidth, track.CustomMinimumSize.Y);
+				track.QueueRedraw();
+			}
+		}
+		
+		// Update all track group controls to new size
+		foreach (var prop in _properties)
+		{
+			if (prop.TrackGroup != null)
+			{
+				prop.TrackGroup.UpdateMaxFrames(_maxFrames);
+			}
+		}
 	}
 	
 	private void RefreshTracks()
@@ -1386,7 +1503,9 @@ public partial class KeyframeTrackGroup : VBoxContainer
 
 		// Main track (collapsed state) - match left side HBoxContainer natural height
 		_mainTrack = new Control();
-		_mainTrack.CustomMinimumSize = new Vector2(maxFrames * pixelsPerFrame, 31); // Match button height
+		// Add extra scroll space beyond max frames (50% more) to allow placing keyframes beyond
+		var scrollableWidth = maxFrames * pixelsPerFrame * 1.5f;
+		_mainTrack.CustomMinimumSize = new Vector2(scrollableWidth, 31); // Match button height
 		_mainTrack.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		AddChild(_mainTrack);
 
@@ -1405,7 +1524,7 @@ public partial class KeyframeTrackGroup : VBoxContainer
 		for (int i = 0; i < childCount; i++)
 		{
 			var childTrack = new Control();
-			childTrack.CustomMinimumSize = new Vector2(maxFrames * pixelsPerFrame, 31); // Match button height
+			childTrack.CustomMinimumSize = new Vector2(scrollableWidth, 31); // Match button height, use scrollable width
 			childTrack.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 			_childTracks.AddChild(childTrack);
 			_childTrackControls.Add(childTrack);
@@ -1429,7 +1548,7 @@ public partial class KeyframeTrackGroup : VBoxContainer
 				// Calculate frame from click position
 				float localX = mouseButton.Position.X;
 				int frame = Mathf.RoundToInt(localX / _pixelsPerFrame);
-				frame = Mathf.Clamp(frame, 0, _maxFrames);
+				frame = Mathf.Max(0, frame); // Only clamp to 0, allow going past max
 				
 				if (mouseButton.Pressed)
 				{
@@ -1482,7 +1601,7 @@ public partial class KeyframeTrackGroup : VBoxContainer
 			// Update keyframe position while dragging
 			float localX = mouseMotion.Position.X;
 			int newFrame = Mathf.RoundToInt(localX / _pixelsPerFrame);
-			newFrame = Mathf.Clamp(newFrame, 0, _maxFrames);
+			newFrame = Mathf.Max(0, newFrame); // Only clamp to 0, allow going past max
 			
 			if (newFrame != _draggedKeyframe.Frame)
 			{
@@ -1572,6 +1691,30 @@ public partial class KeyframeTrackGroup : VBoxContainer
 	public void SetExpanded(bool expanded)
 	{
 		_childTracks.Visible = expanded;
+	}
+	
+	public void UpdateMaxFrames(int newMaxFrames)
+	{
+		_maxFrames = newMaxFrames;
+		
+		// Add extra scroll space beyond max frames (50% more) to allow placing keyframes beyond
+		var scrollableWidth = _maxFrames * _pixelsPerFrame * 1.5f;
+		
+		// Update track sizes
+		if (_mainTrack != null)
+		{
+			_mainTrack.CustomMinimumSize = new Vector2(scrollableWidth, _mainTrack.CustomMinimumSize.Y);
+		}
+		
+		foreach (var childTrack in _childTrackControls)
+		{
+			if (childTrack != null)
+			{
+				childTrack.CustomMinimumSize = new Vector2(scrollableWidth, childTrack.CustomMinimumSize.Y);
+			}
+		}
+		
+		QueueRedrawTracks();
 	}
 	
 	public void QueueRedrawTracks()
