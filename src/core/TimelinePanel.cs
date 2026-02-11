@@ -17,6 +17,7 @@ public partial class TimelinePanel : Panel
 	private VBoxContainer _keyframesTracksContainer;
 	private Control _playheadContainer;
 	private ColorRect _playhead;
+	private Control _selectionBoxContainer;
 	private Label _timeLabel;
 	private ScrollContainer _frameRulerScroll;
 	private Control _frameRuler;
@@ -36,6 +37,19 @@ public partial class TimelinePanel : Panel
 	private bool _isDraggingPlayhead = false;
 	private bool _isPlaying = false;
 	private int _playStartFrame = 0; // Frame when play was pressed
+	
+	// Drag selection state
+	private bool _isDragSelecting = false;
+	private bool _wasDragging = false; // Track if we actually dragged (moved mouse)
+	private Vector2 _dragSelectStart;
+	private Vector2 _dragSelectEnd;
+	private const float DRAG_THRESHOLD = 3f; // Minimum pixels to move before considering it a drag
+	public List<Keyframe> _selectedKeyframes = new List<Keyframe>();
+	public Dictionary<Keyframe, (SceneObject obj, string propertyPath)> _keyframeOwners = new Dictionary<Keyframe, (SceneObject, string)>();
+	
+	// Keyframe dragging state (to prevent drag selection when dragging keyframes)
+	public bool _isDraggingKeyframe = false;
+	public bool _keyframeWasClicked = false; // Set by keyframe GuiInput, checked in _Input
 	
 	// Public properties for external access
 	public int CurrentFrame => _currentFrame;
@@ -326,6 +340,16 @@ public partial class TimelinePanel : Panel
 		_playheadContainer.Position = new Vector2(0, 0);
 		_playheadContainer.Size = new Vector2(10000, 10000); // Large size
 		scrollAndPlayheadContainer.AddChild(_playheadContainer);
+		
+		// Selection box container overlay (on top of everything)
+		_selectionBoxContainer = new Control();
+		_selectionBoxContainer.SetAnchorsPreset(LayoutPreset.TopLeft);
+		_selectionBoxContainer.MouseFilter = MouseFilterEnum.Ignore; // Clicks pass through
+		_selectionBoxContainer.Position = new Vector2(0, 0);
+		_selectionBoxContainer.Size = new Vector2(10000, 10000); // Large size
+		_selectionBoxContainer.ZIndex = 101; // Above playhead
+		_selectionBoxContainer.Draw += DrawSelectionBox;
+		scrollAndPlayheadContainer.AddChild(_selectionBoxContainer);
 
 		// Playhead visual (on top of tracks)
 		_playhead = new ColorRect();
@@ -346,8 +370,9 @@ public partial class TimelinePanel : Panel
 		// Setup playhead dragging
 		playheadHandle.GuiInput += OnPlayheadInput;
 
-		// Timeline scrubbing via click on tracks
+		// Timeline scrubbing and drag selection via click on tracks
 		_keyframesTracksContainer.GuiInput += OnTimelineInput;
+		_keyframesTracksContainer.GuiInput += OnKeyframesContainerInput;
 
 		// Sync scrolling between properties and keyframes
 		bool _syncingScroll = false;
@@ -655,19 +680,240 @@ public partial class TimelinePanel : Panel
 		{
 			if (mouseButton.ButtonIndex == MouseButton.Left && mouseButton.Pressed)
 			{
-				// Click to move playhead - account for horizontal scroll
-				float localX = mouseButton.Position.X + _keyframesScroll.ScrollHorizontal;
-				int newFrame = Mathf.Max(0, Mathf.RoundToInt(localX / _pixelsPerFrame));
-				
-				if (newFrame != _currentFrame)
+				// Don't handle timeline scrubbing if we're starting a drag selection
+				// The drag selection handler will take care of it
+				// We'll handle the click in the mouse release if it wasn't a drag
+			}
+			else if (mouseButton.ButtonIndex == MouseButton.Left && !mouseButton.Pressed)
+			{
+				// Only move playhead on release if we weren't drag selecting
+				// Check _wasDragging to see if this was actually a drag operation
+				if (!_wasDragging)
 				{
-					_currentFrame = newFrame;
-					UpdatePlayheadPosition();
-					ApplyKeyframesAtCurrentFrame(); // Apply animation when clicking timeline
+					// Click to move playhead - account for horizontal scroll
+					float localX = mouseButton.Position.X + _keyframesScroll.ScrollHorizontal;
+					int newFrame = Mathf.Max(0, Mathf.RoundToInt(localX / _pixelsPerFrame));
+					
+					if (newFrame != _currentFrame)
+					{
+						_currentFrame = newFrame;
+						UpdatePlayheadPosition();
+						ApplyKeyframesAtCurrentFrame(); // Apply animation when clicking timeline
+					}
+					
+					// Don't start animated textures on click, only during playback/scrub
+				}
+			}
+		}
+	}
+	
+	private void OnKeyframesContainerInput(InputEvent @event)
+	{
+		// This handler runs AFTER child GuiInput handlers (like keyframes)
+		// So if a keyframe consumed the event, this won't be called
+		// And if _isDraggingKeyframe is set, we know not to start drag selection
+		
+		if (@event is InputEventMouseButton mouseButton)
+		{
+			if (mouseButton.ButtonIndex == MouseButton.Left)
+			{
+				if (mouseButton.Pressed)
+				{
+					// Don't start drag selection if dragging playhead or keyframe
+					if (_isDraggingPlayhead || _isDraggingKeyframe)
+					{
+						GD.Print("[OnKeyframesContainerInput] Not starting drag selection - playhead or keyframe is being dragged");
+						return;
+					}
+					
+					// Start potential drag selection
+					_isDragSelecting = true;
+					_wasDragging = false;
+					_dragSelectStart = mouseButton.Position;
+					_dragSelectEnd = mouseButton.Position;
+					
+					// Clear selection if not holding Shift
+					if (!mouseButton.ShiftPressed)
+					{
+						_selectedKeyframes.Clear();
+						_keyframeOwners.Clear();
+					}
+					
+					GD.Print($"[OnKeyframesContainerInput] Started potential drag selection at {mouseButton.Position}");
+					_selectionBoxContainer?.QueueRedraw();
+				}
+				else
+				{
+					// End drag selection
+					if (_isDragSelecting)
+					{
+						GD.Print($"[OnKeyframesContainerInput] Ending drag selection, _wasDragging: {_wasDragging}");
+						_isDragSelecting = false;
+						
+						// If we didn't actually drag (just clicked), clear selection
+						if (!_wasDragging)
+						{
+							_selectedKeyframes.Clear();
+							_keyframeOwners.Clear();
+							// Redraw tracks to update keyframe colors
+							foreach (var track in _singlePropertyTracks)
+							{
+								track.QueueRedraw();
+							}
+						}
+						
+						_wasDragging = false;
+						_selectionBoxContainer?.QueueRedraw();
+					}
+				}
+			}
+		}
+		else if (@event is InputEventMouseMotion mouseMotion)
+		{
+			// Only handle motion if we're drag selecting and not dragging keyframe/playhead
+			if (_isDragSelecting && !_isDraggingKeyframe && !_isDraggingPlayhead)
+			{
+				// Check if we've moved enough to consider this a drag
+				float distance = _dragSelectStart.DistanceTo(mouseMotion.Position);
+				if (distance >= DRAG_THRESHOLD && !_wasDragging)
+				{
+					_wasDragging = true;
+					GD.Print($"[OnKeyframesContainerInput] Started dragging (moved {distance} pixels)");
 				}
 				
-				// Don't start animated textures on click, only during playback/scrub
+				// Update drag selection box
+				_dragSelectEnd = mouseMotion.Position;
+				
+				// Only update selection if we're actually dragging
+				if (_wasDragging)
+				{
+					// Update selected keyframes based on selection box
+					UpdateDragSelection();
+				}
+				
+				_selectionBoxContainer?.QueueRedraw();
 			}
+			else if (_isDragSelecting && (_isDraggingKeyframe || _isDraggingPlayhead))
+			{
+				// Cancel drag selection if keyframe or playhead drag started
+				GD.Print("[OnKeyframesContainerInput] Cancelling drag selection - keyframe or playhead drag detected");
+				_isDragSelecting = false;
+				_wasDragging = false;
+				_selectionBoxContainer?.QueueRedraw();
+			}
+		}
+	}
+	
+	private void UpdateDragSelection()
+	{
+		// Calculate selection rectangle accounting for scroll
+		var minX = Mathf.Min(_dragSelectStart.X, _dragSelectEnd.X) + _keyframesScroll.ScrollHorizontal;
+		var maxX = Mathf.Max(_dragSelectStart.X, _dragSelectEnd.X) + _keyframesScroll.ScrollHorizontal;
+		var minY = Mathf.Min(_dragSelectStart.Y, _dragSelectEnd.Y) + _keyframesScroll.ScrollVertical;
+		var maxY = Mathf.Max(_dragSelectStart.Y, _dragSelectEnd.Y) + _keyframesScroll.ScrollVertical;
+		
+		var minFrame = Mathf.FloorToInt(minX / _pixelsPerFrame);
+		var maxFrame = Mathf.CeilToInt(maxX / _pixelsPerFrame);
+		
+		// Clear current selection if not holding Shift
+		if (!Input.IsKeyPressed(Key.Shift))
+		{
+			_selectedKeyframes.Clear();
+			_keyframeOwners.Clear();
+		}
+		
+		// Find all keyframes within the selection box
+		foreach (var kvp in _propertyKeyframes)
+		{
+			var fullPath = kvp.Key;
+			var keyframes = kvp.Value;
+			
+			// Parse the full path to get object and property
+			var pathParts = fullPath.Split('.');
+			if (pathParts.Length < 2) continue;
+			
+			var objectIdStr = pathParts[0];
+			if (!ulong.TryParse(objectIdStr, out ulong objectId)) continue;
+			
+			// Find the object
+			SceneObject targetObject = null;
+			string propertyPath = null;
+			
+			foreach (var prop in _properties)
+			{
+				if (prop.Object.GetInstanceId() == objectId)
+				{
+					targetObject = prop.Object;
+					
+					// Reconstruct property path
+					if (pathParts.Length == 2)
+					{
+						propertyPath = pathParts[1];
+					}
+					else if (pathParts.Length >= 3)
+					{
+						propertyPath = $"{pathParts[1]}.{pathParts[2]}";
+					}
+					break;
+				}
+			}
+			
+			if (targetObject == null || propertyPath == null) continue;
+			
+			// Check each keyframe
+			foreach (var keyframe in keyframes)
+			{
+				if (keyframe.Frame >= minFrame && keyframe.Frame <= maxFrame)
+				{
+					// Check if keyframe is within Y bounds (track height)
+					// This is a simplified check - you might want to calculate exact track positions
+					if (!_selectedKeyframes.Contains(keyframe))
+					{
+						_selectedKeyframes.Add(keyframe);
+						_keyframeOwners[keyframe] = (targetObject, propertyPath);
+					}
+				}
+			}
+		}
+		
+		// Redraw all tracks to update selection visuals
+		foreach (var track in _singlePropertyTracks)
+		{
+			track.QueueRedraw();
+		}
+		
+		// Also redraw property group tracks
+		foreach (var prop in _properties)
+		{
+			if (prop.TrackGroup != null)
+			{
+				prop.TrackGroup.QueueRedrawTracks();
+			}
+		}
+	}
+	
+	private void DrawSelectionBox()
+	{
+		if (_isDragSelecting && _wasDragging && _keyframesScroll != null)
+		{
+			// Convert local coordinates to screen coordinates accounting for scroll
+			var scrollPos = _keyframesScroll.GlobalPosition - _selectionBoxContainer.GlobalPosition;
+			
+			var minX = Mathf.Min(_dragSelectStart.X, _dragSelectEnd.X) - _keyframesScroll.ScrollHorizontal + scrollPos.X;
+			var minY = Mathf.Min(_dragSelectStart.Y, _dragSelectEnd.Y) - _keyframesScroll.ScrollVertical + scrollPos.Y;
+			var maxX = Mathf.Max(_dragSelectStart.X, _dragSelectEnd.X) - _keyframesScroll.ScrollHorizontal + scrollPos.X;
+			var maxY = Mathf.Max(_dragSelectStart.Y, _dragSelectEnd.Y) - _keyframesScroll.ScrollVertical + scrollPos.Y;
+			
+			var rect = new Rect2(
+				minX,
+				minY,
+				maxX - minX,
+				maxY - minY
+			);
+			
+			// Draw selection box
+			_selectionBoxContainer.DrawRect(rect, new Color(0.3f, 0.6f, 1f, 0.2f), true);
+			_selectionBoxContainer.DrawRect(rect, new Color(0.3f, 0.6f, 1f, 0.8f), false, 2f);
 		}
 	}
 
@@ -698,11 +944,139 @@ public partial class TimelinePanel : Panel
 			}
 		}
 
+		// Handle drag selection in _Input
+		// We need to use _Input because GuiInput on the container doesn't receive events
+		// when clicking on child controls (tracks)
 		if (@event is InputEventMouseButton mouseButton)
 		{
 			if (mouseButton.ButtonIndex == MouseButton.Left && !mouseButton.Pressed)
 			{
 				_isDraggingPlayhead = false;
+				
+				// Reset drag select state and keyframe click flag
+				_dragSelectStart = Vector2.Zero;
+				_keyframeWasClicked = false;
+				
+				// End drag selection
+				if (_isDragSelecting)
+				{
+					GD.Print($"[TimelinePanel._Input] Ending drag selection, _wasDragging: {_wasDragging}");
+					_isDragSelecting = false;
+					
+					// If we didn't actually drag (just clicked), clear selection
+					if (!_wasDragging)
+					{
+						_selectedKeyframes.Clear();
+						_keyframeOwners.Clear();
+						// Redraw tracks to update keyframe colors
+						foreach (var track in _singlePropertyTracks)
+						{
+							track.QueueRedraw();
+						}
+					}
+					
+					_wasDragging = false;
+					_selectionBoxContainer?.QueueRedraw();
+				}
+			}
+			else if (mouseButton.ButtonIndex == MouseButton.Left && mouseButton.Pressed)
+			{
+				// Don't prepare for drag selection yet - wait for mouse motion
+				// This allows GuiInput handlers to set _isDraggingKeyframe first
+				// We'll prepare in the motion handler if needed
+			}
+		}
+		else if (@event is InputEventMouseMotion mouseMotionEvent)
+		{
+			// Check if we should start or continue drag selection
+			// Don't start if a keyframe was clicked
+			if (!_isDragSelecting && !_isDraggingPlayhead && Input.IsMouseButtonPressed(MouseButton.Left))
+			{
+				if (_keyframeWasClicked)
+					return;
+				
+				// Check if we're in the keyframes area
+				if (_keyframesScroll != null && _keyframesTracksContainer != null)
+				{
+					var scrollRect = _keyframesScroll.GetGlobalRect();
+					if (scrollRect.HasPoint(mouseMotionEvent.GlobalPosition))
+					{
+						var localPos = _keyframesTracksContainer.GetGlobalTransform().AffineInverse() * mouseMotionEvent.GlobalPosition;
+						
+						// If we don't have a drag start yet, set it now (first motion after click)
+						if (_dragSelectStart == Vector2.Zero)
+						{
+							_dragSelectStart = localPos;
+							_dragSelectEnd = localPos;
+						}
+					}
+				}
+			}
+			
+			// Try to start drag selection if we have a drag start
+			if (!_isDragSelecting && _dragSelectStart != Vector2.Zero && !_isDraggingKeyframe && !_isDraggingPlayhead)
+			{
+				if (_keyframesScroll != null && _keyframesTracksContainer != null)
+				{
+					var scrollRect = _keyframesScroll.GetGlobalRect();
+					if (scrollRect.HasPoint(mouseMotionEvent.GlobalPosition))
+					{
+						var localPos = _keyframesTracksContainer.GetGlobalTransform().AffineInverse() * mouseMotionEvent.GlobalPosition;
+						float distance = _dragSelectStart.DistanceTo(localPos);
+						
+						// Start drag selection if we've moved enough
+						if (distance >= DRAG_THRESHOLD)
+						{
+							_isDragSelecting = true;
+							_wasDragging = false;
+							
+							// Clear selection if not holding Shift
+							if (!Input.IsKeyPressed(Key.Shift))
+							{
+								_selectedKeyframes.Clear();
+								_keyframeOwners.Clear();
+							}
+							
+							GD.Print($"[TimelinePanel._Input] Started drag selection after deferred check (moved {distance} pixels)");
+						}
+					}
+				}
+			}
+			
+			// Update drag selection if active
+			if (_isDragSelecting)
+			{
+				// Don't update drag selection if we're dragging the playhead or a keyframe
+				if (_isDraggingPlayhead || _isDraggingKeyframe)
+				{
+					_isDragSelecting = false;
+					_selectionBoxContainer?.QueueRedraw();
+					return;
+				}
+					
+				// Update drag selection
+				if (_keyframesTracksContainer != null)
+				{
+					var localPos = _keyframesTracksContainer.GetGlobalTransform().AffineInverse() * mouseMotionEvent.GlobalPosition;
+					
+					// Check if we've moved enough to consider this a drag
+					float distance = _dragSelectStart.DistanceTo(localPos);
+					if (distance >= DRAG_THRESHOLD && !_wasDragging)
+					{
+						_wasDragging = true;
+						GD.Print($"[TimelinePanel._Input] Started dragging (moved {distance} pixels)");
+					}
+					
+					_dragSelectEnd = localPos;
+					
+					// Only update selection if we're actually dragging
+					if (_wasDragging)
+					{
+						UpdateDragSelection();
+					}
+					
+					_selectionBoxContainer?.QueueRedraw();
+				}
 			}
 		}
 	}
@@ -869,6 +1243,9 @@ public partial class TimelinePanel : Panel
 				float y = track.Size.Y / 2;
 				float size = 6f;
 				
+				// Check if keyframe is selected
+				bool isSelected = _selectedKeyframes.Contains(keyframe);
+				
 				// Draw diamond shape
 				var points = new Vector2[]
 				{
@@ -878,12 +1255,16 @@ public partial class TimelinePanel : Panel
 					new Vector2(x - size, y)
 				};
 				
-				track.DrawColoredPolygon(points, new Color(1f, 0.8f, 0.2f));
+				// Use different colors for selected keyframes
+				var fillColor = isSelected ? new Color(0.3f, 0.6f, 1f) : new Color(1f, 0.8f, 0.2f);
+				var outlineColor = isSelected ? new Color(0.2f, 0.4f, 0.8f) : new Color(0.8f, 0.6f, 0.1f);
+				
+				track.DrawColoredPolygon(points, fillColor);
 				
 				for (int i = 0; i < points.Length; i++)
 				{
 					var nextI = (i + 1) % points.Length;
-					track.DrawLine(points[i], points[nextI], new Color(0.8f, 0.6f, 0.1f), 1.5f);
+					track.DrawLine(points[i], points[nextI], outlineColor, 1.5f);
 				}
 			}
 		};
@@ -908,20 +1289,51 @@ public partial class TimelinePanel : Panel
 						var keyframes = GetKeyframesForProperty(obj, propertyPath);
 						var clickedKeyframe = keyframes.Find(k => Mathf.Abs(k.Frame - frame) <= 1);
 						
+						GD.Print($"[Track {propertyPath}] Click at frame {frame}, found keyframe: {clickedKeyframe != null}");
+						
 						if (clickedKeyframe != null && mouseButton.AltPressed)
 						{
+							// Alt+Click to remove keyframe
 							RemoveKeyframeForProperty(obj, propertyPath, clickedKeyframe.Frame);
+							track.AcceptEvent(); // Consume the event
+							GD.Print($"[Track {propertyPath}] Removed keyframe, event consumed");
 						}
 						else if (clickedKeyframe != null)
 						{
+							// Click on keyframe to select/drag it
 							isDragging = true;
+							_isDraggingKeyframe = true; // Set global flag
+							_keyframeWasClicked = true; // Set flag to prevent drag selection
 							draggedKeyframe = clickedKeyframe;
 							dragStartFrame = clickedKeyframe.Frame;
+							
+							// Handle selection
+							if (!mouseButton.ShiftPressed)
+							{
+								_selectedKeyframes.Clear();
+								_keyframeOwners.Clear();
+							}
+							
+							if (!_selectedKeyframes.Contains(clickedKeyframe))
+							{
+								_selectedKeyframes.Add(clickedKeyframe);
+								_keyframeOwners[clickedKeyframe] = (obj, propertyPath);
+							}
+							
+							// Redraw all tracks to update selection visuals
+							foreach (var t in _singlePropertyTracks)
+							{
+								t.QueueRedraw();
+							}
+							
+							track.AcceptEvent(); // Consume the event
+							GD.Print($"[Track {propertyPath}] Started dragging keyframe, _keyframeWasClicked set to true");
 						}
 						else
 						{
-							AddKeyframeForProperty(obj, propertyPath, frame);
+							GD.Print($"[Track {propertyPath}] No keyframe clicked, event NOT consumed (should bubble up)");
 						}
+						// If no keyframe was clicked, don't consume the event - let it bubble up for drag selection
 					}
 					else
 					{
@@ -932,8 +1344,11 @@ public partial class TimelinePanel : Panel
 								MoveKeyframe(obj, propertyPath, dragStartFrame, draggedKeyframe.Frame);
 							}
 							isDragging = false;
+							_isDraggingKeyframe = false; // Clear global flag
 							draggedKeyframe = null;
+							track.AcceptEvent(); // Consume the event
 						}
+						// If we weren't dragging a keyframe, don't consume - let it bubble for drag selection
 					}
 				}
 				else if (mouseButton.ButtonIndex == MouseButton.Right && mouseButton.Pressed)
@@ -949,6 +1364,7 @@ public partial class TimelinePanel : Panel
 					if (clickedKeyframe != null)
 					{
 						ShowKeyframeContextMenu(clickedKeyframe, obj, propertyPath, mouseButton.GlobalPosition);
+						track.AcceptEvent(); // Consume the event
 					}
 				}
 			}
@@ -963,6 +1379,7 @@ public partial class TimelinePanel : Panel
 					draggedKeyframe.Frame = newFrame;
 					track.QueueRedraw();
 				}
+				track.AcceptEvent(); // Consume the event while dragging
 			}
 		};
 		
@@ -1665,6 +2082,7 @@ public partial class KeyframeTrackGroup : VBoxContainer
 	private Keyframe _draggedKeyframe = null;
 	private string _draggedPropertyPath = null;
 	private int _dragStartFrame = 0;
+	private Dictionary<Keyframe, int> _selectedKeyframesStartFrames = new Dictionary<Keyframe, int>();
 
 	public KeyframeTrackGroup(int maxFrames, float pixelsPerFrame, int childCount, SceneObject obj, string[] propertyPaths, TimelinePanel timeline)
 	{
@@ -1717,6 +2135,22 @@ public partial class KeyframeTrackGroup : VBoxContainer
 
 	private void OnTrackInput(InputEvent inputEvent, string propertyPath)
 	{
+		Control sourceControl = null;
+		if (inputEvent is InputEventMouseButton mb)
+		{
+			// Find which control received the event
+			if (propertyPath != null)
+			{
+				int index = System.Array.IndexOf(_propertyPaths, propertyPath);
+				if (index >= 0 && index < _childTrackControls.Count)
+					sourceControl = _childTrackControls[index];
+			}
+			else
+			{
+				sourceControl = _mainTrack;
+			}
+		}
+		
 		if (inputEvent is InputEventMouseButton mouseButton)
 		{
 			if (mouseButton.ButtonIndex == MouseButton.Left)
@@ -1739,20 +2173,72 @@ public partial class KeyframeTrackGroup : VBoxContainer
 						{
 							// Alt+Click to delete keyframe
 							_timeline.RemoveKeyframeForProperty(_object, propertyPath, clickedKeyframe.Frame);
+							sourceControl?.AcceptEvent(); // Consume the event
 						}
 						else if (clickedKeyframe != null)
 						{
 							// Start dragging existing keyframe
 							_isDraggingKeyframe = true;
+							_timeline._isDraggingKeyframe = true; // Set global flag
+							_timeline._keyframeWasClicked = true; // Set flag to prevent drag selection
 							_draggedKeyframe = clickedKeyframe;
 							_draggedPropertyPath = propertyPath;
 							_dragStartFrame = clickedKeyframe.Frame;
+							
+							// Handle selection
+							bool keyframeAlreadySelected = _timeline._selectedKeyframes.Contains(clickedKeyframe);
+							
+							if (!mouseButton.ShiftPressed && !keyframeAlreadySelected)
+							{
+								// Only clear selection if the clicked keyframe is not already selected
+								_timeline._selectedKeyframes.Clear();
+								_timeline._keyframeOwners.Clear();
+							}
+							
+							if (!_timeline._selectedKeyframes.Contains(clickedKeyframe))
+							{
+								_timeline._selectedKeyframes.Add(clickedKeyframe);
+								_timeline._keyframeOwners[clickedKeyframe] = (_object, propertyPath);
+							}
+							
+							// Store start frames for all selected keyframes
+							_selectedKeyframesStartFrames.Clear();
+							foreach (var kf in _timeline._selectedKeyframes)
+							{
+								_selectedKeyframesStartFrames[kf] = kf.Frame;
+							}
+							
+							// Redraw all tracks to update selection visuals
+							QueueRedrawTracks();
+							
+							sourceControl?.AcceptEvent(); // Consume the event
 						}
 						else
 						{
-							// Add new keyframe
-							_timeline.AddKeyframeForProperty(_object, propertyPath, frame);
+							// Clicked on empty area (no keyframe) - clear selection if not holding Shift
+							if (!mouseButton.ShiftPressed)
+							{
+								_timeline._selectedKeyframes.Clear();
+								_timeline._keyframeOwners.Clear();
+								
+								// Redraw all tracks to update selection visuals
+								QueueRedrawTracks();
+							}
+							// Don't consume - let it bubble for drag selection
 						}
+					}
+					else
+					{
+						// Clicked on main track (no specific property) - clear selection if not holding Shift
+						if (!mouseButton.ShiftPressed)
+						{
+							_timeline._selectedKeyframes.Clear();
+							_timeline._keyframeOwners.Clear();
+							
+							// Redraw all tracks to update selection visuals
+							QueueRedrawTracks();
+						}
+						// Don't consume - let it bubble for drag selection
 					}
 				}
 				else
@@ -1760,15 +2246,32 @@ public partial class KeyframeTrackGroup : VBoxContainer
 					// Mouse button released
 					if (_isDraggingKeyframe && _draggedKeyframe != null &&_draggedPropertyPath != null)
 					{
-						// Finish dragging - move keyframe to new position
-						if (_draggedKeyframe.Frame != _dragStartFrame)
+						// Finish dragging - move all selected keyframes to their new positions
+						bool anyKeyframeMoved = false;
+						foreach (var kf in _timeline._selectedKeyframes)
 						{
-							_timeline.MoveKeyframe(_object, _draggedPropertyPath, _dragStartFrame, _draggedKeyframe.Frame);
+							if (_selectedKeyframesStartFrames.TryGetValue(kf, out int startFrame))
+							{
+								if (kf.Frame != startFrame)
+								{
+									anyKeyframeMoved = true;
+									// Find the owner of this keyframe
+									if (_timeline._keyframeOwners.TryGetValue(kf, out var owner))
+									{
+										_timeline.MoveKeyframe(owner.obj, owner.propertyPath, startFrame, kf.Frame);
+									}
+								}
+							}
 						}
+						
 						_isDraggingKeyframe = false;
+						_timeline._isDraggingKeyframe = false; // Clear global flag
 						_draggedKeyframe = null;
 						_draggedPropertyPath = null;
+						_selectedKeyframesStartFrames.Clear();
+						sourceControl?.AcceptEvent(); // Consume the event
 					}
+					// If we weren't dragging, don't consume - let it bubble for drag selection
 				}
 			}
 			else if (mouseButton.ButtonIndex == MouseButton.Right && mouseButton.Pressed)
@@ -1786,6 +2289,7 @@ public partial class KeyframeTrackGroup : VBoxContainer
 					if (clickedKeyframe != null)
 					{
 						_timeline.ShowKeyframeContextMenu(clickedKeyframe, _object, propertyPath, mouseButton.GlobalPosition);
+						sourceControl?.AcceptEvent(); // Consume the event
 					}
 				}
 			}
@@ -1799,9 +2303,22 @@ public partial class KeyframeTrackGroup : VBoxContainer
 			
 			if (newFrame != _draggedKeyframe.Frame)
 			{
-				_draggedKeyframe.Frame = newFrame;
+				// Calculate the offset from the original position
+				int offset = newFrame - _dragStartFrame;
+				
+				// Move all selected keyframes by the same offset
+				foreach (var kf in _timeline._selectedKeyframes)
+				{
+					if (_selectedKeyframesStartFrames.TryGetValue(kf, out int startFrame))
+					{
+						int targetFrame = startFrame + offset;
+						kf.Frame = Mathf.Max(0, targetFrame); // Clamp to 0
+					}
+				}
+				
 				QueueRedrawTracks();
 			}
+			sourceControl?.AcceptEvent(); // Consume the event while dragging
 		}
 	}
 
@@ -1832,7 +2349,7 @@ public partial class KeyframeTrackGroup : VBoxContainer
 				var keyframes = _timeline.GetKeyframesForProperty(_object, propertyPath);
 				foreach (var keyframe in keyframes)
 				{
-					DrawKeyframeDiamond(track, keyframe.Frame);
+					DrawKeyframeDiamond(track, keyframe, propertyPath);
 				}
 			}
 			else
@@ -1850,17 +2367,40 @@ public partial class KeyframeTrackGroup : VBoxContainer
 				
 				foreach (var frame in allFrames)
 				{
-					DrawKeyframeDiamond(track, frame);
+					DrawKeyframeDiamond(track, null, null, frame);
 				}
 			}
 		}
 	}
 	
-	private void DrawKeyframeDiamond(Control track, int frame)
+	private void DrawKeyframeDiamond(Control track, Keyframe keyframe, string propertyPath, int? frameOverride = null)
 	{
+		int frame = frameOverride ?? keyframe?.Frame ?? 0;
 		float x = frame * _pixelsPerFrame;
 		float y = track.Size.Y / 2;
 		float size = 6f;
+		
+		// Check if this specific keyframe is selected
+		bool isSelected = false;
+		if (keyframe != null)
+		{
+			// Check the specific keyframe instance
+			isSelected = _timeline._selectedKeyframes.Contains(keyframe);
+		}
+		else if (frameOverride.HasValue)
+		{
+			// For main track, check if ANY keyframe at this frame is selected
+			foreach (var propPath in _propertyPaths)
+			{
+				var keyframes = _timeline.GetKeyframesForProperty(_object, propPath);
+				var kf = keyframes.Find(k => k.Frame == frameOverride.Value);
+				if (kf != null && _timeline._selectedKeyframes.Contains(kf))
+				{
+					isSelected = true;
+					break;
+				}
+			}
+		}
 		
 		// Draw diamond shape
 		var points = new Vector2[]
@@ -1871,14 +2411,18 @@ public partial class KeyframeTrackGroup : VBoxContainer
 			new Vector2(x - size, y)       // Left
 		};
 		
+		// Use different colors for selected keyframes
+		var fillColor = isSelected ? new Color(0.3f, 0.6f, 1f) : new Color(1f, 0.8f, 0.2f);
+		var outlineColor = isSelected ? new Color(0.2f, 0.4f, 0.8f) : new Color(0.8f, 0.6f, 0.1f);
+		
 		// Fill
-		track.DrawColoredPolygon(points, new Color(1f, 0.8f, 0.2f));
+		track.DrawColoredPolygon(points, fillColor);
 		
 		// Outline
 		for (int i = 0; i < points.Length; i++)
 		{
 			var nextI = (i + 1) % points.Length;
-			track.DrawLine(points[i], points[nextI], new Color(0.8f, 0.6f, 0.1f), 1.5f);
+			track.DrawLine(points[i], points[nextI], outlineColor, 1.5f);
 		}
 	}
 
