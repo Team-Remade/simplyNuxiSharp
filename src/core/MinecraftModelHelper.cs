@@ -1,6 +1,7 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 
@@ -96,17 +97,36 @@ public static class MinecraftModelHelper
 			}
 		}
 		
-		// Try fuzzy search
-		var allPaths = loader.GetAllBlockStatePaths();
-		var matchingPath = allPaths.FirstOrDefault(p => 
-			p.Contains(name, StringComparison.OrdinalIgnoreCase));
+		// Try fuzzy search - prioritize exact filename match, then partial matches
+		var allPaths = loader.GetAllBlockStatePaths().ToList();
 		
-		if (matchingPath != null)
+		// First, try exact filename match (ignoring directory path)
+		var exactFilenameMatches = allPaths.Where(p => 
 		{
-			return loader.GetBlockState(matchingPath);
+			var fileName = Path.GetFileNameWithoutExtension(p).ToLowerInvariant();
+			return fileName == name.ToLowerInvariant();
+		}).ToList();
+		
+		if (exactFilenameMatches.Count > 0)
+		{
+			return loader.GetBlockState(exactFilenameMatches[0]);
 		}
 		
-		GD.PrintErr($"BlockState not found: {name}");
+		// Second, try matching the name at the start of the filename (e.g., "stone" matches "stone.json" but not "smooth_stone.json")
+		var prefixMatches = allPaths.Where(p =>
+		{
+			var fileName = Path.GetFileNameWithoutExtension(p).ToLowerInvariant();
+			return fileName.StartsWith(name.ToLowerInvariant() + "_") || fileName == name.ToLowerInvariant();
+		}).ToList();
+		
+		if (prefixMatches.Count > 0)
+		{
+			return loader.GetBlockState(prefixMatches[0]);
+		}
+		
+		// Log all paths containing the search term for debugging
+		var allContainingMatches = allPaths.Where(p => p.Contains(name, StringComparison.OrdinalIgnoreCase)).ToList();
+		
 		return null;
 	}
 	
