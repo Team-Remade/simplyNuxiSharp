@@ -27,6 +27,7 @@ public partial class SceneObject : Node3D
 		{
 			_pivotOffset = value;
 			UpdateVisualPosition();
+			UpdateChildrenPivotOffsets();
 		}
 	}
 	
@@ -41,6 +42,13 @@ public partial class SceneObject : Node3D
 		(ObjectId, PickColorId) = SelectionManager.Instance.GetNextObjectId();
 		GeneratePickColor();
 		UpdateVisualPosition(); // Initialize visual position with pivot offset
+	}
+	
+	public override void _Ready()
+	{
+		base._Ready();
+		// Update visual position after all parent-child relationships are established
+		UpdateVisualPosition();
 	}
 	
 	private void GeneratePickColor()
@@ -106,6 +114,9 @@ public partial class SceneObject : Node3D
 		Reparent(parent);
 
 		GlobalTransform = globalTransform;
+		
+		// Update pivot offset based on new parent hierarchy
+		UpdateVisualPosition();
 		
 		EmitSignal(nameof(ParentChanged), oldParent, parent);
 		return true;
@@ -190,11 +201,38 @@ public partial class SceneObject : Node3D
 		Visual.AddChild(visual);
 	}
 
+	/// <summary>
+	/// Gets the accumulated pivot offset from all parent SceneObjects
+	/// </summary>
+	public Vector3 GetAccumulatedPivotOffset()
+	{
+		var accumulated = PivotOffset;
+		var parent = GetParent();
+		
+		if (parent is SceneObject parentSceneObject)
+		{
+			accumulated += parentSceneObject.GetAccumulatedPivotOffset();
+		}
+		
+		return accumulated;
+	}
+	
 	private void UpdateVisualPosition()
 	{
 		if (Visual != null)
 		{
-			Visual.Position = -PivotOffset;
+			// Apply the accumulated pivot offset from this object and all parents
+			Visual.Position = -GetAccumulatedPivotOffset();
+		}
+	}
+	
+	private void UpdateChildrenPivotOffsets()
+	{
+		// Recursively update all children when this object's pivot changes
+		foreach (var child in GetChildrenObjects())
+		{
+			child.UpdateVisualPosition();
+			child.UpdateChildrenPivotOffsets();
 		}
 	}
 }

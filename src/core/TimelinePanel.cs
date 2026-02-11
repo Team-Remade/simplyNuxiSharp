@@ -21,6 +21,12 @@ public partial class TimelinePanel : Panel
 	private ScrollContainer _frameRulerScroll;
 	private Control _frameRuler;
 	private Button _playPauseButton;
+	private PopupMenu _keyframeContextMenu;
+	
+	// Context menu state
+	private Keyframe _contextMenuKeyframe;
+	private SceneObject _contextMenuObject;
+	private string _contextMenuPropertyPath;
 	
 	// Timeline settings (frame-based)
 	private int _currentFrame = 0;
@@ -149,6 +155,56 @@ public partial class TimelinePanel : Panel
 
 		// Right column - Keyframes and timeline
 		SetupKeyframesColumn();
+		
+		// Setup context menu for keyframes
+		SetupKeyframeContextMenu();
+	}
+	
+	private void SetupKeyframeContextMenu()
+	{
+		_keyframeContextMenu = new PopupMenu();
+		_keyframeContextMenu.Name = "KeyframeContextMenu";
+		AddChild(_keyframeContextMenu);
+		
+		// Add interpolation mode options
+		_keyframeContextMenu.AddItem("Linear", 0);
+		_keyframeContextMenu.AddItem("Ease In Quadratic", 1);
+		_keyframeContextMenu.AddItem("Ease Out Quadratic", 2);
+		_keyframeContextMenu.AddItem("Ease In-Out Quadratic", 3);
+		_keyframeContextMenu.AddItem("Instant", 4);
+		
+		_keyframeContextMenu.IndexPressed += OnKeyframeContextMenuIndexPressed;
+	}
+	
+	private void OnKeyframeContextMenuIndexPressed(long index)
+	{
+		if (_contextMenuKeyframe == null || _contextMenuObject == null || _contextMenuPropertyPath == null)
+			return;
+		
+		string interpolationType = index switch
+		{
+			0 => "linear",
+			1 => "ease-in-quadratic",
+			2 => "ease-out-quadratic",
+			3 => "ease-in-out-quadratic",
+			4 => "instant",
+			_ => "linear"
+		};
+		
+		// Update the keyframe's interpolation type
+		_contextMenuKeyframe.InterpolationType = interpolationType;
+		
+		// Save to SceneObject
+		SaveKeyframesToObject(_contextMenuObject, _contextMenuPropertyPath);
+	}
+	
+	public void ShowKeyframeContextMenu(Keyframe keyframe, SceneObject obj, string propertyPath, Vector2 globalPosition)
+	{
+		_contextMenuKeyframe = keyframe;
+		_contextMenuObject = obj;
+		_contextMenuPropertyPath = propertyPath;
+		_keyframeContextMenu.Position = (Vector2I)globalPosition;
+		_keyframeContextMenu.Popup();
 	}
 
 	private void SetupPropertiesColumn()
@@ -880,6 +936,21 @@ public partial class TimelinePanel : Panel
 						}
 					}
 				}
+				else if (mouseButton.ButtonIndex == MouseButton.Right && mouseButton.Pressed)
+				{
+					// Right-click to open context menu
+					float localX = mouseButton.Position.X;
+					int frame = Mathf.RoundToInt(localX / _pixelsPerFrame);
+					frame = Mathf.Max(0, frame);
+					
+					var keyframes = GetKeyframesForProperty(obj, propertyPath);
+					var clickedKeyframe = keyframes.Find(k => Mathf.Abs(k.Frame - frame) <= 1);
+					
+					if (clickedKeyframe != null)
+					{
+						ShowKeyframeContextMenu(clickedKeyframe, obj, propertyPath, mouseButton.GlobalPosition);
+					}
+				}
 			}
 			else if (inputEvent is InputEventMouseMotion mouseMotion && isDragging && draggedKeyframe != null)
 			{
@@ -1339,14 +1410,17 @@ public partial class TimelinePanel : Panel
 			}
 			else
 			{
-				// For other properties, use linear interpolation
+				// For other properties, use interpolation based on the previous keyframe's type
 				if (prevKeyframe != null && nextKeyframe != null && prevKeyframe.Frame != nextKeyframe.Frame)
 				{
-					// Interpolate between keyframes
+					// Interpolate between keyframes using the interpolation type of the previous keyframe
 					float t = (_currentFrame - prevKeyframe.Frame) / (float)(nextKeyframe.Frame - prevKeyframe.Frame);
 					float prevValue = Convert.ToSingle(prevKeyframe.Value);
 					float nextValue = Convert.ToSingle(nextKeyframe.Value);
-					value = Mathf.Lerp(prevValue, nextValue, t);
+					
+					// Apply interpolation based on type
+					float interpolatedT = ApplyInterpolation(t, prevKeyframe.InterpolationType);
+					value = Mathf.Lerp(prevValue, nextValue, interpolatedT);
 				}
 				else if (prevKeyframe != null)
 				{
@@ -1358,6 +1432,34 @@ public partial class TimelinePanel : Panel
 			// Apply value to object
 			SetPropertyValue(targetObject, propertyPath, value);
 		}
+	}
+	
+	private float ApplyInterpolation(float t, string interpolationType)
+	{
+		return interpolationType switch
+		{
+			"linear" => t,
+			"ease-in-quadratic" => EaseInQuadratic(t),
+			"ease-out-quadratic" => EaseOutQuadratic(t),
+			"ease-in-out-quadratic" => EaseInOutQuadratic(t),
+			"instant" => 0f, // Step function - stay at previous value until end
+			_ => t // Default to linear
+		};
+	}
+	
+	private float EaseInQuadratic(float t)
+	{
+		return t * t;
+	}
+	
+	private float EaseOutQuadratic(float t)
+	{
+		return 1f - (1f - t) * (1f - t);
+	}
+	
+	private float EaseInOutQuadratic(float t)
+	{
+		return t < 0.5f ? 2f * t * t : 1f - Mathf.Pow(-2f * t + 2f, 2f) / 2f;
 	}
 	
 	private void SetPropertyValue(SceneObject obj, string propertyPath, float value)
@@ -1666,6 +1768,24 @@ public partial class KeyframeTrackGroup : VBoxContainer
 						_isDraggingKeyframe = false;
 						_draggedKeyframe = null;
 						_draggedPropertyPath = null;
+					}
+				}
+			}
+			else if (mouseButton.ButtonIndex == MouseButton.Right && mouseButton.Pressed)
+			{
+				// Right-click to open context menu
+				if (propertyPath != null)
+				{
+					float localX = mouseButton.Position.X;
+					int frame = Mathf.RoundToInt(localX / _pixelsPerFrame);
+					frame = Mathf.Max(0, frame);
+					
+					var keyframes = _timeline.GetKeyframesForProperty(_object, propertyPath);
+					var clickedKeyframe = keyframes.Find(k => Mathf.Abs(k.Frame - frame) <= 1);
+					
+					if (clickedKeyframe != null)
+					{
+						_timeline.ShowKeyframeContextMenu(clickedKeyframe, _object, propertyPath, mouseButton.GlobalPosition);
 					}
 				}
 			}
