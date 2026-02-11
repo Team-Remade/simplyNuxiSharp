@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace simplyRemadeNuxi.core;
@@ -18,13 +19,16 @@ public class MinecraftTextureLoader
 	private readonly string _projectAssetsPath;
 	private readonly string _dataPath;
 	private Dictionary<string, ImageTexture> _loadedTextures;
+	private Dictionary<string, MinecraftTextureMetadata> _textureMetadata;
 	private bool _isLoaded = false;
 	private int _totalTexturesLoaded = 0;
 	private int _totalTexturesFailedToLoad = 0;
+	private int _totalMcmetaLoaded = 0;
 	
 	public bool IsLoaded => _isLoaded;
 	public int TotalTexturesLoaded => _totalTexturesLoaded;
 	public int TotalTexturesFailed => _totalTexturesFailedToLoad;
+	public int TotalMcmetaLoaded => _totalMcmetaLoaded;
 	
 	private MinecraftTextureLoader()
 	{
@@ -33,6 +37,7 @@ public class MinecraftTextureLoader
 		_dataPath = Path.Combine(userDataPath, "data");
 		_projectAssetsPath = Path.Combine(_dataPath, "SimplyRemadeAssetsV1");
 		_loadedTextures = new Dictionary<string, ImageTexture>();
+		_textureMetadata = new Dictionary<string, MinecraftTextureMetadata>();
 		
 		GD.Print($"MinecraftTextureLoader initialized with assets path: {_projectAssetsPath}");
 	}
@@ -55,6 +60,7 @@ public class MinecraftTextureLoader
 		{
 			_totalTexturesLoaded = 0;
 			_totalTexturesFailedToLoad = 0;
+			_totalMcmetaLoaded = 0;
 			
 			progressCallback?.Invoke("Scanning for texture files...", 5);
 			
@@ -146,9 +152,9 @@ public class MinecraftTextureLoader
 			}
 			
 			_isLoaded = true;
-			GD.Print($"Finished loading Minecraft textures. Loaded: {_totalTexturesLoaded}, Failed: {_totalTexturesFailedToLoad}");
+			GD.Print($"Finished loading Minecraft textures. Loaded: {_totalTexturesLoaded}, Failed: {_totalTexturesFailedToLoad}, Mcmeta files: {_totalMcmetaLoaded}");
 			
-			progressCallback?.Invoke($"Completed: {_totalTexturesLoaded} textures loaded", 100);
+			progressCallback?.Invoke($"Completed: {_totalTexturesLoaded} textures loaded ({_totalMcmetaLoaded} with animation)", 100);
 			
 			return true;
 		}
@@ -224,12 +230,54 @@ public class MinecraftTextureLoader
 			_loadedTextures[textureKey] = texture;
 			_totalTexturesLoaded++;
 			
+			// Check for accompanying .mcmeta file
+			var mcmetaPath = filePath + ".mcmeta";
+			if (File.Exists(mcmetaPath))
+			{
+				await LoadMcmetaFile(mcmetaPath, textureKey);
+			}
+			
 			await Task.CompletedTask; // Satisfy async requirement
 		}
 		catch (Exception ex)
 		{
 			_totalTexturesFailedToLoad++;
 			GD.PrintErr($"Failed to load texture file {filePath}: {ex.Message}");
+		}
+	}
+	
+	/// <summary>
+	/// Loads a .mcmeta file and stores its metadata
+	/// </summary>
+	private async Task LoadMcmetaFile(string mcmetaPath, string textureKey)
+	{
+		try
+		{
+			var jsonContent = await File.ReadAllTextAsync(mcmetaPath);
+			var options = new JsonSerializerOptions
+			{
+				PropertyNameCaseInsensitive = true,
+				ReadCommentHandling = JsonCommentHandling.Skip,
+				AllowTrailingCommas = true
+			};
+			
+			var metadata = JsonSerializer.Deserialize<MinecraftTextureMetadata>(jsonContent, options);
+			
+			if (metadata != null)
+			{
+				_textureMetadata[textureKey] = metadata;
+				_totalMcmetaLoaded++;
+				
+				// Log animation info if present
+				if (metadata.Animation != null)
+				{
+					GD.Print($"Loaded animation metadata for {textureKey}: frametime={metadata.Animation.Frametime}, interpolate={metadata.Animation.Interpolate}");
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"Failed to load mcmeta file {mcmetaPath}: {ex.Message}");
 		}
 	}
 	
@@ -335,13 +383,121 @@ public class MinecraftTextureLoader
 	}
 	
 	/// <summary>
+	/// Gets the metadata for a texture if it has an associated .mcmeta file
+	/// </summary>
+	/// <param name="relativePath">Path like "block/stone.png" or "item/diamond.png"</param>
+	/// <returns>The texture metadata, or null if no .mcmeta file was found</returns>
+	public MinecraftTextureMetadata GetTextureMetadata(string relativePath)
+	{
+		var normalizedPath = relativePath.Replace('\\', '/');
+		
+		if (_textureMetadata.TryGetValue(normalizedPath, out var metadata))
+		{
+			return metadata;
+		}
+		return null;
+	}
+	
+	/// <summary>
+	/// Gets the metadata for a block texture by block name
+	/// </summary>
+	/// <param name="blockName">Block name without path, e.g., "stone" or "farmersdelight:stove_front_on"</param>
+	/// <returns>The texture metadata, or null if no .mcmeta file was found</returns>
+	public MinecraftTextureMetadata GetBlockTextureMetadata(string blockName)
+	{
+		// Check if namespace is specified
+		if (blockName.Contains(":"))
+		{
+			var parts = blockName.Split(':', 2);
+			var texturePath = $"{parts[0]}/block/{parts[1]}.png";
+			return GetTextureMetadata(texturePath);
+		}
+		
+		// Default to minecraft namespace
+		var defaultPath = $"minecraft/block/{blockName}.png";
+		return GetTextureMetadata(defaultPath);
+	}
+	
+	/// <summary>
+	/// Gets the metadata for an item texture by item name
+	/// </summary>
+	/// <param name="itemName">Item name without path, e.g., "diamond" or "farmersdelight:tomato"</param>
+	/// <returns>The texture metadata, or null if no .mcmeta file was found</returns>
+	public MinecraftTextureMetadata GetItemTextureMetadata(string itemName)
+	{
+		// Check if namespace is specified
+		if (itemName.Contains(":"))
+		{
+			var parts = itemName.Split(':', 2);
+			var texturePath = $"{parts[0]}/item/{parts[1]}.png";
+			return GetTextureMetadata(texturePath);
+		}
+		
+		// Default to minecraft namespace
+		var defaultPath = $"minecraft/item/{itemName}.png";
+		return GetTextureMetadata(defaultPath);
+	}
+	
+	/// <summary>
+	/// Checks if a texture has associated metadata
+	/// </summary>
+	public bool HasTextureMetadata(string relativePath)
+	{
+		var normalizedPath = relativePath.Replace('\\', '/');
+		return _textureMetadata.ContainsKey(normalizedPath);
+	}
+	
+	/// <summary>
+	/// Gets all textures that have animation metadata
+	/// </summary>
+	public IEnumerable<string> GetAnimatedTexturePaths()
+	{
+		return _textureMetadata
+			.Where(kvp => kvp.Value.Animation != null)
+			.Select(kvp => kvp.Key);
+	}
+	
+	/// <summary>
+	/// Gets the number of frames in an animated texture
+	/// </summary>
+	/// <param name="relativePath">Path to the texture</param>
+	/// <returns>Number of frames, or 0 if not animated or texture not found</returns>
+	public int GetAnimationFrameCount(string relativePath)
+	{
+		var normalizedPath = relativePath.Replace('\\', '/');
+		
+		if (!_textureMetadata.TryGetValue(normalizedPath, out var metadata) || metadata.Animation == null)
+		{
+			return 0;
+		}
+		
+		// If custom frames are defined, use their count
+		if (metadata.Animation.Frames != null && metadata.Animation.Frames.Count > 0)
+		{
+			return metadata.Animation.Frames.Count;
+		}
+		
+		// Otherwise calculate from texture height
+		if (_loadedTextures.TryGetValue(normalizedPath, out var texture))
+		{
+			var image = texture.GetImage();
+			var frameHeight = metadata.Animation.Height ?? image.GetWidth(); // Frame height defaults to texture width
+			return image.GetHeight() / frameHeight;
+		}
+		
+		return 0;
+	}
+	
+	/// <summary>
 	/// Clears all loaded textures
 	/// </summary>
 	public void Clear()
 	{
 		_loadedTextures.Clear();
+		_textureMetadata.Clear();
 		_isLoaded = false;
 		_totalTexturesLoaded = 0;
 		_totalTexturesFailedToLoad = 0;
+		_totalMcmetaLoaded = 0;
 	}
 }

@@ -83,6 +83,20 @@ public partial class TimelinePanel : Panel
 			{
 				_currentFrame = 0; // Loop back to start after furthest keyframe
 			}
+			
+			// Update animated textures when playing
+			if (AnimatedTextureManager.Instance != null)
+			{
+				AnimatedTextureManager.Instance.Play();
+			}
+		}
+		else
+		{
+			// Stop animated textures when not playing
+			if (AnimatedTextureManager.Instance != null)
+			{
+				AnimatedTextureManager.Instance.Pause();
+			}
 		}
 		
 		// Manually sync scroll positions every frame as backup
@@ -113,6 +127,13 @@ public partial class TimelinePanel : Panel
 		if (previousFrame != _currentFrame)
 		{
 			ApplyKeyframesAtCurrentFrame();
+			
+			// Update animated textures time based on current frame
+			if (AnimatedTextureManager.Instance != null)
+			{
+				float timeInSeconds = _currentFrame / _frameRate;
+				AnimatedTextureManager.Instance.SetAnimationTime(timeInSeconds);
+			}
 		}
 	}
 
@@ -384,6 +405,12 @@ public partial class TimelinePanel : Panel
 		_isPlaying = false;
 		UpdatePlayPauseButton();
 		ApplyKeyframesAtCurrentFrame();
+		
+		// Stop animated textures
+		if (AnimatedTextureManager.Instance != null)
+		{
+			AnimatedTextureManager.Instance.Pause();
+		}
 	}
 
 	private void OnStepBackward()
@@ -392,6 +419,12 @@ public partial class TimelinePanel : Panel
 		_isPlaying = false;
 		UpdatePlayPauseButton();
 		ApplyKeyframesAtCurrentFrame();
+		
+		// Stop animated textures when stepping
+		if (AnimatedTextureManager.Instance != null)
+		{
+			AnimatedTextureManager.Instance.Pause();
+		}
 	}
 
 	private void OnStop()
@@ -400,6 +433,13 @@ public partial class TimelinePanel : Panel
 		_isPlaying = false;
 		UpdatePlayPauseButton();
 		ApplyKeyframesAtCurrentFrame();
+		
+		// Stop and reset animated textures
+		if (AnimatedTextureManager.Instance != null)
+		{
+			AnimatedTextureManager.Instance.Stop();
+			AnimatedTextureManager.Instance.Reset();
+		}
 	}
 
 	private void OnPlayPause()
@@ -411,6 +451,19 @@ public partial class TimelinePanel : Panel
 		}
 		_isPlaying = !_isPlaying;
 		UpdatePlayPauseButton();
+		
+		// Control animated textures playback
+		if (AnimatedTextureManager.Instance != null)
+		{
+			if (_isPlaying)
+			{
+				AnimatedTextureManager.Instance.Play();
+			}
+			else
+			{
+				AnimatedTextureManager.Instance.Pause();
+			}
+		}
 	}
 
 	private void OnStepForward()
@@ -419,6 +472,12 @@ public partial class TimelinePanel : Panel
 		_isPlaying = false;
 		UpdatePlayPauseButton();
 		ApplyKeyframesAtCurrentFrame();
+		
+		// Stop animated textures when stepping
+		if (AnimatedTextureManager.Instance != null)
+		{
+			AnimatedTextureManager.Instance.Pause();
+		}
 	}
 
 	private void OnJumpToEnd()
@@ -439,6 +498,12 @@ public partial class TimelinePanel : Panel
 		_isPlaying = false;
 		UpdatePlayPauseButton();
 		ApplyKeyframesAtCurrentFrame();
+		
+		// Stop animated textures
+		if (AnimatedTextureManager.Instance != null)
+		{
+			AnimatedTextureManager.Instance.Pause();
+		}
 	}
 
 	private void UpdatePlayPauseButton()
@@ -544,6 +609,8 @@ public partial class TimelinePanel : Panel
 					UpdatePlayheadPosition();
 					ApplyKeyframesAtCurrentFrame(); // Apply animation when clicking timeline
 				}
+				
+				// Don't start animated textures on click, only during playback/scrub
 			}
 		}
 	}
@@ -565,6 +632,13 @@ public partial class TimelinePanel : Panel
 				_currentFrame = newFrame;
 				UpdatePlayheadPosition();
 				ApplyKeyframesAtCurrentFrame(); // Apply animation when dragging playhead
+				
+				// Update animated textures time when scrubbing
+				if (AnimatedTextureManager.Instance != null)
+				{
+					float timeInSeconds = _currentFrame / _frameRate;
+					AnimatedTextureManager.Instance.SetAnimationTime(timeInSeconds);
+				}
 			}
 		}
 

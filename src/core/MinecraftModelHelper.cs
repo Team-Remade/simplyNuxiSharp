@@ -213,27 +213,33 @@ public static class MinecraftModelHelper
 		}
 		
 		// Create material for a face
-		StandardMaterial3D CreateMaterial(string texturePath)
+		Material CreateMaterial(string texturePath)
 		{
-			var material = new StandardMaterial3D();
-			
 			if (!string.IsNullOrEmpty(texturePath))
 			{
 				var texture = LoadMinecraftTexture(texturePath);
 				if (texture != null)
 				{
-					material.AlbedoColor = Colors.White;
-					material.AlbedoTexture = texture;
-					material.TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest;
-					material.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
-					material.AlphaScissorThreshold = 0.5f;
-					return material;
+					// Check if this texture has animation metadata
+					var metadata = GetTextureMetadata(texturePath);
+					if (metadata != null && metadata.Animation != null)
+					{
+						// Create animated material
+						var animMaterial = AnimatedTextureMaterial.CreateAnimatedMaterial(texture, metadata);
+						if (animMaterial != null)
+						{
+							GD.Print($"Using animated material for texture: {texturePath}");
+							return animMaterial;
+						}
+					}
+					
+					// Create standard non-animated material
+					return AnimatedTextureMaterial.CreateStandardMaterial(texture);
 				}
 			}
 			
 			// Fallback material
-			material.AlbedoColor = new Color(0.8f, 0.8f, 0.8f);
-			return material;
+			return AnimatedTextureMaterial.CreateStandardMaterial(null);
 		}
 		
 		// Helper to add a surface for a single face
@@ -489,9 +495,35 @@ public static class MinecraftModelHelper
 	}
 	
 	/// <summary>
+	/// Gets texture metadata from the texture loader
+	/// </summary>
+	private static MinecraftTextureMetadata GetTextureMetadata(string texturePath)
+	{
+		if (string.IsNullOrEmpty(texturePath))
+			return null;
+			
+		// Extract namespace if present
+		string namespaceName = "minecraft";
+		string actualPath = texturePath;
+		
+		if (texturePath.Contains(":"))
+		{
+			var parts = texturePath.Split(':', 2);
+			namespaceName = parts[0];
+			actualPath = parts[1];
+		}
+		
+		// Build the key as stored in the texture loader: "namespace/path.png"
+		var textureKey = $"{namespaceName}/{actualPath}.png";
+		
+		var textureLoader = MinecraftTextureLoader.Instance;
+		return textureLoader.GetTextureMetadata(textureKey);
+	}
+	
+	/// <summary>
 	/// Loads a Minecraft texture from the asset path
 	/// </summary>
-	private static Texture2D LoadMinecraftTexture(string texturePath)
+	private static ImageTexture LoadMinecraftTexture(string texturePath)
 	{
 		if (string.IsNullOrEmpty(texturePath))
 			return null;

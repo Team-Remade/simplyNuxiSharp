@@ -8,6 +8,7 @@
 [ext_resource type="Script" uid="uid://dcjai3itiedcl" path="res://addons/dockable_container/layout_split.gd" id="4_fos0i"]
 [ext_resource type="Script" uid="uid://1358ext44s8c" path="res://src/core/SceneTree.cs" id="6_3dxm6"]
 [ext_resource type="Environment" uid="uid://xn3wh5pxus5k" path="res://assets/Env.tres" id="6_20pc6"]
+[ext_resource type="Script" uid="uid://bnmxvb0vdxg3h" path="res://src/core/AnimatedTextureManager.cs" id="6_animtex"]
 [ext_resource type="Script" uid="uid://yk4xrjo1fpr7" path="res://src/core/WorkCamera.cs" id="6_lgr22"]
 [ext_resource type="Shader" uid="uid://btpopdqor5lee" path="res://assets/Shaders/Picking.gdshader" id="7_trn2v"]
 [ext_resource type="Script" uid="uid://cpj7h3wm8fnx2" path="res://src/core/ProjectPropertiesPanel.cs" id="8_projprops"]
@@ -221,6 +222,9 @@ transform = Transform3D(0.8660254, -0.25, 0.4330127, 0, 0.8660254, 0.5, -0.5, -0
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=966723163]
 environment = ExtResource("6_20pc6")
+
+[node name="AnimatedTextureManager" type="Node" parent="Content/MainContent/Viewport/MainViewport/SubViewport"]
+script = ExtResource("6_animtex")
 
 [node name="Floor" type="Node3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=945913751]
 

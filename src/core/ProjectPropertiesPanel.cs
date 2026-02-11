@@ -14,6 +14,7 @@ public partial class ProjectPropertiesPanel : Panel
 	private SpinBox _resolutionWidthSpinBox;
 	private SpinBox _resolutionHeightSpinBox;
 	private SpinBox _framerateSpinBox;
+	private SpinBox _textureAnimationFpsSpinBox;
 	private CollapsibleSection _projectSettingsSection;
 	
 	private ColorPickerButton _backgroundColorPicker;
@@ -241,8 +242,62 @@ public partial class ProjectPropertiesPanel : Panel
 		
 		// Add spacing
 		var spacerFramerate = new Control();
-		spacerFramerate.CustomMinimumSize = new Vector2(0, 10);
-		vbox.AddChild(spacerFramerate);
+		spacerFramerate.CustomMinimumSize = new Vector2(0, 8);
+		projectSettingsContainer.AddChild(spacerFramerate);
+		
+		// Texture Animation Speed
+		var textureAnimationRow = new VBoxContainer();
+		projectSettingsContainer.AddChild(textureAnimationRow);
+		
+		var textureAnimationLabel = new Label();
+		textureAnimationLabel.Text = "Texture Animation Speed (FPS):";
+		textureAnimationRow.AddChild(textureAnimationLabel);
+		
+		var textureAnimationInputRow = new HBoxContainer();
+		textureAnimationInputRow.AddThemeConstantOverride("separation", 8);
+		textureAnimationRow.AddChild(textureAnimationInputRow);
+		
+		_textureAnimationFpsSpinBox = new SpinBox();
+		_textureAnimationFpsSpinBox.Name = "TextureAnimationFpsSpinBox";
+		_textureAnimationFpsSpinBox.MinValue = 1;
+		_textureAnimationFpsSpinBox.MaxValue = 120;
+		_textureAnimationFpsSpinBox.Value = 20; // Default to Minecraft's 20 ticks per second
+		_textureAnimationFpsSpinBox.Step = 1;
+		_textureAnimationFpsSpinBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_textureAnimationFpsSpinBox.TooltipText = "Controls the base framerate for animated textures (Minecraft default: 20 fps)";
+		_textureAnimationFpsSpinBox.ValueChanged += OnTextureAnimationFpsChanged;
+		textureAnimationInputRow.AddChild(_textureAnimationFpsSpinBox);
+		
+		// Add preset texture animation fps buttons
+		var presetsTextureAnimationLabel = new Label();
+		presetsTextureAnimationLabel.Text = "Presets:";
+		presetsTextureAnimationLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
+		presetsTextureAnimationLabel.AddThemeFontSizeOverride("font_size", 11);
+		textureAnimationRow.AddChild(presetsTextureAnimationLabel);
+		
+		var presetsTextureAnimationRow = new HBoxContainer();
+		presetsTextureAnimationRow.AddThemeConstantOverride("separation", 4);
+		textureAnimationRow.AddChild(presetsTextureAnimationRow);
+		
+		var textureAnimationPresets = new int[] { 10, 20, 30, 60 };
+		
+		foreach (var fps in textureAnimationPresets)
+		{
+			var presetButton = new Button();
+			presetButton.Text = $"{fps}";
+			presetButton.CustomMinimumSize = new Vector2(50, 24);
+			presetButton.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+			
+			var capturedFps = fps;
+			presetButton.Pressed += () => OnTextureAnimationFpsPresetPressed(capturedFps);
+			
+			presetsTextureAnimationRow.AddChild(presetButton);
+		}
+		
+		// Add spacing
+		var spacerTextureAnimation = new Control();
+		spacerTextureAnimation.CustomMinimumSize = new Vector2(0, 10);
+		vbox.AddChild(spacerTextureAnimation);
 
 		// Background section with collapsible dropdown
 		_backgroundSection = new CollapsibleSection("Background");
@@ -849,5 +904,25 @@ public partial class ProjectPropertiesPanel : Panel
 		_framerateSpinBox.Value = fps;
 		GD.Print($"Framerate preset applied: {fps} FPS");
 		// OnFramerateChanged will be called automatically via ValueChanged signal
+	}
+	
+	private void OnTextureAnimationFpsChanged(double value)
+	{
+		var fps = (float)value;
+		
+		// Update the AnimatedTextureManager
+		if (AnimatedTextureManager.Instance != null)
+		{
+			AnimatedTextureManager.Instance.SetTextureAnimationFps(fps);
+		}
+		
+		GD.Print($"Texture animation speed changed to: {fps} FPS");
+	}
+	
+	private void OnTextureAnimationFpsPresetPressed(int fps)
+	{
+		_textureAnimationFpsSpinBox.Value = fps;
+		GD.Print($"Texture animation speed preset applied: {fps} FPS");
+		// OnTextureAnimationFpsChanged will be called automatically via ValueChanged signal
 	}
 }
