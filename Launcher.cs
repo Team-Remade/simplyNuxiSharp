@@ -2,6 +2,7 @@ using Godot;
 
 namespace simplyRemadeNuxi;
 
+//𖥂
 public partial class Launcher : Node
 {
 	public override void _Ready()
