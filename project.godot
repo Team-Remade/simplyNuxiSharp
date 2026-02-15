@@ -63,4 +63,6 @@ enabled=PackedStringArray("res://addons/Gizmo3DSharp/plugin.cfg", "res://addons/
 
 textures/canvas_textures/default_texture_filter=0
 rendering_device/fallback_to_d3d12=false
+textures/vram_compression/import_s3tc_bptc=true
+textures/vram_compression/import_etc2_astc=true
 global_illumination/gi/use_half_resolution=true
