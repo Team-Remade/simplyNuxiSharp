@@ -345,7 +345,7 @@ public partial class Main : Control
 		}
 		
 		// If preview is visible and render mode is enabled, show the preview
-		if (_renderModeEnabled && !previewVisible && PreviewViewportControl != null)
+		if (_renderModeEnabled && previewVisible && PreviewViewportControl != null)
 		{
 			PreviewViewportControl.Visible = true;
 			GD.Print("Preview viewport enabled with render mode");
