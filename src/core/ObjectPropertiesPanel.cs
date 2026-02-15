@@ -26,6 +26,9 @@ public partial class ObjectPropertiesPanel : Panel
 	private CollapsibleSection _rotationSection;
 	private CollapsibleSection _scaleSection;
 	private CollapsibleSection _pivotOffsetSection;
+	private CollapsibleSection _materialSection;
+	private HSlider _materialAlphaSlider;
+	private Label _materialAlphaLabel;
 	private SceneObject _currentObject;
 	
 	// Store original values for reset functionality
@@ -161,6 +164,38 @@ public partial class ObjectPropertiesPanel : Panel
 		_pivotOffsetX = CreateSpinBoxRow(pivotOffsetContainer, "X:", OnPivotOffsetChanged);
 		_pivotOffsetY = CreateSpinBoxRow(pivotOffsetContainer, "Y:", OnPivotOffsetChanged);
 		_pivotOffsetZ = CreateSpinBoxRow(pivotOffsetContainer, "Z:", OnPivotOffsetChanged);
+
+		// Material section with toggle arrow
+		_materialSection = new CollapsibleSection("Material");
+		_materialSection.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		vbox.AddChild(_materialSection);
+		_materialSection.GetResetButton().Pressed += OnResetMaterialAlpha;
+		
+		var materialContainer = _materialSection.GetContentContainer();
+		
+		// Alpha slider row
+		var alphaRow = new HBoxContainer();
+		materialContainer.AddChild(alphaRow);
+		
+		var alphaLabel = new Label();
+		alphaLabel.Text = "Alpha:";
+		alphaLabel.CustomMinimumSize = new Vector2(50, 0);
+		alphaRow.AddChild(alphaLabel);
+		
+		_materialAlphaSlider = new HSlider();
+		_materialAlphaSlider.Name = "MaterialAlphaSlider";
+		_materialAlphaSlider.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_materialAlphaSlider.MinValue = 0.0;
+		_materialAlphaSlider.MaxValue = 1.0;
+		_materialAlphaSlider.Step = 0.01;
+		_materialAlphaSlider.Value = 1.0;
+		_materialAlphaSlider.ValueChanged += OnMaterialAlphaChanged;
+		alphaRow.AddChild(_materialAlphaSlider);
+		
+		_materialAlphaLabel = new Label();
+		_materialAlphaLabel.Text = "1.00";
+		_materialAlphaLabel.CustomMinimumSize = new Vector2(40, 0);
+		alphaRow.AddChild(_materialAlphaLabel);
 	}
 
 	private SpinBox CreateSpinBoxRow(VBoxContainer parent, string labelText, Action onChanged)
@@ -257,6 +292,43 @@ public partial class ObjectPropertiesPanel : Panel
 		_pivotOffsetX.SetValueNoSignal(Math.Round(pivotOffset.X * 16, 2));
 		_pivotOffsetY.SetValueNoSignal(Math.Round(pivotOffset.Y * 16, 2));
 		_pivotOffsetZ.SetValueNoSignal(Math.Round(pivotOffset.Z * 16, 2));
+
+		// Material Alpha - special handling for bones
+		if (_currentObject is BoneSceneObject boneObject)
+		{
+			if (boneObject.ControlsSingleMesh())
+			{
+				// Show the bone's alpha override
+				_materialAlphaSlider.SetValueNoSignal(boneObject.AlphaOverride);
+				_materialAlphaLabel.Text = boneObject.AlphaOverride.ToString("F2");
+			}
+			else
+			{
+				// This bone is part of a skinned mesh - alpha not applicable here
+				_materialAlphaSlider.SetValueNoSignal(1.0);
+				_materialAlphaLabel.Text = "N/A";
+			}
+		}
+		else
+		{
+			// Material Alpha - get from first surface material if available
+			var meshInstances = _currentObject.GetMeshInstancesRecursively(_currentObject.Visual);
+			if (meshInstances.Count > 0 && meshInstances[0].Mesh != null && meshInstances[0].Mesh.GetSurfaceCount() > 0)
+			{
+				var material = meshInstances[0].Mesh.SurfaceGetMaterial(0);
+				if (material is StandardMaterial3D stdMat)
+				{
+					var alpha = stdMat.AlbedoColor.A;
+					_materialAlphaSlider.SetValueNoSignal(alpha);
+					_materialAlphaLabel.Text = alpha.ToString("F2");
+				}
+			}
+			else
+			{
+				_materialAlphaSlider.SetValueNoSignal(1.0);
+				_materialAlphaLabel.Text = "1.00";
+			}
+		}
 	}
 
 	private void ClearSpinBoxes()
@@ -482,6 +554,82 @@ public partial class ObjectPropertiesPanel : Panel
 		_pivotOffsetZ.Value = Math.Round(_originalPivotOffset.Z * 16, 2);
 		
 		// Note: Pivot offset is NOT auto-keyframed as it's a non-animated property
+	}
+
+	private void OnMaterialAlphaChanged(double value)
+	{
+		if (_currentObject == null) return;
+
+		var alpha = (float)value;
+		_materialAlphaLabel.Text = alpha.ToString("F2");
+
+		// Special handling for bones with alpha overrides
+		if (_currentObject is BoneSceneObject boneObj)
+		{
+			// Check if this bone controls a single mesh
+			if (boneObj.ControlsSingleMesh())
+			{
+				// Set the alpha override on the bone, which will apply to its controlled mesh
+				boneObj.AlphaOverride = alpha;
+				
+				// Auto-keyframe when property changes
+				AutoKeyframe("material.alpha");
+				return;
+			}
+			else
+			{
+				// This bone is part of a skinned mesh or controls multiple meshes
+				// Alpha should be controlled by the material editor, not here
+				GD.Print("This bone is part of a skinned mesh. Alpha should be controlled via the material editor.");
+				// Reset the slider to show that it's not applicable
+				_materialAlphaSlider.SetValueNoSignal(1.0);
+				_materialAlphaLabel.Text = "N/A";
+				return;
+			}
+		}
+
+		// Update all materials on all surfaces of the object (for non-bone objects)
+		var meshInstances = _currentObject.GetMeshInstancesRecursively(_currentObject.Visual);
+		foreach (var meshInstance in meshInstances)
+		{
+			if (meshInstance.Mesh == null) continue;
+			
+			// Apply alpha to all surfaces
+			for (int i = 0; i < meshInstance.Mesh.GetSurfaceCount(); i++)
+			{
+				var material = meshInstance.Mesh.SurfaceGetMaterial(i);
+				if (material is StandardMaterial3D stdMat)
+				{
+					var color = stdMat.AlbedoColor;
+					color.A = alpha;
+					stdMat.AlbedoColor = color;
+					
+					// Enable transparency if alpha < 1
+					if (alpha < 1.0f)
+					{
+						stdMat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+					}
+					else
+					{
+						stdMat.Transparency = BaseMaterial3D.TransparencyEnum.Disabled;
+					}
+				}
+			}
+		}
+
+		// Auto-keyframe when property changes
+		AutoKeyframe("material.alpha");
+	}
+
+	private void OnResetMaterialAlpha()
+	{
+		if (_currentObject == null) return;
+		
+		// Reset to full opacity
+		_materialAlphaSlider.Value = 1.0;
+		
+		// Auto-keyframe when property changes
+		AutoKeyframe("material.alpha");
 	}
 }
 

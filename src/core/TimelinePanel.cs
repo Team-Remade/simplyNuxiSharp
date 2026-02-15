@@ -1682,6 +1682,22 @@ public partial class TimelinePanel : Panel
 						"z" => obj.Scale.Z,
 						_ => 1f
 					};
+				case "material":
+					if (component == "alpha")
+					{
+						// Get alpha from first surface material if available
+						var meshInstances = obj.GetMeshInstancesRecursively(obj.Visual);
+						if (meshInstances.Count > 0 && meshInstances[0].Mesh != null && meshInstances[0].Mesh.GetSurfaceCount() > 0)
+						{
+							var material = meshInstances[0].Mesh.SurfaceGetMaterial(0);
+							if (material is StandardMaterial3D stdMat)
+							{
+								return stdMat.AlbedoColor.A;
+							}
+						}
+						return 1f; // Default to fully opaque
+					}
+					break;
 			}
 		}
 		
@@ -1928,6 +1944,40 @@ public partial class TimelinePanel : Panel
 						case "z": scale.Z = value; break;
 					}
 					obj.Scale = scale;
+					break;
+					
+				case "material":
+					if (component == "alpha")
+					{
+						// Update all materials on all surfaces of the object
+						var meshInstances = obj.GetMeshInstancesRecursively(obj.Visual);
+						foreach (var meshInstance in meshInstances)
+						{
+							if (meshInstance.Mesh == null) continue;
+							
+							// Apply alpha to all surfaces
+							for (int i = 0; i < meshInstance.Mesh.GetSurfaceCount(); i++)
+							{
+								var material = meshInstance.Mesh.SurfaceGetMaterial(i);
+								if (material is StandardMaterial3D stdMat)
+								{
+									var color = stdMat.AlbedoColor;
+									color.A = value;
+									stdMat.AlbedoColor = color;
+									
+									// Enable transparency if alpha < 1
+									if (value < 1.0f)
+									{
+										stdMat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+									}
+									else
+									{
+										stdMat.Transparency = BaseMaterial3D.TransparencyEnum.Disabled;
+									}
+								}
+							}
+						}
+					}
 					break;
 			}
 		}

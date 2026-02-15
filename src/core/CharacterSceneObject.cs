@@ -202,6 +202,18 @@ public partial class BoneSceneObject : SceneObject
 	private Vector3 _internalPosition = Vector3.Zero;
 	private Vector3 _internalRotation = Vector3.Zero;
 	
+	// Alpha override for bones that control a single mesh
+	private float _alphaOverride = 1.0f;
+	public float AlphaOverride
+	{
+		get => _alphaOverride;
+		set
+		{
+			_alphaOverride = value;
+			ApplyAlphaToControlledMesh();
+		}
+	}
+	
 	public int BoneIndex => _boneIdx;
 	public Skeleton3D Skeleton => _skeleton;
 	
@@ -293,7 +305,10 @@ public partial class BoneSceneObject : SceneObject
 		var material = new StandardMaterial3D();
 		material.AlbedoColor = new Color(0.5f, 0.5f, 1.0f, 0.3f); // Light blue semi-transparent
 		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-		material.NoDepthTest = true; // Disable depth test so bone spheres are always visible
+		// Use render priority to ensure bones render in front of characters
+		// This works with depth pre-pass: higher priority renders after (on top)
+		material.RenderPriority = (int)Material.RenderPriorityMax;
+		material.NoDepthTest = true; // Also disable depth test for extra visibility
 		
 		// Set material on the mesh surface
 		sphereMesh.Material = material;
@@ -380,5 +395,89 @@ public partial class BoneSceneObject : SceneObject
 		// Continuously update skeleton from bone transforms during editing
 		// This allows real-time manipulation of the character
 		UpdateSkeleton();
+	}
+	
+	/// <summary>
+	/// Gets the mesh controlled by this bone if it controls a single mesh
+	/// Returns null if the bone controls multiple meshes (skinned) or no meshes
+	/// </summary>
+	public MeshInstance3D GetControlledMesh()
+	{
+		// Check if this bone has a direct mesh attached to it (individual mesh per bone)
+		var meshInstances = GetMeshInstancesRecursively(Visual);
+		
+		// If this bone has exactly one mesh in its Visual hierarchy, it controls that mesh
+		if (meshInstances.Count == 1)
+		{
+			return meshInstances[0];
+		}
+		
+		// Check if this is part of a skinned mesh setup
+		// In that case, the bone doesn't control a single mesh
+		var characterParent = GetParentCharacter();
+		if (characterParent?.SkinnedMesh != null)
+		{
+			// This is a skinned mesh - bone doesn't control a single mesh
+			return null;
+		}
+		
+		return null;
+	}
+	
+	/// <summary>
+	/// Checks if this bone controls a single mesh (not part of a skinned mesh)
+	/// </summary>
+	public bool ControlsSingleMesh()
+	{
+		return GetControlledMesh() != null;
+	}
+	
+	/// <summary>
+	/// Applies the alpha override to the controlled mesh if applicable
+	/// </summary>
+	private void ApplyAlphaToControlledMesh()
+	{
+		var controlledMesh = GetControlledMesh();
+		if (controlledMesh == null || controlledMesh.Mesh == null)
+			return;
+		
+		// Apply alpha to all surfaces of the controlled mesh
+		for (int i = 0; i < controlledMesh.Mesh.GetSurfaceCount(); i++)
+		{
+			var material = controlledMesh.Mesh.SurfaceGetMaterial(i);
+			if (material is StandardMaterial3D stdMat)
+			{
+				var color = stdMat.AlbedoColor;
+				color.A = _alphaOverride;
+				stdMat.AlbedoColor = color;
+				
+				// Enable transparency if alpha < 1
+				if (_alphaOverride < 1.0f)
+				{
+					stdMat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+				}
+				else
+				{
+					stdMat.Transparency = BaseMaterial3D.TransparencyEnum.Disabled;
+				}
+			}
+		}
+	}
+	
+	/// <summary>
+	/// Gets the parent CharacterSceneObject if this bone is part of a character
+	/// </summary>
+	private CharacterSceneObject GetParentCharacter()
+	{
+		var current = GetParent();
+		while (current != null)
+		{
+			if (current is CharacterSceneObject characterObj)
+			{
+				return characterObj;
+			}
+			current = current.GetParent();
+		}
+		return null;
 	}
 }
