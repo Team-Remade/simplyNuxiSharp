@@ -53,6 +53,36 @@ public partial class TimelinePanel : Panel
 	
 	// Public properties for external access
 	public int CurrentFrame => _currentFrame;
+	public float Framerate => _frameRate;
+	
+	/// <summary>
+	/// Gets the last keyframe frame number across all properties
+	/// </summary>
+	public int GetLastKeyframe()
+	{
+		int lastKeyframe = 0;
+		foreach (var kvp in _propertyKeyframes)
+		{
+			foreach (var keyframe in kvp.Value)
+			{
+				if (keyframe.Frame > lastKeyframe)
+				{
+					lastKeyframe = keyframe.Frame;
+				}
+			}
+		}
+		return lastKeyframe;
+	}
+	
+	/// <summary>
+	/// Sets the current frame and updates the playhead
+	/// </summary>
+	public void SetCurrentFrame(int frame)
+	{
+		_currentFrame = Mathf.Clamp(frame, 0, _maxFrames);
+		UpdatePlayheadPosition();
+		ApplyKeyframesAtCurrentFrame();
+	}
 	
 	// Property tracking
 	private List<AnimatableProperty> _properties = new List<AnimatableProperty>();

@@ -207,7 +207,7 @@ public partial class Main : Control
 		renderPopup.AddItem("Render Animation", 1);
 		renderPopup.AddSeparator();
 		renderPopup.AddItem("Render Settings", 2);
-		//connect
+		renderPopup.IndexPressed += OnRenderMenuPressed;
 		
 		//Setup Help Menu
 		var helpPopup = HelpButton.GetPopup();
@@ -261,6 +261,97 @@ public partial class Main : Control
 				GetTree().Quit();
 				break;
 		}
+	}
+	
+	private void OnRenderMenuPressed(long id)
+	{
+		switch (id)
+		{
+			case 0: // Render Image
+				ShowRenderImageDialog();
+				break;
+			case 1: // Render Animation
+				ShowRenderAnimationDialog();
+				break;
+			case 2: // Render Settings
+				// TODO: Implement render settings dialog
+				break;
+		}
+	}
+	
+	private void ShowRenderImageDialog()
+	{
+		// Ensure render mode is enabled
+		if (!_renderModeEnabled)
+		{
+			GD.Print("Enabling render mode for image render");
+			ToggleRenderMode();
+		}
+		
+		// Get render resolution from project properties
+		int width = ProjectPropertyPanel.GetRenderWidth();
+		int height = ProjectPropertyPanel.GetRenderHeight();
+		
+		// Create and show dialog
+		var dialog = new RenderImageDialog();
+		dialog.SetResolution(width, height);
+		dialog.SetRenderCallback((filePath, format) =>
+		{
+			GD.Print($"Rendering image to: {filePath} (format: {format})");
+			PreviewViewportControl.RenderImage(filePath, format, width, height);
+		});
+		
+		AddChild(dialog);
+	}
+	
+	private void ShowRenderAnimationDialog()
+	{
+		// Ensure render mode is enabled
+		if (!_renderModeEnabled)
+		{
+			GD.Print("Enabling render mode for animation render");
+			ToggleRenderMode();
+		}
+		
+		// Get render settings
+		int width = ProjectPropertyPanel.GetRenderWidth();
+		int height = ProjectPropertyPanel.GetRenderHeight();
+		float framerate = ProjectPropertyPanel.GetFramerate();
+		int lastKeyframe = TimelinePanel.Instance?.GetLastKeyframe() ?? 0;
+		
+		if (lastKeyframe == 0)
+		{
+			GD.PrintErr("Cannot render animation: No keyframes found");
+			
+			// Show error dialog to user
+			var errorDialog = new AcceptDialog();
+			errorDialog.Title = "Cannot Render Animation";
+			errorDialog.DialogText = "Cannot render animation: No keyframes found in the timeline.\n\nPlease add keyframes to your animation before rendering.";
+			errorDialog.OkButtonText = "OK";
+			errorDialog.Exclusive = true;
+			errorDialog.Transient = true;
+			errorDialog.CloseRequested += () =>
+			{
+				errorDialog.Hide();
+				errorDialog.QueueFree();
+			};
+			AddChild(errorDialog);
+			errorDialog.PopupCentered();
+			return;
+		}
+		
+		// Create and show dialog
+		var dialog = new RenderAnimationDialog();
+		dialog.SetResolution(width, height);
+		dialog.SetFramerate(framerate);
+		dialog.SetLastKeyframe(lastKeyframe);
+		dialog.SetRenderCallback((outputPath, format, isPngSequence, bitrateMbps) =>
+		{
+			GD.Print($"Rendering animation to: {outputPath} (format: {format}, PNG sequence: {isPngSequence})");
+			PreviewViewportControl.RenderAnimation(outputPath, format, isPngSequence, bitrateMbps, width, height, framerate, lastKeyframe);
+		});
+		
+		AddChild(dialog);
 	}
 	
 	public override void _Notification(int what)

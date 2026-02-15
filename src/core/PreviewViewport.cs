@@ -1,6 +1,8 @@
 using Godot;
 using System;
 using System.Collections.Generic;
+using FFMpegCore;
+using FFMpegCore.Enums;
 
 namespace simplyRemadeNuxi.core;
 
@@ -31,6 +33,8 @@ public partial class PreviewViewport : Control
 	private Vector2 _resizeStartSize = Vector2.Zero;
 	private const float RESIZE_HANDLE_SIZE = 8f;
 	private const float RESIZE_BORDER_WIDTH = 4f;
+
+	private bool rendering;
 	
 	private enum ResizeEdge
 	{
@@ -215,7 +219,7 @@ public partial class PreviewViewport : Control
 	private void UpdateCursorForPosition(Vector2 pos)
 	{
 		var edge = GetResizeEdgeAtPosition(pos);
-		Control.CursorShape cursor = CursorShape.Arrow;
+		CursorShape cursor = CursorShape.Arrow;
 		
 		switch (edge)
 		{
@@ -725,6 +729,292 @@ public partial class PreviewViewport : Control
 			{
 				ScanForCameras(child);
 			}
+		}
+	}
+	
+	/// <summary>
+	/// Renders a single image at the specified resolution
+	/// </summary>
+	public async void RenderImage(string filePath, string format, int width, int height)
+	{
+		if (PreviewSubViewport == null)
+		{
+			GD.PrintErr("Cannot render: PreviewSubViewport is null");
+			return;
+		}
+		
+		// Store original size and update mode
+		var originalSize = PreviewSubViewport.Size;
+		var originalUpdateMode = PreviewSubViewport.RenderTargetUpdateMode;
+		ViewportContainer.Stretch = false;
+		
+		// Disable selection material overlays during rendering
+		var selectedObjects = SelectionManager.Instance?.SelectedObjects ?? new Godot.Collections.Array<SceneObject>();
+		foreach (var obj in selectedObjects)
+		{
+			obj.ApplySelectionMaterial(false);
+		}
+		
+		// Ensure viewport is actively rendering
+		PreviewSubViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
+		
+		// Set render resolution - only change viewport size, keep container as-is
+		PreviewSubViewport.Size = new Vector2I(width, height);
+		
+		// Wait for viewport to update and render
+		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+		
+		// Get the rendered image
+		var image = PreviewSubViewport.GetTexture().GetImage();
+		
+		// Save the image
+		Error saveResult = Error.Failed;
+		switch (format.ToUpper())
+		{
+			case "PNG":
+				saveResult = image.SavePng(filePath);
+				break;
+			case "JPG":
+			case "JPEG":
+				saveResult = image.SaveJpg(filePath);
+				break;
+			case "WEBP":
+				saveResult = image.SaveWebp(filePath);
+				break;
+			case "BMP":
+				saveResult = image.SavePng(filePath); // Godot doesn't have SaveBmp, use PNG
+				break;
+		}
+		
+		// Restore original size and update mode
+		PreviewSubViewport.Size = originalSize;
+		PreviewSubViewport.RenderTargetUpdateMode = originalUpdateMode;
+		ViewportContainer.Stretch = true;
+		
+		// Re-enable selection material overlays
+		foreach (var obj in selectedObjects)
+		{
+			obj.ApplySelectionMaterial(true);
+		}
+		
+		if (saveResult == Error.Ok)
+		{
+			GD.Print($"Image rendered successfully to: {filePath}");
+		}
+		else
+		{
+			GD.PrintErr($"Failed to save image to: {filePath}");
+		}
+	}
+	
+	/// <summary>
+	/// Renders an animation as either a video file or PNG sequence
+	/// </summary>
+	public async void RenderAnimation(string outputPath, string format, bool isPngSequence, int bitrateMbps, int width, int height, float framerate, int lastFrame)
+	{
+		if (PreviewSubViewport == null)
+		{
+			GD.PrintErr("Cannot render: PreviewSubViewport is null");
+			return;
+		}
+		
+		if (lastFrame <= 0)
+		{
+			GD.PrintErr("Cannot render: No keyframes found in animation");
+			return;
+		}
+		
+		// Store original size and update mode
+		var originalSize = PreviewSubViewport.Size;
+		var originalUpdateMode = PreviewSubViewport.RenderTargetUpdateMode;
+		ViewportContainer.Stretch = false;
+		
+		// Disable selection material overlays during rendering
+		var selectedObjects = SelectionManager.Instance?.SelectedObjects ?? new Godot.Collections.Array<SceneObject>();
+		foreach (var obj in selectedObjects)
+		{
+			obj.ApplySelectionMaterial(false);
+		}
+		
+		// Ensure viewport is actively rendering
+		PreviewSubViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
+		
+		// Set render resolution - only change viewport size, keep container as-is
+		PreviewSubViewport.Size = new Vector2I(width, height);
+		
+		GD.Print($"Starting animation render: {lastFrame} frames at {framerate} FPS");
+		
+		if (isPngSequence)
+		{
+			// Render PNG sequence
+			await RenderPngSequence(outputPath, lastFrame, framerate);
+		}
+		else
+		{
+			// Render video file
+			await RenderVideoFile(outputPath, format, bitrateMbps, lastFrame, framerate);
+		}
+		
+		// Restore original size and update mode
+		PreviewSubViewport.Size = originalSize;
+		PreviewSubViewport.RenderTargetUpdateMode = originalUpdateMode;
+		ViewportContainer.Stretch = true;
+		
+		// Re-enable selection material overlays
+		foreach (var obj in selectedObjects)
+		{
+			obj.ApplySelectionMaterial(true);
+		}
+		
+		GD.Print("Animation render complete");
+	}
+	
+	private async System.Threading.Tasks.Task RenderPngSequence(string outputDirectory, int lastFrame, float framerate)
+	{
+		var timeline = TimelinePanel.Instance;
+		if (timeline == null)
+		{
+			GD.PrintErr("Cannot render: TimelinePanel instance is null");
+			return;
+		}
+		
+		// Create output directory if it doesn't exist
+		DirAccess.MakeDirRecursiveAbsolute(outputDirectory);
+		
+		for (int frame = 0; frame <= lastFrame; frame++)
+		{
+			// Set timeline to current frame
+			timeline.SetCurrentFrame(frame);
+			
+			// Wait for frame to update and render
+			await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+			await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+			await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+			
+			// Capture frame
+			var image = PreviewSubViewport.GetTexture().GetImage();
+			var framePath = System.IO.Path.Combine(outputDirectory, $"frame_{frame:D5}.png");
+			var saveResult = image.SavePng(framePath);
+			
+			if (saveResult != Error.Ok)
+			{
+				GD.PrintErr($"Failed to save frame {frame} to: {framePath}");
+			}
+			
+			// Progress feedback
+			if (frame % 10 == 0)
+			{
+				GD.Print($"Rendered frame {frame}/{lastFrame}");
+			}
+		}
+		
+		GD.Print($"PNG sequence saved to: {outputDirectory}");
+	}
+	
+	private async System.Threading.Tasks.Task RenderVideoFile(string outputPath, string format, int bitrateMbps, int lastFrame, float framerate)
+	{
+		var timeline = TimelinePanel.Instance;
+		if (timeline == null)
+		{
+			GD.PrintErr("Cannot render: TimelinePanel instance is null");
+			return;
+		}
+		
+		// Create temporary directory for frames
+		var tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"render_{System.Guid.NewGuid()}");
+		DirAccess.MakeDirRecursiveAbsolute(tempDir);
+		
+		GD.Print($"Rendering frames to temporary directory: {tempDir}");
+		
+		// Render all frames to temp directory
+		for (int frame = 0; frame <= lastFrame; frame++)
+		{
+			// Set timeline to current frame
+			timeline.SetCurrentFrame(frame);
+			
+			// Wait for frame to update and render
+			await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+			await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+			await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+			
+			// Capture frame
+			var image = PreviewSubViewport.GetTexture().GetImage();
+			var framePath = System.IO.Path.Combine(tempDir, $"frame_{frame:D5}.png");
+			var saveResult = image.SavePng(framePath);
+			
+			if (saveResult != Error.Ok)
+			{
+				GD.PrintErr($"Failed to save frame {frame} to: {framePath}");
+			}
+			
+			// Progress feedback
+			if (frame % 10 == 0)
+			{
+				GD.Print($"Rendered frame {frame}/{lastFrame}");
+			}
+		}
+		
+		// Use FFMpegCore to encode video
+		GD.Print("Encoding video with FFMpegCore...");
+		
+		try
+		{
+			// Get the first frame to determine video dimensions
+			var firstFramePath = System.IO.Path.Combine(tempDir, "frame_00000.png");
+			if (!System.IO.File.Exists(firstFramePath))
+			{
+				GD.PrintErr("First frame not found for video encoding");
+				return;
+			}
+			
+			// Use FFMpegCore to convert image sequence to video
+			var success = FFMpegArguments
+				.FromFileInput(System.IO.Path.Combine(tempDir, "frame_%05d.png"), false, options => options
+					.WithFramerate(framerate))
+				.OutputToFile(outputPath, true, options => options
+					.WithVideoCodec(VideoCodec.LibX264)
+					.WithVideoBitrate(bitrateMbps * 1000) // Convert Mbps to Kbps
+					.WithConstantRateFactor(21)
+					.WithFastStart())
+				.ProcessSynchronously();
+			
+			if (success)
+			{
+				GD.Print($"Video encoded successfully to: {outputPath}");
+			}
+			else
+			{
+				GD.PrintErr("FFMpeg encoding failed");
+			}
+		}
+		catch (System.Exception ex)
+		{
+			GD.PrintErr($"Error encoding video: {ex.Message}");
+			GD.PrintErr($"Stack trace: {ex.StackTrace}");
+		}
+		
+		// Clean up temporary directory
+		try
+		{
+			System.IO.Directory.Delete(tempDir, true);
+			GD.Print("Temporary files cleaned up");
+		}
+		catch (System.Exception ex)
+		{
+			GD.PrintErr($"Failed to clean up temporary directory: {ex.Message}");
+		}
+	}
+	
+	/// <summary>
+	/// Sets the render resolution for the preview viewport
+	/// </summary>
+	public void SetRenderResolution(int width, int height)
+	{
+		if (PreviewSubViewport != null)
+		{
+			PreviewSubViewport.Size = new Vector2I(width, height);
 		}
 	}
 }

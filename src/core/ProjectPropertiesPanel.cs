@@ -925,4 +925,28 @@ public partial class ProjectPropertiesPanel : Panel
 		GD.Print($"Texture animation speed preset applied: {fps} FPS");
 		// OnTextureAnimationFpsChanged will be called automatically via ValueChanged signal
 	}
+	
+	/// <summary>
+	/// Gets the current render resolution width
+	/// </summary>
+	public int GetRenderWidth()
+	{
+		return (int)_resolutionWidthSpinBox.Value;
+	}
+	
+	/// <summary>
+	/// Gets the current render resolution height
+	/// </summary>
+	public int GetRenderHeight()
+	{
+		return (int)_resolutionHeightSpinBox.Value;
+	}
+	
+	/// <summary>
+	/// Gets the current project framerate
+	/// </summary>
+	public float GetFramerate()
+	{
+		return (float)_framerateSpinBox.Value;
+	}
 }
