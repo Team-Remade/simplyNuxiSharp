@@ -29,6 +29,7 @@ public partial class ObjectPropertiesPanel : Panel
 	private CollapsibleSection _materialSection;
 	private HSlider _materialAlphaSlider;
 	private Label _materialAlphaLabel;
+	private OptionButton _materialAlphaModeDropdown;
 	private SceneObject _currentObject;
 	
 	// Store original values for reset functionality
@@ -196,6 +197,27 @@ public partial class ObjectPropertiesPanel : Panel
 		_materialAlphaLabel.Text = "1.00";
 		_materialAlphaLabel.CustomMinimumSize = new Vector2(40, 0);
 		alphaRow.AddChild(_materialAlphaLabel);
+		
+		// Alpha mode dropdown row
+		var alphaModeRow = new HBoxContainer();
+		materialContainer.AddChild(alphaModeRow);
+		
+		var alphaModeLabel = new Label();
+		alphaModeLabel.Text = "Alpha Mode:";
+		alphaModeLabel.CustomMinimumSize = new Vector2(80, 0);
+		alphaModeRow.AddChild(alphaModeLabel);
+		
+		_materialAlphaModeDropdown = new OptionButton();
+		_materialAlphaModeDropdown.Name = "MaterialAlphaModeDropdown";
+		_materialAlphaModeDropdown.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_materialAlphaModeDropdown.AddItem("Disabled", (int)BaseMaterial3D.TransparencyEnum.Disabled);
+		_materialAlphaModeDropdown.AddItem("Alpha", (int)BaseMaterial3D.TransparencyEnum.Alpha);
+		_materialAlphaModeDropdown.AddItem("Alpha Scissor", (int)BaseMaterial3D.TransparencyEnum.AlphaScissor);
+		_materialAlphaModeDropdown.AddItem("Alpha Hash", (int)BaseMaterial3D.TransparencyEnum.AlphaHash);
+		_materialAlphaModeDropdown.AddItem("Depth Pre-Pass", (int)BaseMaterial3D.TransparencyEnum.AlphaDepthPrePass);
+		_materialAlphaModeDropdown.Selected = 0; // Default to Disabled
+		_materialAlphaModeDropdown.ItemSelected += OnMaterialAlphaModeChanged;
+		alphaModeRow.AddChild(_materialAlphaModeDropdown);
 	}
 
 	private SpinBox CreateSpinBoxRow(VBoxContainer parent, string labelText, Action onChanged)
@@ -321,12 +343,17 @@ public partial class ObjectPropertiesPanel : Panel
 					var alpha = stdMat.AlbedoColor.A;
 					_materialAlphaSlider.SetValueNoSignal(alpha);
 					_materialAlphaLabel.Text = alpha.ToString("F2");
+					
+					// Update alpha mode dropdown to show current mode
+					var transparencyMode = stdMat.Transparency;
+					_materialAlphaModeDropdown.Selected = (int)transparencyMode;
 				}
 			}
 			else
 			{
 				_materialAlphaSlider.SetValueNoSignal(1.0);
 				_materialAlphaLabel.Text = "1.00";
+				_materialAlphaModeDropdown.Selected = 0; // Default to Disabled
 			}
 		}
 	}
@@ -604,15 +631,7 @@ public partial class ObjectPropertiesPanel : Panel
 					color.A = alpha;
 					stdMat.AlbedoColor = color;
 					
-					// Enable transparency if alpha < 1
-					if (alpha < 1.0f)
-					{
-						stdMat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-					}
-					else
-					{
-						stdMat.Transparency = BaseMaterial3D.TransparencyEnum.Disabled;
-					}
+					// Don't automatically change transparency mode - let user control it via dropdown
 				}
 			}
 		}
@@ -630,6 +649,31 @@ public partial class ObjectPropertiesPanel : Panel
 		
 		// Auto-keyframe when property changes
 		AutoKeyframe("material.alpha");
+	}
+
+	private void OnMaterialAlphaModeChanged(long index)
+	{
+		if (_currentObject == null) return;
+		
+		// Get the selected transparency mode
+		var transparencyMode = (BaseMaterial3D.TransparencyEnum)index;
+		
+		// Update all materials on all surfaces of the object
+		var meshInstances = _currentObject.GetMeshInstancesRecursively(_currentObject.Visual);
+		foreach (var meshInstance in meshInstances)
+		{
+			if (meshInstance.Mesh == null) continue;
+			
+			// Apply transparency mode to all surfaces
+			for (int i = 0; i < meshInstance.Mesh.GetSurfaceCount(); i++)
+			{
+				var material = meshInstance.Mesh.SurfaceGetMaterial(i);
+				if (material is StandardMaterial3D stdMat)
+				{
+					stdMat.Transparency = transparencyMode;
+				}
+			}
+		}
 	}
 }
 

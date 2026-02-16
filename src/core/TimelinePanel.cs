@@ -210,17 +210,26 @@ public partial class TimelinePanel : Panel
 		_keyframeContextMenu.Name = "KeyframeContextMenu";
 		AddChild(_keyframeContextMenu);
 		
-		// Add interpolation mode options
-		_keyframeContextMenu.AddItem("Linear", 0);
-		_keyframeContextMenu.AddItem("Ease In Quadratic", 1);
-		_keyframeContextMenu.AddItem("Ease Out Quadratic", 2);
-		_keyframeContextMenu.AddItem("Ease In-Out Quadratic", 3);
-		_keyframeContextMenu.AddItem("Instant", 4);
+		// Create submenu for interpolation modes
+		var interpolationSubmenu = new PopupMenu();
+		interpolationSubmenu.Name = "InterpolationSubmenu";
+		interpolationSubmenu.AddItem("Linear", 0);
+		interpolationSubmenu.AddItem("Ease In Quadratic", 1);
+		interpolationSubmenu.AddItem("Ease Out Quadratic", 2);
+		interpolationSubmenu.AddItem("Ease In-Out Quadratic", 3);
+		interpolationSubmenu.AddItem("Instant", 4);
+		interpolationSubmenu.IndexPressed += OnInterpolationSubmenuIndexPressed;
+		_keyframeContextMenu.AddChild(interpolationSubmenu);
+		
+		// Add main menu items
+		_keyframeContextMenu.AddSubmenuNodeItem("Interpolation", interpolationSubmenu, 0);
+		_keyframeContextMenu.AddSeparator();
+		_keyframeContextMenu.AddItem("Delete Keyframe(s)", 2); // Index 2 because separator counts as index 1
 		
 		_keyframeContextMenu.IndexPressed += OnKeyframeContextMenuIndexPressed;
 	}
 	
-	private void OnKeyframeContextMenuIndexPressed(long index)
+	private void OnInterpolationSubmenuIndexPressed(long index)
 	{
 		if (_contextMenuKeyframe == null || _contextMenuObject == null || _contextMenuPropertyPath == null)
 			return;
@@ -242,11 +251,49 @@ public partial class TimelinePanel : Panel
 		SaveKeyframesToObject(_contextMenuObject, _contextMenuPropertyPath);
 	}
 	
+	private void OnKeyframeContextMenuIndexPressed(long index)
+	{
+		if (_contextMenuKeyframe == null || _contextMenuObject == null || _contextMenuPropertyPath == null)
+			return;
+		
+		switch (index)
+		{
+			case 2: // Delete Keyframe(s) - index 2 because separator is index 1
+				DeleteSelectedKeyframes();
+				break;
+		}
+	}
+	
 	public void ShowKeyframeContextMenu(Keyframe keyframe, SceneObject obj, string propertyPath, Vector2 globalPosition)
 	{
 		_contextMenuKeyframe = keyframe;
 		_contextMenuObject = obj;
 		_contextMenuPropertyPath = propertyPath;
+		
+		// If the keyframe is not already selected, add it to the selection
+		// This ensures that when "Delete Keyframe(s)" is clicked, it will be deleted
+		if (!_selectedKeyframes.Contains(keyframe))
+		{
+			// Clear previous selection and select only this keyframe
+			_selectedKeyframes.Clear();
+			_keyframeOwners.Clear();
+			_selectedKeyframes.Add(keyframe);
+			_keyframeOwners[keyframe] = (obj, propertyPath);
+			
+			// Redraw tracks to show the new selection
+			foreach (var track in _singlePropertyTracks)
+			{
+				track.QueueRedraw();
+			}
+			foreach (var prop in _properties)
+			{
+				if (prop.TrackGroup != null)
+				{
+					prop.TrackGroup.QueueRedrawTracks();
+				}
+			}
+		}
+		
 		_keyframeContextMenu.Position = (Vector2I)globalPosition;
 		_keyframeContextMenu.Popup();
 	}
@@ -1204,6 +1251,9 @@ public partial class TimelinePanel : Panel
 		// Visibility property (non-collapsible single property)
 		AddSingleProperty(obj, "Visible", "visible");
 
+		// Alpha property (non-collapsible single property)
+		AddSingleProperty(obj, "Alpha", "material.alpha");
+
 		// Position properties
 		AddCollapsiblePropertyGroup(obj, "Position", new string[] { "position.x", "position.y", "position.z" });
 
@@ -1671,6 +1721,74 @@ public partial class TimelinePanel : Panel
 		return new List<Keyframe>();
 	}
 	
+	private void DeleteSelectedKeyframes()
+	{
+		// If there are selected keyframes, delete all of them
+		if (_selectedKeyframes.Count > 0)
+		{
+			// Group keyframes by their owner (object + property path)
+			var keyframesToDelete = new Dictionary<(SceneObject, string), List<Keyframe>>();
+			
+			foreach (var keyframe in _selectedKeyframes)
+			{
+				if (_keyframeOwners.TryGetValue(keyframe, out var owner))
+				{
+					var key = (owner.obj, owner.propertyPath);
+					if (!keyframesToDelete.ContainsKey(key))
+					{
+						keyframesToDelete[key] = new List<Keyframe>();
+					}
+					keyframesToDelete[key].Add(keyframe);
+				}
+			}
+			
+			// Delete all keyframes
+			foreach (var kvp in keyframesToDelete)
+			{
+				var obj = kvp.Key.Item1;
+				var propertyPath = kvp.Key.Item2;
+				var keyframes = kvp.Value;
+				
+				var fullPath = $"{obj.GetInstanceId()}.{propertyPath}";
+				
+				if (_propertyKeyframes.ContainsKey(fullPath))
+				{
+					foreach (var keyframe in keyframes)
+					{
+						_propertyKeyframes[fullPath].Remove(keyframe);
+					}
+					
+					// Save to SceneObject
+					SaveKeyframesToObject(obj, propertyPath);
+				}
+			}
+			
+			// Clear selection
+			_selectedKeyframes.Clear();
+			_keyframeOwners.Clear();
+			
+			// Redraw all tracks to update visuals
+			foreach (var track in _singlePropertyTracks)
+			{
+				track.QueueRedraw();
+			}
+			
+			// Also redraw property group tracks
+			foreach (var prop in _properties)
+			{
+				if (prop.TrackGroup != null)
+				{
+					prop.TrackGroup.QueueRedrawTracks();
+				}
+			}
+		}
+		// Otherwise, delete just the context menu keyframe
+		else if (_contextMenuKeyframe != null && _contextMenuObject != null && _contextMenuPropertyPath != null)
+		{
+			RemoveKeyframeForProperty(_contextMenuObject, _contextMenuPropertyPath, _contextMenuKeyframe.Frame);
+		}
+	}
+	
 	private object GetPropertyValue(SceneObject obj, string propertyPath)
 	{
 		// Handle single property (like "visible")
@@ -1995,15 +2113,7 @@ public partial class TimelinePanel : Panel
 									color.A = value;
 									stdMat.AlbedoColor = color;
 									
-									// Enable transparency if alpha < 1
-									if (value < 1.0f)
-									{
-										stdMat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-									}
-									else
-									{
-										stdMat.Transparency = BaseMaterial3D.TransparencyEnum.Disabled;
-									}
+									// Don't automatically change transparency mode - let user control it via dropdown
 								}
 							}
 						}
@@ -2327,14 +2437,12 @@ public partial class KeyframeTrackGroup : VBoxContainer
 					if (_isDraggingKeyframe && _draggedKeyframe != null &&_draggedPropertyPath != null)
 					{
 						// Finish dragging - move all selected keyframes to their new positions
-						bool anyKeyframeMoved = false;
 						foreach (var kf in _timeline._selectedKeyframes)
 						{
 							if (_selectedKeyframesStartFrames.TryGetValue(kf, out int startFrame))
 							{
 								if (kf.Frame != startFrame)
 								{
-									anyKeyframeMoved = true;
 									// Find the owner of this keyframe
 									if (_timeline._keyframeOwners.TryGetValue(kf, out var owner))
 									{
