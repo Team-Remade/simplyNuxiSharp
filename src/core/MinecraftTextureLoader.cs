@@ -188,8 +188,8 @@ public class MinecraftTextureLoader
 			{
 				var folderName = Path.GetFileName(folder);
 				// Include folders that end with "Assets" (e.g., "FarmersDelightAssets")
-				// but not the main SimplyRemadeAssetsV1 folder (already added)
-				if (folderName != "SimplyRemadeAssetsV1" && 
+				// but not any SimplyRemadeAssets folders (those come from the main asset download)
+				if (!folderName.StartsWith("SimplyRemadeAssets", StringComparison.OrdinalIgnoreCase) && 
 				    (folderName.EndsWith("Assets", StringComparison.OrdinalIgnoreCase) || 
 				     folderName.Contains("Assets", StringComparison.OrdinalIgnoreCase)))
 				{
