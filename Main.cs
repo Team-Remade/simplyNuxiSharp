@@ -365,6 +365,10 @@ public partial class Main : Control
 		if (what == NotificationWMCloseRequest)
 		{
 			//TODO: Detect unsaved projects
+			
+			// Close any open native file dialogs
+			NativeFileDialog.CloseAllDialogs();
+			
 			GetTree().Quit();
 		}
 	}

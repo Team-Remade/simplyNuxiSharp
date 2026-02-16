@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using System.Collections.Generic;
 
 namespace simplyRemadeNuxi.core;
 
@@ -8,6 +9,55 @@ namespace simplyRemadeNuxi.core;
 /// </summary>
 public static class NativeFileDialog
 {
+	// Track active dialog callbacks so we can clean them up on app close
+	private static readonly List<Action> _activeDialogCleanups = new List<Action>();
+	private static int _activeDialogCount = 0;
+	
+	/// <summary>
+	/// Closes all active file dialogs. Should be called when the application is closing.
+	/// </summary>
+	public static void CloseAllDialogs()
+	{
+		// Clear the callback list - the native dialogs will be closed by the OS
+		// when the application window closes
+		_activeDialogCleanups.Clear();
+		_activeDialogCount = 0;
+		
+		// Re-enable the main window
+		var window = DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle, 0);
+		if (window != 0)
+		{
+			DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed, 0);
+		}
+	}
+	
+	private static void OnDialogOpened()
+	{
+		_activeDialogCount++;
+		// Disable the main window to prevent interaction
+		var window = DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle, 0);
+		if (window != 0)
+		{
+			// Set the window to be non-interactive by setting it to exclusive mode
+			DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.NoFocus, true, 0);
+		}
+	}
+	
+	private static void OnDialogClosed()
+	{
+		_activeDialogCount--;
+		if (_activeDialogCount <= 0)
+		{
+			_activeDialogCount = 0;
+			// Re-enable the main window
+			var window = DisplayServer.WindowGetNativeHandle(DisplayServer.HandleType.WindowHandle, 0);
+			if (window != 0)
+			{
+				DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.NoFocus, false, 0);
+			}
+		}
+	}
+	
 	/// <summary>
 	/// Shows a native file dialog for opening a single file
 	/// </summary>
@@ -17,8 +67,17 @@ public static class NativeFileDialog
 	/// <param name="startDirectory">Starting directory (empty for default)</param>
 	public static void ShowOpenFile(string title, string[] filters, Action<bool, string> callback, string startDirectory = "")
 	{
+		Action cleanup = null;
 		var callable = Callable.From<bool, string[], int>((status, paths, filterIndex) =>
 		{
+			// Remove cleanup action when dialog completes
+			if (cleanup != null)
+			{
+				_activeDialogCleanups.Remove(cleanup);
+			}
+			
+			OnDialogClosed();
+			
 			if (status && paths != null && paths.Length > 0)
 			{
 				callback?.Invoke(true, paths[0]);
@@ -29,7 +88,14 @@ public static class NativeFileDialog
 			}
 		});
 		
-		DisplayServer.FileDialogShow(title, startDirectory, "", false, DisplayServer.FileDialogMode.OpenFile, filters, callable);
+		// Track this dialog for cleanup
+		cleanup = () => { /* Dialog cleanup placeholder */ };
+		_activeDialogCleanups.Add(cleanup);
+		
+		OnDialogOpened();
+		
+		// Show as modal (true parameter) to block input to parent window
+		DisplayServer.FileDialogShow(title, startDirectory, "", true, DisplayServer.FileDialogMode.OpenFile, filters, callable);
 	}
 	
 	/// <summary>
@@ -41,8 +107,17 @@ public static class NativeFileDialog
 	/// <param name="startDirectory">Starting directory (empty for default)</param>
 	public static void ShowOpenFiles(string title, string[] filters, Action<bool, string[]> callback, string startDirectory = "")
 	{
+		Action cleanup = null;
 		var callable = Callable.From<bool, string[], int>((status, paths, filterIndex) =>
 		{
+			// Remove cleanup action when dialog completes
+			if (cleanup != null)
+			{
+				_activeDialogCleanups.Remove(cleanup);
+			}
+			
+			OnDialogClosed();
+			
 			if (status && paths != null && paths.Length > 0)
 			{
 				callback?.Invoke(true, paths);
@@ -53,7 +128,14 @@ public static class NativeFileDialog
 			}
 		});
 		
-		DisplayServer.FileDialogShow(title, startDirectory, "", false, DisplayServer.FileDialogMode.OpenFiles, filters, callable);
+		// Track this dialog for cleanup
+		cleanup = () => { /* Dialog cleanup placeholder */ };
+		_activeDialogCleanups.Add(cleanup);
+		
+		OnDialogOpened();
+		
+		// Show as modal (true parameter) to block input to parent window
+		DisplayServer.FileDialogShow(title, startDirectory, "", true, DisplayServer.FileDialogMode.OpenFiles, filters, callable);
 	}
 	
 	/// <summary>
@@ -66,8 +148,17 @@ public static class NativeFileDialog
 	/// <param name="defaultFileName">Default file name</param>
 	public static void ShowSaveFile(string title, string[] filters, Action<bool, string> callback, string startDirectory = "", string defaultFileName = "")
 	{
+		Action cleanup = null;
 		var callable = Callable.From<bool, string[], int>((status, paths, filterIndex) =>
 		{
+			// Remove cleanup action when dialog completes
+			if (cleanup != null)
+			{
+				_activeDialogCleanups.Remove(cleanup);
+			}
+			
+			OnDialogClosed();
+			
 			if (status && paths != null && paths.Length > 0)
 			{
 				callback?.Invoke(true, paths[0]);
@@ -78,7 +169,14 @@ public static class NativeFileDialog
 			}
 		});
 		
-		DisplayServer.FileDialogShow(title, startDirectory, defaultFileName, false, DisplayServer.FileDialogMode.SaveFile, filters, callable);
+		// Track this dialog for cleanup
+		cleanup = () => { /* Dialog cleanup placeholder */ };
+		_activeDialogCleanups.Add(cleanup);
+		
+		OnDialogOpened();
+		
+		// Show as modal (true parameter) to block input to parent window
+		DisplayServer.FileDialogShow(title, startDirectory, defaultFileName, true, DisplayServer.FileDialogMode.SaveFile, filters, callable);
 	}
 	
 	/// <summary>
@@ -89,8 +187,17 @@ public static class NativeFileDialog
 	/// <param name="startDirectory">Starting directory (empty for default)</param>
 	public static void ShowOpenDirectory(string title, Action<bool, string> callback, string startDirectory = "")
 	{
+		Action cleanup = null;
 		var callable = Callable.From<bool, string[], int>((status, paths, filterIndex) =>
 		{
+			// Remove cleanup action when dialog completes
+			if (cleanup != null)
+			{
+				_activeDialogCleanups.Remove(cleanup);
+			}
+			
+			OnDialogClosed();
+			
 			if (status && paths != null && paths.Length > 0)
 			{
 				callback?.Invoke(true, paths[0]);
@@ -101,7 +208,14 @@ public static class NativeFileDialog
 			}
 		});
 		
-		DisplayServer.FileDialogShow(title, startDirectory, "", false, DisplayServer.FileDialogMode.OpenDir, Array.Empty<string>(), callable);
+		// Track this dialog for cleanup
+		cleanup = () => { /* Dialog cleanup placeholder */ };
+		_activeDialogCleanups.Add(cleanup);
+		
+		OnDialogOpened();
+		
+		// Show as modal (true parameter) to block input to parent window
+		DisplayServer.FileDialogShow(title, startDirectory, "", true, DisplayServer.FileDialogMode.OpenDir, Array.Empty<string>(), callable);
 	}
 	
 	// Common filter presets for convenience
