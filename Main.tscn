@@ -188,6 +188,8 @@ stretch = true
 
 [node name="SubViewport" type="SubViewport" parent="Content/MainContent/Viewport/MainViewport" unique_id=1386258356]
 handle_input_locally = false
+use_debanding = true
+scaling_3d_scale = 0.5
 size = Vector2i(1272, 694)
 render_target_update_mode = 4
 

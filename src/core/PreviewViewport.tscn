@@ -122,11 +122,9 @@ text = "FPS: 60"
 
 [node name="PreviewSubViewport" type="SubViewport" parent="MainPanel/VBox/ViewportContainer" unique_id=598387402]
 handle_input_locally = false
-msaa_3d = 0
-screen_space_aa = 0
-use_debanding = false
+use_debanding = true
 size = Vector2i(392, 262)
-render_target_update_mode = 0
+render_target_update_mode = 4
 
 [node name="CanvasLayer" type="CanvasLayer" parent="MainPanel/VBox/ViewportContainer/PreviewSubViewport" unique_id=942478871]
 
