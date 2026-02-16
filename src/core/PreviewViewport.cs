@@ -69,6 +69,10 @@ public partial class PreviewViewport : Control
 	private CameraSceneObject _activeSceneCamera = null;
 	private bool _useWorkCamera = true;
 	
+	// Performance optimization
+	private int _fpsUpdateCounter = 0;
+	private const int FPS_UPDATE_INTERVAL = 10; // Update FPS every 10 frames
+	
 	public override void _Ready()
 	{
 		// Setup camera with all cull layers except layer 2
@@ -123,6 +127,33 @@ public partial class PreviewViewport : Control
 		
 		// Enable mouse filter to receive input events for resizing
 		MouseFilter = MouseFilterEnum.Pass;
+		
+		// Connect visibility changed signal for performance optimization
+		VisibilityChanged += OnVisibilityChanged;
+		
+		// Set initial render mode based on visibility
+		UpdateRenderMode();
+	}
+	
+	private void OnVisibilityChanged()
+	{
+		UpdateRenderMode();
+	}
+	
+	private void UpdateRenderMode()
+	{
+		if (PreviewSubViewport == null)
+			return;
+		
+		// Only render when visible to save performance
+		if (Visible)
+		{
+			PreviewSubViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
+		}
+		else
+		{
+			PreviewSubViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+		}
 	}
 	
 	public override void _GuiInput(InputEvent @event)
@@ -568,6 +599,10 @@ public partial class PreviewViewport : Control
 	{
 		base._Process(delta);
 		
+		// Skip processing if not visible to save performance
+		if (!Visible)
+			return;
+		
 		// Sync camera transform based on active camera
 		if (PreviewCamera != null)
 		{
@@ -585,11 +620,16 @@ public partial class PreviewViewport : Control
 			}
 		}
 		
-		// Update FPS counter if visible
+		// Update FPS counter less frequently to reduce overhead
 		if (FpsLabel != null && FpsLabel.Visible)
 		{
-			int fps = (int)Engine.GetFramesPerSecond();
-			FpsLabel.Text = $"FPS: {fps}";
+			_fpsUpdateCounter++;
+			if (_fpsUpdateCounter >= FPS_UPDATE_INTERVAL)
+			{
+				_fpsUpdateCounter = 0;
+				int fps = (int)Engine.GetFramesPerSecond();
+				FpsLabel.Text = $"FPS: {fps}";
+			}
 		}
 	}
 	

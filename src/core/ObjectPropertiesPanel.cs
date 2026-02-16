@@ -52,6 +52,15 @@ public partial class ObjectPropertiesPanel : Panel
 		}
 	}
 
+	public override void _Process(double delta)
+	{
+		// Update UI continuously when gizmo is being used
+		if (SelectionManager.Instance != null && SelectionManager.Instance.IsGizmoEditing && _currentObject != null)
+		{
+			UpdateUiFromObject();
+		}
+	}
+
 	private void SetupUi()
 	{
 		// Add ScrollContainer to handle overflow

@@ -15,6 +15,10 @@ public partial class Main : Control
 	
 	[Export] private Texture2D CheggTexture;
 	
+	// Performance optimization
+	private int _fpsUpdateCounter = 0;
+	private const int FPS_UPDATE_INTERVAL = 10; // Update FPS every 10 frames
+	
 	[Export] public MenuButton FileButton;
 	[Export] public MenuButton EditButton;
 	[Export] public MenuButton ViewButton;
@@ -25,6 +29,7 @@ public partial class Main : Control
 	[Export] public PreviewViewport PreviewViewportControl;
 	[Export] public Button PreviewToggleButton;
 	[Export] public Label MainViewportFpsLabel;
+	[Export] public Label GizmoHintLabel;
 		
 	[Export] public SubViewport Viewport;
 	[Export] public SceneTree SceneTreePanel;
@@ -55,6 +60,7 @@ public partial class Main : Control
 		SetupPreviewViewport();
 		
 		SceneTreePanel.ObjectSelected += OnSceneObjectSelected;
+		SelectionManager.Instance.SelectionChanged += OnSelectionChanged;
 		
 		// Check if Minecraft assets are loaded
 		var loader = MinecraftJsonLoader.Instance;
@@ -380,6 +386,15 @@ public partial class Main : Control
 		SelectionManager.Instance.SelectObject(sceneObject);
 	}
 	
+	private void OnSelectionChanged()
+	{
+		// Show the gizmo hint label only when objects are selected
+		if (GizmoHintLabel != null)
+		{
+			GizmoHintLabel.Visible = SelectionManager.Instance.SelectedObjects.Count > 0;
+		}
+	}
+	
 	public override void _Input(InputEvent @event)
 	{
 		if (@event is InputEventKey keyEvent && keyEvent.Pressed && !keyEvent.Echo)
@@ -494,11 +509,16 @@ public partial class Main : Control
 	{
 		base._Process(delta);
 		
-		// Update main viewport FPS counter if visible
+		// Update main viewport FPS counter less frequently to reduce overhead
 		if (MainViewportFpsLabel != null && MainViewportFpsLabel.Visible)
 		{
-			int fps = (int)Engine.GetFramesPerSecond();
-			MainViewportFpsLabel.Text = $"FPS: {fps}";
+			_fpsUpdateCounter++;
+			if (_fpsUpdateCounter >= FPS_UPDATE_INTERVAL)
+			{
+				_fpsUpdateCounter = 0;
+				int fps = (int)Engine.GetFramesPerSecond();
+				MainViewportFpsLabel.Text = $"FPS: {fps}";
+			}
 		}
 	}
 }
