@@ -172,11 +172,11 @@ public class MineImatorLoader
 		if (part.Position != null && part.Position.Length >= 3)
 		{
 			// Convert from pixels to blocks (divide by 16)
-			// Mine Imator: Y-up, Z-forward; Godot: Y-up, -Z-forward
+			// Mine Imator: Y-up, Z-forward; Godot: Y-up, Z-forward
 			position = new Vector3(
-				-part.Position[0] / 16.0f,  // X is mirrored
-				part.Position[1] / 16.0f,   // Y stays the same
-				part.Position[2] / 16.0f     // Z stays the same
+				part.Position[0] / 16.0f,
+				part.Position[1] / 16.0f,
+				part.Position[2] / 16.0f
 			);
 		}
 		
@@ -186,8 +186,8 @@ public class MineImatorLoader
 		{
 			rotation = new Vector3(
 				Mathf.DegToRad(part.Rotation[0]),
-				Mathf.DegToRad(-part.Rotation[1]),  // Y is inverted
-				Mathf.DegToRad(-part.Rotation[2])   // Z is inverted
+				Mathf.DegToRad(part.Rotation[1]),
+				Mathf.DegToRad(part.Rotation[2]) 
 			);
 		}
 		
@@ -213,7 +213,7 @@ public class MineImatorLoader
 			.RotatedLocal(Vector3.Up, rotation.Y)
 			.RotatedLocal(Vector3.Forward, rotation.Z)
 			.ScaledLocal(scale)
-			.TranslatedLocal(position);
+			.Translated(position);
 		
 		skeleton.SetBoneRest(addedIdx, restTransform);
 		skeleton.SetBonePosePosition(addedIdx, position);
@@ -313,7 +313,13 @@ public class MineImatorLoader
 		}
 		else // "block" or default
 		{
-			meshInstance = CreateBlockMesh(from, to, uvU, uvV, sizeX, sizeY, sizeZ, texWidth, texHeight, shape.TextureMirror, shape.Invert, shapeScale);
+			meshInstance = CreateBlockMesh(from, to, uvU, uvV, sizeX, sizeY, sizeZ, texWidth, texHeight, shape.TextureMirror, shape.Invert);
+		}
+		
+		// Apply shape scale to the mesh instance
+		if (meshInstance != null && shapeScale != Vector3.One)
+		{
+			meshInstance.Scale = shapeScale;
 		}
 		
 		// Apply material with texture
@@ -342,7 +348,7 @@ public class MineImatorLoader
 	/// </summary>
 	private MeshInstance3D CreateBlockMesh(Vector3 from, Vector3 to, float uvU, float uvV,
 		float sizeX, float sizeY, float sizeZ, int texWidth, int texHeight, 
-		bool textureMirror, bool invert, Vector3 shapeScale)
+		bool textureMirror, bool invert)
 	{
 		var vertices = new List<Vector3>();
 		var normals = new List<Vector3>();
@@ -374,7 +380,31 @@ public class MineImatorLoader
 			texWidth, texHeight,
 			textureMirror, invert);
 		
-		// Back face (Z-)
+		// Right face (X+): left of starting square (u - depth, v)
+		AddFace(vertices, normals, uvs, indices,
+			new Vector3(max.X, min.Y, max.Z),
+			new Vector3(max.X, min.Y, min.Z),
+			new Vector3(max.X, max.Y, min.Z),
+			new Vector3(max.X, max.Y, max.Z),
+			Vector3.Right,
+			uvU - sizeZ, uvV,
+			sizeZ, sizeY,
+			texWidth, texHeight,
+			textureMirror, invert);
+		
+		// Left face (X-): right of starting square (u + width, v)
+		AddFace(vertices, normals, uvs, indices,
+			new Vector3(min.X, min.Y, min.Z),
+			new Vector3(min.X, min.Y, max.Z),
+			new Vector3(min.X, max.Y, max.Z),
+			new Vector3(min.X, max.Y, min.Z),
+			Vector3.Left,
+			uvU + sizeX, uvV,
+			sizeZ, sizeY,
+			texWidth, texHeight,
+			textureMirror, invert);
+		
+		// Back face (Z-): right of left square (u + width + depth, v)
 		AddFace(vertices, normals, uvs, indices,
 			new Vector3(max.X, min.Y, min.Z),
 			new Vector3(min.X, min.Y, min.Z),
@@ -386,50 +416,26 @@ public class MineImatorLoader
 			texWidth, texHeight,
 			textureMirror, invert);
 		
-		// Right face (X+)
-		AddFace(vertices, normals, uvs, indices,
-			new Vector3(max.X, min.Y, max.Z),
-			new Vector3(max.X, min.Y, min.Z),
-			new Vector3(max.X, max.Y, min.Z),
-			new Vector3(max.X, max.Y, max.Z),
-			Vector3.Right,
-			uvU + sizeX, uvV,
-			sizeZ, sizeY,
-			texWidth, texHeight,
-			textureMirror, invert);
-		
-		// Left face (X-)
-		AddFace(vertices, normals, uvs, indices,
-			new Vector3(min.X, min.Y, min.Z),
-			new Vector3(min.X, min.Y, max.Z),
-			new Vector3(min.X, max.Y, max.Z),
-			new Vector3(min.X, max.Y, min.Z),
-			Vector3.Left,
-			uvU + sizeX + sizeZ + sizeX, uvV,
-			sizeZ, sizeY,
-			texWidth, texHeight,
-			textureMirror, invert);
-		
-		// Top face (Y+)
+		// Top face (Y+): top of starting square (u, v + height)
 		AddFace(vertices, normals, uvs, indices,
 			new Vector3(min.X, max.Y, max.Z),
 			new Vector3(max.X, max.Y, max.Z),
 			new Vector3(max.X, max.Y, min.Z),
 			new Vector3(min.X, max.Y, min.Z),
 			Vector3.Up,
-			uvU + sizeX, uvV + sizeY,
+			uvU, uvV + sizeY,
 			sizeX, sizeZ,
 			texWidth, texHeight,
 			textureMirror, invert);
 		
-		// Bottom face (Y-)
+		// Bottom face (Y-): right of top square (u + width, v + height)
 		AddFace(vertices, normals, uvs, indices,
 			new Vector3(min.X, min.Y, min.Z),
 			new Vector3(max.X, min.Y, min.Z),
 			new Vector3(max.X, min.Y, max.Z),
 			new Vector3(min.X, min.Y, max.Z),
 			Vector3.Down,
-			uvU + sizeX + sizeZ, uvV + sizeY,
+			uvU + sizeX, uvV + sizeY,
 			sizeX, sizeZ,
 			texWidth, texHeight,
 			textureMirror, invert);
