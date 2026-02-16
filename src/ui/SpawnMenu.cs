@@ -621,8 +621,8 @@ public partial class SpawnMenu : PopupPanel
 		// Check if this is a custom model from history
 		if (_selectedCategory == "Custom Models" && _customModelPaths.ContainsKey(objectName))
 		{
-			var glbPath = _customModelPaths[objectName];
-			LoadAndSpawnCustomModel(glbPath);
+			var modelPath = _customModelPaths[objectName];
+			LoadAndSpawnCustomModel(modelPath);
 			return;
 		}
 		
@@ -1182,8 +1182,8 @@ public partial class SpawnMenu : PopupPanel
 		GD.Print("Opening file dialog for custom 3D model...");
 		
 		NativeFileDialog.ShowOpenFile(
-			"Select 3D Model (GLB/GLTF)",
-			NativeFileDialog.Filters.Glb,
+			"Select 3D Model (GLB/GLTF/Mine Imator)",
+			NativeFileDialog.Filters.All3DModels,
 			(success, filePath) =>
 			{
 				if (success && !string.IsNullOrEmpty(filePath))
@@ -1199,90 +1199,90 @@ public partial class SpawnMenu : PopupPanel
 		);
 	}
 	
-	private void LoadAndSpawnCustomModel(string glbPath)
+	private void LoadAndSpawnCustomModel(string modelPath)
 	{
-		if (!System.IO.File.Exists(glbPath))
+		if (!System.IO.File.Exists(modelPath))
 		{
-			GD.PrintErr($"Model file does not exist: {glbPath}");
+			GD.PrintErr($"Model file does not exist: {modelPath}");
 			return;
 		}
 		
-		GD.Print($"Loading custom 3D model from: {glbPath}");
+		GD.Print($"Loading custom 3D model from: {modelPath}");
 		
 		// Get a display name from the file
-		var fileName = System.IO.Path.GetFileNameWithoutExtension(glbPath);
+		var fileName = System.IO.Path.GetFileNameWithoutExtension(modelPath);
+		var extension = System.IO.Path.GetExtension(modelPath).ToLower();
 		var displayName = CleanBlockName(fileName);
 		
 		// Get the next available number for this object type
 		int nextNumber = GetNextAvailableObjectNumber(displayName);
 		string fullObjectName = nextNumber > 1 ? $"{displayName}{nextNumber}" : displayName;
 		
-		// Load the GLB file using Godot's gltf_document and gltf_state
-		var gltfDocument = new GltfDocument();
-		var gltfState = new GltfState();
+		SceneObject customModelObject = null;
 		
-		var error = gltfDocument.AppendFromFile(glbPath, gltfState);
-		
-		if (error != Error.Ok)
+		// Check if this is a Mine Imator model
+		if (extension == ".mimodel")
 		{
-			GD.PrintErr($"Failed to load 3D model file: {error}");
-			return;
-		}
-		
-		// Generate the scene from GLTF
-		var glbRoot = gltfDocument.GenerateScene(gltfState);
-		
-		if (glbRoot == null)
-		{
-			GD.PrintErr("Failed to generate scene from 3D model");
-			return;
-		}
-		
-		// Cast to Node3D - GLB/GLTF files typically contain 3D content
-		if (glbRoot is not Node3D glbRoot3D)
-		{
-			GD.PrintErr($"Model root is not a Node3D, it's a {glbRoot.GetType().Name}");
-			glbRoot.QueueFree();
-			return;
-		}
-		
-		GD.Print($"Successfully loaded 3D model scene: {glbRoot3D.Name}");
-		
-		// Check if the model has a skeleton
-		bool hasSkeleton = HasSkeleton(glbRoot3D);
-		
-		SceneObject customModelObject;
-		
-		if (hasSkeleton)
-		{
-			GD.Print("Model has skeleton - using CharacterSceneObject");
-			// Create a CharacterSceneObject for rigged models
-			var characterObject = new CharacterSceneObject();
-			characterObject.Name = fullObjectName;
-			characterObject.ObjectType = displayName;
-			
-			// Add to viewport first
-			Viewport.AddChild(characterObject);
-			
-			// Setup the character from the GLB data
-			characterObject.SetupFromGlb(glbRoot3D);
-			
-			customModelObject = characterObject;
+			// Load Mine Imator model - it returns a CharacterSceneObject directly
+			var character = LoadMineImatorModel(modelPath);
+			if (character != null)
+			{
+				character.Name = fullObjectName;
+				character.ObjectType = displayName;
+				Viewport.AddChild(character);
+				customModelObject = character;
+			}
 		}
 		else
 		{
-			GD.Print("Model has no skeleton - using regular SceneObject");
-			// Create a regular SceneObject for static models
-			customModelObject = new SceneObject();
-			customModelObject.Name = fullObjectName;
-			customModelObject.ObjectType = displayName;
-			customModelObject.PivotOffset = Vector3.Zero;
+			// Load as GLB/GLTF
+			var modelRoot = LoadGlbModel(modelPath);
+			if (modelRoot == null)
+			{
+				GD.PrintErr($"Failed to load model: {modelPath}");
+				return;
+			}
 			
-			// Add to viewport first
-			Viewport.AddChild(customModelObject);
+			// Check if the model has a skeleton
+			bool hasSkeleton = HasSkeleton(modelRoot);
 			
-			// Add the GLB root directly to the visual node
-			customModelObject.AddVisualInstance(glbRoot3D);
+			if (hasSkeleton)
+			{
+				GD.Print("Model has skeleton - using CharacterSceneObject");
+				// Create a CharacterSceneObject for rigged models
+				var characterObject = new CharacterSceneObject();
+				characterObject.Name = fullObjectName;
+				characterObject.ObjectType = displayName;
+				
+				// Add to viewport first
+				Viewport.AddChild(characterObject);
+				
+				// Setup the character from the GLB data
+				characterObject.SetupFromGlb(modelRoot);
+				
+				customModelObject = characterObject;
+			}
+			else
+			{
+				GD.Print("Model has no skeleton - using regular SceneObject");
+				// Create a regular SceneObject for static models
+				customModelObject = new SceneObject();
+				customModelObject.Name = fullObjectName;
+				customModelObject.ObjectType = displayName;
+				customModelObject.PivotOffset = Vector3.Zero;
+				
+				// Add to viewport first
+				Viewport.AddChild(customModelObject);
+				
+				// Add the model root directly to the visual node
+				customModelObject.AddVisualInstance(modelRoot);
+			}
+		}
+		
+		if (customModelObject == null)
+		{
+			GD.PrintErr($"Failed to create scene object from model: {modelPath}");
+			return;
 		}
 		
 		// Position at world origin
@@ -1297,10 +1297,75 @@ public partial class SpawnMenu : PopupPanel
 		GD.Print($"Custom model '{fullObjectName}' spawned successfully");
 		
 		// Add to history
-		AddToCustomModelHistory(glbPath, displayName);
+		AddToCustomModelHistory(modelPath, displayName);
 		
 		// Hide the menu after spawning
 		Hide();
+	}
+	
+	/// <summary>
+	/// Loads a GLB/GLTF model file
+	/// </summary>
+	private Node3D LoadGlbModel(string glbPath)
+	{
+		// Load the GLB file using Godot's gltf_document and gltf_state
+		var gltfDocument = new GltfDocument();
+		var gltfState = new GltfState();
+		
+		var error = gltfDocument.AppendFromFile(glbPath, gltfState);
+		
+		if (error != Error.Ok)
+		{
+			GD.PrintErr($"Failed to load GLB file: {error}");
+			return null;
+		}
+		
+		// Generate the scene from GLTF
+		var glbRoot = gltfDocument.GenerateScene(gltfState);
+		
+		if (glbRoot == null)
+		{
+			GD.PrintErr("Failed to generate scene from GLB");
+			return null;
+		}
+		
+		// Cast to Node3D - GLB/GLTF files typically contain 3D content
+		if (glbRoot is not Node3D glbRoot3D)
+		{
+			GD.PrintErr($"GLB root is not a Node3D, it's a {glbRoot.GetType().Name}");
+			glbRoot.QueueFree();
+			return null;
+		}
+		
+		GD.Print($"Successfully loaded GLB scene: {glbRoot3D.Name}");
+		return glbRoot3D;
+	}
+	
+	/// <summary>
+	/// Loads a Mine Imator model file (.mimodel)
+	/// </summary>
+	private CharacterSceneObject LoadMineImatorModel(string mimodelPath)
+	{
+		var loader = MineImatorLoader.Instance;
+		var model = loader.LoadModel(mimodelPath);
+		
+		if (model == null)
+		{
+			GD.PrintErr($"Failed to load Mine Imator model: {mimodelPath}");
+			return null;
+		}
+		
+		// Create a CharacterSceneObject with bones from the model
+		var character = loader.CreateCharacterFromModel(model);
+		
+		if (character == null)
+		{
+			GD.PrintErr($"Failed to create character from Mine Imator model: {mimodelPath}");
+			return null;
+		}
+		
+		GD.Print($"Successfully loaded Mine Imator model: {model.Name}");
+		return character;
 	}
 	
 	/// <summary>
