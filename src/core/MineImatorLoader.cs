@@ -360,7 +360,8 @@ public class MineImatorLoader
 			var material = new StandardMaterial3D();
 			material.AlbedoTexture = texture;
 			material.TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest;
-			material.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+			// Use backface culling by default, frontface culling when inverted
+			material.CullMode = BaseMaterial3D.CullModeEnum.Back;
 			material.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
 			material.AlphaScissorThreshold = 0.5f;
 			
@@ -584,7 +585,7 @@ public class MineImatorLoader
 	}
 	
 	/// <summary>
-	/// Creates a plane mesh (single face)
+	/// Creates a plane mesh (single face with both front and back for proper two-sided rendering)
 	/// </summary>
 	private MeshInstance3D CreatePlaneMesh(Vector3 from, Vector3 to, float uvU, float uvV,
 		float sizeX, float sizeY, int texWidth, int texHeight, 
@@ -641,6 +642,7 @@ public class MineImatorLoader
 			(tex3, tex4) = (tex4, tex3);
 		}
 		
+		// Front face (at min.Z, normal pointing backward)
 		int baseVertex = vertices.Count;
 		
 		vertices.Add(new Vector3(min.X, min.Y, min.Z));
@@ -676,6 +678,46 @@ public class MineImatorLoader
 			indices.Add(baseVertex + 0);
 			indices.Add(baseVertex + 3);
 			indices.Add(baseVertex + 2);
+		}
+		
+		// Back face (at max.Z, normal pointing forward) - for two-sided rendering
+		baseVertex = vertices.Count;
+		
+		// Use the same vertices but in reverse order for the back face
+		vertices.Add(new Vector3(min.X, min.Y, max.Z));
+		vertices.Add(new Vector3(max.X, min.Y, max.Z));
+		vertices.Add(new Vector3(max.X, max.Y, max.Z));
+		vertices.Add(new Vector3(min.X, max.Y, max.Z));
+		
+		normals.Add(Vector3.Forward);
+		normals.Add(Vector3.Forward);
+		normals.Add(Vector3.Forward);
+		normals.Add(Vector3.Forward);
+		
+		// UV mapping for back face (same orientation)
+		uvs.Add(tex4);
+		uvs.Add(tex3);
+		uvs.Add(tex2);
+		uvs.Add(tex1);
+		
+		// Back face indices - reverse winding from front face
+		if (invert)
+		{
+			indices.Add(baseVertex + 0);
+			indices.Add(baseVertex + 2);
+			indices.Add(baseVertex + 1);
+			indices.Add(baseVertex + 0);
+			indices.Add(baseVertex + 3);
+			indices.Add(baseVertex + 2);
+		}
+		else
+		{
+			indices.Add(baseVertex + 0);
+			indices.Add(baseVertex + 1);
+			indices.Add(baseVertex + 2);
+			indices.Add(baseVertex + 0);
+			indices.Add(baseVertex + 2);
+			indices.Add(baseVertex + 3);
 		}
 		
 		// Create the mesh
