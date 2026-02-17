@@ -171,8 +171,10 @@ public class MineImatorLoader
 		string boneName = part.Name ?? $"Bone_{boneIdx}";
 		
 		// Convert position from Mine Imator to Godot
+		// Root parts (no parent) use (0,0,0) as position - the hierarchy handles positioning
+		// Child parts use their actual position relative to parent
 		Vector3 position = Vector3.Zero;
-		if (part.Position != null && part.Position.Length >= 3)
+		if (parentIdx >= 0 && part.Position != null && part.Position.Length >= 3)
 		{
 			// Convert from pixels to blocks (divide by 16)
 			// Mine Imator: Y-up, Z-forward; Godot: Y-up, Z-forward
@@ -211,17 +213,19 @@ public class MineImatorLoader
 		}
 		
 		// Create rest pose transform
+		// MineImator uses: matrix_create(position, rotation, scale) where rotation is applied before position
+		// In Godot, we need to apply rotation first, then translation (reverse order from current)
+		// Using XYZ rotation order to match MineImator
 		var restTransform = Transform3D.Identity
-			.RotatedLocal(Vector3.Right, rotation.X)
-			.RotatedLocal(Vector3.Up, rotation.Y)
-			.RotatedLocal(Vector3.Forward, rotation.Z)
-			.ScaledLocal(scale)
+			.Rotated(Vector3.Right, rotation.X)
+			.Rotated(Vector3.Up, rotation.Y)
+			.Rotated(Vector3.Forward, rotation.Z)
 			.Translated(position);
-		
+
 		skeleton.SetBoneRest(addedIdx, restTransform);
 		skeleton.SetBonePosePosition(addedIdx, position);
 		skeleton.SetBonePoseRotation(addedIdx, Quaternion.FromEuler(rotation));
-		skeleton.SetBonePoseScale(addedIdx, scale);
+		skeleton.SetBonePoseScale(addedIdx, Vector3.One); // Scale is handled at shape level, not bone level
 	}
 	
 	/// <summary>
