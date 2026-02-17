@@ -404,78 +404,148 @@ public class MineImatorLoader
 			max = new Vector3(max.X + inflate, max.Y + inflate, max.Z + inflate);
 		}
 		
-		// Create all 6 faces
-		// Front face (Z+)
-		AddFace(vertices, normals, uvs, indices,
-			new Vector3(min.X, min.Y, max.Z),
-			new Vector3(max.X, min.Y, max.Z),
-			new Vector3(max.X, max.Y, max.Z),
-			new Vector3(min.X, max.Y, max.Z),
+		// Convert sizes to normalized UV coordinates (0-1 range)
+		// Using the same UV layout as Mine-imator GML project
+		float texU = uvU / texWidth;
+		float texV = uvV / texHeight;
+		
+		// Texture sizes normalized (with 1/256 pixel fix for rendering artifacts)
+		float texSizeX = sizeX / texWidth;
+		float texSizeY = sizeY / texHeight;
+		float texSizeZ = sizeZ / texHeight; // Z uses texture height for V coordinate
+		
+		// Artifact fix: subtract 1/256 pixel to avoid rendering issues
+		float texSizeFixX = (sizeX - 1.0f/256.0f) / texWidth;
+		float texSizeFixY = (sizeY - 1.0f/256.0f) / texHeight;
+		float texSizeFixZ = (sizeZ - 1.0f/256.0f) / texHeight;
+		
+		// UV coordinates for each face (following Mine-imator layout):
+		// South (Front Z+): at UV origin, size (X, Z)
+		// East (Right X+): to the right of South, size (Y, Z)
+		// West (Left X-): to the left of South, size (Y, Z)
+		// North (Back Z-): to the right of East, size (X, Z)
+		// Up (Top Y+): above South, size (X, Y)
+		// Down (Bottom Y-): to the right of Up, size (X, Y) - flipped vertically
+		
+		// South face (Front, Z+) - at UV origin
+		var texSouth1 = new Vector2(texU, texV);
+		var texSouth2 = new Vector2(texU + texSizeFixX, texV);
+		var texSouth3 = new Vector2(texU + texSizeFixX, texV + texSizeFixZ);
+		var texSouth4 = new Vector2(texU, texV + texSizeFixZ);
+		
+		// East face (Right, X+) - to the right of South by X
+		var texEast1 = new Vector2(texU + texSizeX, texV);
+		var texEast2 = new Vector2(texU + texSizeX + texSizeFixY, texV);
+		var texEast3 = new Vector2(texU + texSizeX + texSizeFixY, texV + texSizeFixZ);
+		var texEast4 = new Vector2(texU + texSizeX, texV + texSizeFixZ);
+		
+		// West face (Left, X-) - to the left of South by Y
+		var texWest1 = new Vector2(texU - texSizeY, texV);
+		var texWest2 = new Vector2(texU - texSizeY + texSizeFixY, texV);
+		var texWest3 = new Vector2(texU - texSizeY + texSizeFixY, texV + texSizeFixZ);
+		var texWest4 = new Vector2(texU - texSizeY, texV + texSizeFixZ);
+		
+		// North face (Back, Z-) - to the right of East by Y
+		var texNorth1 = new Vector2(texU + texSizeX + texSizeY, texV);
+		var texNorth2 = new Vector2(texU + texSizeX + texSizeY + texSizeFixX, texV);
+		var texNorth3 = new Vector2(texU + texSizeX + texSizeY + texSizeFixX, texV + texSizeFixZ);
+		var texNorth4 = new Vector2(texU + texSizeX + texSizeY, texV + texSizeFixZ);
+		
+		// Up face (Top, Y+) - above South by Y
+		var texUp1 = new Vector2(texU, texV - texSizeY);
+		var texUp2 = new Vector2(texU + texSizeFixX, texV - texSizeY);
+		var texUp3 = new Vector2(texU + texSizeFixX, texV - texSizeY + texSizeFixY);
+		var texUp4 = new Vector2(texU, texV - texSizeY + texSizeFixY);
+		
+		// Down face (Bottom, Y-) - to the right of Up by X, flipped vertically
+		var texDown1 = new Vector2(texU + texSizeX, texV - texSizeY);
+		var texDown2 = new Vector2(texU + texSizeX + texSizeFixX, texV - texSizeY);
+		var texDown3 = new Vector2(texU + texSizeX + texSizeFixX, texV - texSizeY + texSizeFixY);
+		var texDown4 = new Vector2(texU + texSizeX, texV - texSizeY + texSizeFixY);
+		
+		// Apply texture mirror on X if needed
+		if (textureMirror)
+		{
+			// Swap east/west UVs
+			(texEast1, texWest1) = (texWest1, texEast1);
+			(texEast2, texWest2) = (texWest2, texEast2);
+			(texEast3, texWest3) = (texWest3, texEast3);
+			(texEast4, texWest4) = (texWest4, texEast4);
+			
+			// Swap left/right points within each face
+			(texEast1, texEast2) = (texEast2, texEast1);
+			(texEast3, texEast4) = (texEast4, texEast3);
+			(texWest1, texWest2) = (texWest2, texWest1);
+			(texWest3, texWest4) = (texWest4, texWest3);
+			(texSouth1, texSouth2) = (texSouth2, texSouth1);
+			(texSouth3, texSouth4) = (texSouth4, texSouth3);
+			(texNorth1, texNorth2) = (texNorth2, texNorth1);
+			(texNorth3, texNorth4) = (texNorth4, texNorth3);
+			(texUp1, texUp2) = (texUp2, texUp1);
+			(texUp3, texUp4) = (texUp4, texUp3);
+			(texDown1, texDown2) = (texDown2, texDown1);
+			(texDown3, texDown4) = (texDown4, texDown3);
+		}
+		
+		// South face (Front, Z+)
+		AddFaceWithUVs(vertices, normals, uvs, indices,
+			new Vector3(min.X, min.Y, max.Z), // bottom-left
+			new Vector3(max.X, min.Y, max.Z), // bottom-right
+			new Vector3(max.X, max.Y, max.Z), // top-right
+			new Vector3(min.X, max.Y, max.Z), // top-left
 			Vector3.Back,
-			uvU, uvV,
-			sizeX, sizeY,
-			texWidth, texHeight,
-			textureMirror, invert);
+			texSouth4, texSouth3, texSouth2, texSouth1,
+			invert);
 		
-		// Right face (X+): left of starting square (u - depth, v)
-		AddFace(vertices, normals, uvs, indices,
-			new Vector3(max.X, min.Y, max.Z),
-			new Vector3(max.X, min.Y, min.Z),
-			new Vector3(max.X, max.Y, min.Z),
-			new Vector3(max.X, max.Y, max.Z),
+		// East face (Right, X+)
+		AddFaceWithUVs(vertices, normals, uvs, indices,
+			new Vector3(max.X, min.Y, max.Z),  // bottom-left (from south perspective)
+			new Vector3(max.X, min.Y, min.Z),  // bottom-right
+			new Vector3(max.X, max.Y, min.Z),  // top-right
+			new Vector3(max.X, max.Y, max.Z),  // top-left
 			Vector3.Right,
-			uvU - sizeZ, uvV,
-			sizeZ, sizeY,
-			texWidth, texHeight,
-			textureMirror, invert);
+			texEast4, texEast3, texEast2, texEast1,
+			invert);
 		
-		// Left face (X-): right of starting square (u + width, v)
-		AddFace(vertices, normals, uvs, indices,
-			new Vector3(min.X, min.Y, min.Z),
-			new Vector3(min.X, min.Y, max.Z),
-			new Vector3(min.X, max.Y, max.Z),
-			new Vector3(min.X, max.Y, min.Z),
+		// West face (Left, X-)
+		AddFaceWithUVs(vertices, normals, uvs, indices,
+			new Vector3(min.X, min.Y, min.Z),  // bottom-left
+			new Vector3(min.X, min.Y, max.Z),  // bottom-right
+			new Vector3(min.X, max.Y, max.Z),  // top-right
+			new Vector3(min.X, max.Y, min.Z),  // top-left
 			Vector3.Left,
-			uvU + sizeX, uvV,
-			sizeZ, sizeY,
-			texWidth, texHeight,
-			textureMirror, invert);
+			texWest4, texWest3, texWest2, texWest1,
+			invert);
 		
-		// Back face (Z-): right of left square (u + width + depth, v)
-		AddFace(vertices, normals, uvs, indices,
-			new Vector3(max.X, min.Y, min.Z),
-			new Vector3(min.X, min.Y, min.Z),
-			new Vector3(min.X, max.Y, min.Z),
-			new Vector3(max.X, max.Y, min.Z),
+		// North face (Back, Z-)
+		AddFaceWithUVs(vertices, normals, uvs, indices,
+			new Vector3(max.X, min.Y, min.Z),  // bottom-left
+			new Vector3(min.X, min.Y, min.Z),  // bottom-right
+			new Vector3(min.X, max.Y, min.Z),  // top-right
+			new Vector3(max.X, max.Y, min.Z),  // top-left
 			Vector3.Forward,
-			uvU + sizeX + sizeZ, uvV,
-			sizeX, sizeY,
-			texWidth, texHeight,
-			textureMirror, invert);
+			texNorth4, texNorth3, texNorth2, texNorth1,
+			invert);
 		
-		// Top face (Y+): top of starting square (u, v + height)
-		AddFace(vertices, normals, uvs, indices,
-			new Vector3(min.X, max.Y, max.Z),
-			new Vector3(max.X, max.Y, max.Z),
-			new Vector3(max.X, max.Y, min.Z),
-			new Vector3(min.X, max.Y, min.Z),
+		// Up face (Top, Y+)
+		AddFaceWithUVs(vertices, normals, uvs, indices,
+			new Vector3(min.X, max.Y, max.Z),  // bottom-left (from top perspective)
+			new Vector3(max.X, max.Y, max.Z),  // bottom-right
+			new Vector3(max.X, max.Y, min.Z),  // top-right
+			new Vector3(min.X, max.Y, min.Z),  // top-left
 			Vector3.Up,
-			uvU, uvV + sizeY,
-			sizeX, sizeZ,
-			texWidth, texHeight,
-			textureMirror, invert);
+			texUp4, texUp3, texUp2, texUp1,
+			invert);
 		
-		// Bottom face (Y-): right of top square (u + width, v + height)
-		AddFace(vertices, normals, uvs, indices,
-			new Vector3(min.X, min.Y, min.Z),
-			new Vector3(max.X, min.Y, min.Z),
-			new Vector3(max.X, min.Y, max.Z),
-			new Vector3(min.X, min.Y, max.Z),
+		// Down face (Bottom, Y-) - note: UVs are flipped for down face
+		AddFaceWithUVs(vertices, normals, uvs, indices,
+			new Vector3(min.X, min.Y, min.Z),  // bottom-left
+			new Vector3(max.X, min.Y, min.Z),  // bottom-right
+			new Vector3(max.X, min.Y, max.Z),  // top-right
+			new Vector3(min.X, min.Y, max.Z),  // top-left
 			Vector3.Down,
-			uvU + sizeX, uvV + sizeY,
-			sizeX, sizeZ,
-			texWidth, texHeight,
-			textureMirror, invert);
+			texDown4, texDown3, texDown2, texDown1,
+			invert);
 		
 		// Create the mesh
 		var arrays = new Godot.Collections.Array();
@@ -525,15 +595,31 @@ public class MineImatorLoader
 			max = new Vector3(max.X + inflate, max.Y + inflate, max.Z + inflate);
 		}
 		
-		// UV coordinates (convert pixel coordinates to 0-1 range)
-		float u0 = uvU / texWidth;
-		float v0 = uvV / texHeight;
-		float u1 = (uvU + sizeX) / texWidth;
-		float v1 = (uvV + sizeY) / texHeight;
+		// Convert sizes to normalized UV coordinates (0-1 range)
+		// Using the same UV layout as Mine-imator GML project for planes
+		float texU = uvU / texWidth;
+		float texV = uvV / texHeight;
 		
+		// Texture sizes normalized (plane uses X and Z dimensions like south face of block)
+		float texSizeX = sizeX / texWidth;
+		float texSizeZ = sizeY / texHeight; // sizeY represents Z dimension for planes
+		
+		// Plane texture mapping (following Mine-imator layout):
+		// tex1 = UV origin
+		// tex2 = right of origin by X
+		// tex3 = right by X, down by Z
+		// tex4 = down from origin by Z
+		var tex1 = new Vector2(texU, texV);
+		var tex2 = new Vector2(texU + texSizeX, texV);
+		var tex3 = new Vector2(texU + texSizeX, texV + texSizeZ);
+		var tex4 = new Vector2(texU, texV + texSizeZ);
+		
+		// Mirror texture on X if needed
 		if (textureMirror)
 		{
-			(u0, u1) = (u1, u0);
+			// Switch left/right points
+			(tex1, tex2) = (tex2, tex1);
+			(tex3, tex4) = (tex4, tex3);
 		}
 		
 		int baseVertex = vertices.Count;
@@ -548,10 +634,11 @@ public class MineImatorLoader
 		normals.Add(Vector3.Forward);
 		normals.Add(Vector3.Forward);
 		
-		uvs.Add(new Vector2(u0, v1));
-		uvs.Add(new Vector2(u1, v1));
-		uvs.Add(new Vector2(u1, v0));
-		uvs.Add(new Vector2(u0, v0));
+		// UV mapping: tex1=bottom-left, tex2=bottom-right, tex3=top-right, tex4=top-left
+		uvs.Add(tex4);
+		uvs.Add(tex3);
+		uvs.Add(tex2);
+		uvs.Add(tex1);
 		
 		if (invert)
 		{
@@ -867,6 +954,51 @@ public class MineImatorLoader
 		uvs.Add(new Vector2(u1, v1));
 		uvs.Add(new Vector2(u1, v0));
 		uvs.Add(new Vector2(u0, v0));
+		
+		if (invert)
+		{
+			indices.Add(baseVertex + 0);
+			indices.Add(baseVertex + 1);
+			indices.Add(baseVertex + 2);
+			indices.Add(baseVertex + 0);
+			indices.Add(baseVertex + 2);
+			indices.Add(baseVertex + 3);
+		}
+		else
+		{
+			indices.Add(baseVertex + 0);
+			indices.Add(baseVertex + 2);
+			indices.Add(baseVertex + 1);
+			indices.Add(baseVertex + 0);
+			indices.Add(baseVertex + 3);
+			indices.Add(baseVertex + 2);
+		}
+	}
+
+	/// <summary>
+	/// Adds a face to the mesh data with pre-calculated UV coordinates
+	/// </summary>
+	private void AddFaceWithUVs(List<Vector3> vertices, List<Vector3> normals, List<Vector2> uvs, List<int> indices,
+		Vector3 vertex0, Vector3 vertex1, Vector3 vertex2, Vector3 vertex3, Vector3 normal,
+		Vector2 uv0, Vector2 uv1, Vector2 uv2, Vector2 uv3, bool invert)
+	{
+		int baseVertex = vertices.Count;
+		
+		vertices.Add(vertex0);
+		vertices.Add(vertex1);
+		vertices.Add(vertex2);
+		vertices.Add(vertex3);
+		
+		normals.Add(normal);
+		normals.Add(normal);
+		normals.Add(normal);
+		normals.Add(normal);
+		
+		// Use pre-calculated UV coordinates
+		uvs.Add(uv0);
+		uvs.Add(uv1);
+		uvs.Add(uv2);
+		uvs.Add(uv3);
 		
 		if (invert)
 		{
