@@ -309,7 +309,17 @@ public class MineImatorLoader
 		
 		if (shape.Type == "plane")
 		{
-			meshInstance = CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, shape.TextureMirror, shape.Invert);
+			// Treat 3D planes like items - as extruded planes with per-pixel extrusion
+			if (shape.ThreeD)
+			{
+				// Create an extruded item-like plane with per-pixel hull mesh
+				meshInstance = CreateExtrudedPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, texture, shape.TextureMirror, shape.Invert);
+			}
+			else
+			{
+				// Regular 2D plane
+				meshInstance = CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, shape.TextureMirror, shape.Invert);
+			}
 		}
 		else // "block" or default
 		{
@@ -546,6 +556,227 @@ public class MineImatorLoader
 	}
 	
 	/// <summary>
+	/// Creates an extruded plane mesh (per-pixel extrusion like items)
+	/// </summary>
+	private MeshInstance3D CreateExtrudedPlaneMesh(Vector3 from, Vector3 to, float uvU, float uvV,
+		float sizeX, float sizeY, int texWidth, int texHeight, ImageTexture texture,
+		bool textureMirror, bool invert)
+	{
+		if (texture == null)
+		{
+			// Fallback to regular plane if no texture
+			return CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, textureMirror, invert);
+		}
+		
+		var image = texture.GetImage();
+		if (image == null)
+		{
+			return CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, textureMirror, invert);
+		}
+		
+		// Calculate the UV region we're using
+		int uvStartX = (int)uvU;
+		int uvStartY = (int)uvV;
+		int uvEndX = (int)(uvU + sizeX);
+		int uvEndY = (int)(uvV + sizeY);
+		
+		// Clamp to texture bounds
+		uvStartX = Math.Max(0, Math.Min(uvStartX, texWidth - 1));
+		uvStartY = Math.Max(0, Math.Min(uvStartY, texHeight - 1));
+		uvEndX = Math.Max(0, Math.Min(uvEndX, texWidth));
+		uvEndY = Math.Max(0, Math.Min(uvEndY, texHeight));
+		
+		int regionWidth = uvEndX - uvStartX;
+		int regionHeight = uvEndY - uvStartY;
+		
+		if (regionWidth <= 0 || regionHeight <= 0)
+		{
+			return CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, textureMirror, invert);
+		}
+		
+		// Extrusion thickness (1 pixel = 1/16 of a block)
+		const float thickness = 1.0f / 16.0f;
+		float halfThickness = thickness / 2.0f;
+		
+		// Calculate scale for each pixel
+		Vector3 size = to - from;
+		float pixelScaleX = size.X / regionWidth;
+		float pixelScaleY = size.Y / regionHeight;
+		
+		var vertices = new List<Vector3>();
+		var normals = new List<Vector3>();
+		var uvs = new List<Vector2>();
+		var indices = new List<int>();
+		
+		// Process each pixel in the UV region
+		for (int py = 0; py < regionHeight; py++)
+		{
+			for (int px = 0; px < regionWidth; px++)
+			{
+				int texX = uvStartX + px;
+				int texY = uvStartY + py;
+				
+				// Check bounds
+				if (texX >= image.GetWidth() || texY >= image.GetHeight())
+					continue;
+				
+				var color = image.GetPixel(texX, texY);
+				
+				// Only create geometry for non-transparent pixels
+				if (color.A > 0.5f)
+				{
+					// Calculate position for this pixel
+					float posX = from.X + px * pixelScaleX;
+					float posY = from.Y + py * pixelScaleY;
+					
+					// Center of this pixel box
+					float centerX = posX + pixelScaleX / 2.0f;
+					float centerY = posY + pixelScaleY / 2.0f;
+					float centerZ = from.Z; // Plane is at Z=0 by default
+					
+					// UV coordinates for this pixel (normalized)
+					float uvX = (texX + 0.5f) / texWidth;
+					float uvY = (texY + 0.5f) / texHeight;
+					
+					if (textureMirror)
+					{
+						uvX = 1.0f - uvX;
+					}
+					
+					int baseVertex = vertices.Count;
+					
+					// Create a box for this pixel (6 faces)
+					// Front face (Z+)
+					AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
+						new Vector3(posX, posY, centerZ + halfThickness),
+						new Vector3(posX + pixelScaleX, posY, centerZ + halfThickness),
+						new Vector3(posX + pixelScaleX, posY + pixelScaleY, centerZ + halfThickness),
+						new Vector3(posX, posY + pixelScaleY, centerZ + halfThickness),
+						Vector3.Back, uvX, uvY, invert);
+					
+					baseVertex = vertices.Count;
+					// Back face (Z-)
+					AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
+						new Vector3(posX + pixelScaleX, posY, centerZ - halfThickness),
+						new Vector3(posX, posY, centerZ - halfThickness),
+						new Vector3(posX, posY + pixelScaleY, centerZ - halfThickness),
+						new Vector3(posX + pixelScaleX, posY + pixelScaleY, centerZ - halfThickness),
+						Vector3.Forward, uvX, uvY, invert);
+					
+					// Check adjacent pixels for edge faces
+					bool leftEmpty = px == 0 || image.GetPixel(uvStartX + px - 1, texY).A <= 0.5f;
+					bool rightEmpty = px == regionWidth - 1 || image.GetPixel(uvStartX + px + 1, texY).A <= 0.5f;
+					bool topEmpty = py == 0 || image.GetPixel(texX, uvStartY + py - 1).A <= 0.5f;
+					bool bottomEmpty = py == regionHeight - 1 || image.GetPixel(texX, uvStartY + py + 1).A <= 0.5f;
+					
+					if (leftEmpty)
+					{
+						baseVertex = vertices.Count;
+						AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
+							new Vector3(posX, posY, centerZ - halfThickness),
+							new Vector3(posX, posY, centerZ + halfThickness),
+							new Vector3(posX, posY + pixelScaleY, centerZ + halfThickness),
+							new Vector3(posX, posY + pixelScaleY, centerZ - halfThickness),
+							Vector3.Left, uvX, uvY, invert);
+					}
+					
+					if (rightEmpty)
+					{
+						baseVertex = vertices.Count;
+						AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
+							new Vector3(posX + pixelScaleX, posY, centerZ + halfThickness),
+							new Vector3(posX + pixelScaleX, posY, centerZ - halfThickness),
+							new Vector3(posX + pixelScaleX, posY + pixelScaleY, centerZ - halfThickness),
+							new Vector3(posX + pixelScaleX, posY + pixelScaleY, centerZ + halfThickness),
+							Vector3.Right, uvX, uvY, invert);
+					}
+					
+					if (topEmpty)
+					{
+						baseVertex = vertices.Count;
+						AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
+							new Vector3(posX, posY, centerZ - halfThickness),
+							new Vector3(posX + pixelScaleX, posY, centerZ - halfThickness),
+							new Vector3(posX + pixelScaleX, posY, centerZ + halfThickness),
+							new Vector3(posX, posY, centerZ + halfThickness),
+							Vector3.Down, uvX, uvY, invert);
+					}
+					
+					if (bottomEmpty)
+					{
+						baseVertex = vertices.Count;
+						AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
+							new Vector3(posX, posY + pixelScaleY, centerZ + halfThickness),
+							new Vector3(posX + pixelScaleX, posY + pixelScaleY, centerZ + halfThickness),
+							new Vector3(posX + pixelScaleX, posY + pixelScaleY, centerZ - halfThickness),
+							new Vector3(posX, posY + pixelScaleY, centerZ - halfThickness),
+							Vector3.Up, uvX, uvY, invert);
+					}
+				}
+			}
+		}
+		
+		// Create the mesh
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
+		arrays[(int)Mesh.ArrayType.Normal] = normals.ToArray();
+		arrays[(int)Mesh.ArrayType.TexUV] = uvs.ToArray();
+		arrays[(int)Mesh.ArrayType.Index] = indices.ToArray();
+		
+		var arrayMesh = new ArrayMesh();
+		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+		
+		var meshInstance = new MeshInstance3D();
+		meshInstance.Mesh = arrayMesh;
+		
+		return meshInstance;
+	}
+	
+	/// <summary>
+	/// Adds a quad for extruded plane mesh
+	/// </summary>
+	private void AddExtrudedQuad(List<Vector3> vertices, List<Vector3> normals, List<Vector2> uvs,
+		List<int> indices, int baseVertex, Vector3 v0, Vector3 v1, Vector3 v2, Vector3 v3,
+		Vector3 normal, float uvX, float uvY, bool invert)
+	{
+		vertices.Add(v0);
+		vertices.Add(v1);
+		vertices.Add(v2);
+		vertices.Add(v3);
+		
+		normals.Add(normal);
+		normals.Add(normal);
+		normals.Add(normal);
+		normals.Add(normal);
+		
+		// Use the pixel's texture coordinate for all vertices
+		uvs.Add(new Vector2(uvX, uvY));
+		uvs.Add(new Vector2(uvX, uvY));
+		uvs.Add(new Vector2(uvX, uvY));
+		uvs.Add(new Vector2(uvX, uvY));
+		
+		if (invert)
+		{
+			indices.Add(baseVertex + 0);
+			indices.Add(baseVertex + 1);
+			indices.Add(baseVertex + 2);
+			indices.Add(baseVertex + 0);
+			indices.Add(baseVertex + 2);
+			indices.Add(baseVertex + 3);
+		}
+		else
+		{
+			indices.Add(baseVertex + 0);
+			indices.Add(baseVertex + 2);
+			indices.Add(baseVertex + 1);
+			indices.Add(baseVertex + 0);
+			indices.Add(baseVertex + 3);
+			indices.Add(baseVertex + 2);
+		}
+	}
+	
+	/// <summary>
 	/// Adds a face to the mesh data
 	/// </summary>
 	private void AddFace(List<Vector3> vertices, List<Vector3> normals, List<Vector2> uvs, List<int> indices,
@@ -717,6 +948,9 @@ public class MiShape
 	
 	[JsonPropertyName("texture_mirror")]
 	public bool TextureMirror { get; set; }
+	
+	[JsonPropertyName("3d")]
+	public bool ThreeD { get; set; }
 }
 
 #endregion
