@@ -114,7 +114,7 @@ public class MineImatorLoader
 		// Create BoneSceneObjects for each bone first
 		CreateBoneSceneObjects(character, skeleton);
 		
-		// Now add meshes to the BoneSceneObjects
+			// Now add meshes to the BoneSceneObjects
 		foreach (var (part, boneIdx, parentIdx) in boneDataList)
 		{
 			if (part.Shapes != null && part.Shapes.Count > 0)
@@ -122,15 +122,17 @@ public class MineImatorLoader
 				string boneName = skeleton.GetBoneName(boneIdx);
 				if (character.BoneObjects.TryGetValue(boneName, out var boneObject))
 				{
+					int shapeIndex = 0;
 					foreach (var shape in part.Shapes)
 					{
-						var meshInstance = CreateShapeMesh(shape, model, texture);
+						var meshInstance = CreateShapeMesh(part.Name, shapeIndex, shape, model, texture);
 						if (meshInstance != null)
 						{
 							// Add the mesh as a visual child of the BoneSceneObject
 							boneObject.AddVisualInstance(meshInstance);
-							meshInstance.Name = $"{part.Name}_Shape";
+							meshInstance.Name = $"{part.Name}_Shape{shapeIndex}";
 						}
+						shapeIndex++;
 					}
 				}
 			}
@@ -267,7 +269,7 @@ public class MineImatorLoader
 	/// <summary>
 	/// Creates a MeshInstance3D for a single shape
 	/// </summary>
-	private MeshInstance3D CreateShapeMesh(MiShape shape, MiModel model, ImageTexture texture)
+	private MeshInstance3D CreateShapeMesh(string partName, int shapeIndex, MiShape shape, MiModel model, ImageTexture texture)
 	{
 		if (shape == null || shape.From == null || shape.To == null)
 		{
@@ -341,7 +343,7 @@ public class MineImatorLoader
 		}
 		else // "block" or default
 		{
-			meshInstance = CreateBlockMesh(from, to, uvU, uvV, sizeX, sizeY, sizeZ, texWidth, texHeight, shape.TextureMirror, shape.Invert, inflate);
+			meshInstance = CreateBlockMesh(partName, shapeIndex, from, to, uvU, uvV, sizeX, sizeY, sizeZ, texWidth, texHeight, shape.TextureMirror, shape.Invert, inflate);
 		}
 		
 		// Apply shape scale to the mesh instance
@@ -376,7 +378,7 @@ public class MineImatorLoader
 	/// <summary>
 	/// Creates a block (cube) mesh
 	/// </summary>
-	private MeshInstance3D CreateBlockMesh(Vector3 from, Vector3 to, float uvU, float uvV,
+	private MeshInstance3D CreateBlockMesh(string partName, int shapeIndex, Vector3 from, Vector3 to, float uvU, float uvV,
 		float sizeX, float sizeY, float sizeZ, int texWidth, int texHeight, 
 		bool textureMirror, bool invert, float inflate = 0.0f)
 	{
@@ -427,41 +429,58 @@ public class MineImatorLoader
 		// Up (Top Y+): above South, size (X, Y)
 		// Down (Bottom Y-): to the right of Up, size (X, Y) - flipped vertically
 		
-		// South face (Front, Z+) - at UV origin
+		// South face (Front, Z+) - at UV origin, uses X for width, Y for height
 		var texSouth1 = new Vector2(texU, texV);
 		var texSouth2 = new Vector2(texU + texSizeFixX, texV);
-		var texSouth3 = new Vector2(texU + texSizeFixX, texV + texSizeFixZ);
-		var texSouth4 = new Vector2(texU, texV + texSizeFixZ);
+		var texSouth3 = new Vector2(texU + texSizeFixX, texV + texSizeFixY);
+		var texSouth4 = new Vector2(texU, texV + texSizeFixY);
 		
-		// East face (Right, X+) - to the right of South by X
-		var texEast1 = new Vector2(texU + texSizeX, texV);
-		var texEast2 = new Vector2(texU + texSizeX + texSizeFixY, texV);
-		var texEast3 = new Vector2(texU + texSizeX + texSizeFixY, texV + texSizeFixZ);
-		var texEast4 = new Vector2(texU + texSizeX, texV + texSizeFixZ);
+		// East face (Right, X+) - to the LEFT of South by Z, uses Z for width, Y for height
+		var texEast1 = new Vector2(texU - texSizeZ, texV);
+		var texEast2 = new Vector2(texU - texSizeZ + texSizeFixZ, texV);
+		var texEast3 = new Vector2(texU - texSizeZ + texSizeFixZ, texV + texSizeFixY);
+		var texEast4 = new Vector2(texU - texSizeZ, texV + texSizeFixY);
 		
-		// West face (Left, X-) - to the left of South by Y
-		var texWest1 = new Vector2(texU - texSizeY, texV);
-		var texWest2 = new Vector2(texU - texSizeY + texSizeFixY, texV);
-		var texWest3 = new Vector2(texU - texSizeY + texSizeFixY, texV + texSizeFixZ);
-		var texWest4 = new Vector2(texU - texSizeY, texV + texSizeFixZ);
+		// West face (Left, X-) - to the RIGHT of South by Z, uses Z for width, Y for height
+		var texWest1 = new Vector2(texU + texSizeZ, texV);
+		var texWest2 = new Vector2(texU + texSizeZ + texSizeFixZ, texV);
+		var texWest3 = new Vector2(texU + texSizeZ + texSizeFixZ, texV + texSizeFixY);
+		var texWest4 = new Vector2(texU + texSizeZ, texV + texSizeFixY);
 		
-		// North face (Back, Z-) - to the right of East by Y
-		var texNorth1 = new Vector2(texU + texSizeX + texSizeY, texV);
-		var texNorth2 = new Vector2(texU + texSizeX + texSizeY + texSizeFixX, texV);
-		var texNorth3 = new Vector2(texU + texSizeX + texSizeY + texSizeFixX, texV + texSizeFixZ);
-		var texNorth4 = new Vector2(texU + texSizeX + texSizeY, texV + texSizeFixZ);
+		// North face (Back, Z-) - to the right of West by X, uses X for width, Y for height
+		var texNorth1 = new Vector2(texU + texSizeZ + texSizeX, texV);
+		var texNorth2 = new Vector2(texU + texSizeZ + texSizeX + texSizeFixX, texV);
+		var texNorth3 = new Vector2(texU + texSizeZ + texSizeX + texSizeFixX, texV + texSizeFixY);
+		var texNorth4 = new Vector2(texU + texSizeZ + texSizeX, texV + texSizeFixY);
 		
-		// Up face (Top, Y+) - above South by Y
-		var texUp1 = new Vector2(texU, texV - texSizeY);
-		var texUp2 = new Vector2(texU + texSizeFixX, texV - texSizeY);
-		var texUp3 = new Vector2(texU + texSizeFixX, texV - texSizeY + texSizeFixY);
-		var texUp4 = new Vector2(texU, texV - texSizeY + texSizeFixY);
+		// Flip East and West face UVs horizontally (swap left/right)
+		(texEast1, texEast2) = (texEast2, texEast1);
+		(texEast3, texEast4) = (texEast4, texEast3);
+		(texWest1, texWest2) = (texWest2, texWest1);
+		(texWest3, texWest4) = (texWest4, texWest3);
 		
-		// Down face (Bottom, Y-) - to the right of Up by X, flipped vertically
-		var texDown1 = new Vector2(texU + texSizeX, texV - texSizeY);
-		var texDown2 = new Vector2(texU + texSizeX + texSizeFixX, texV - texSizeY);
-		var texDown3 = new Vector2(texU + texSizeX + texSizeFixX, texV - texSizeY + texSizeFixY);
-		var texDown4 = new Vector2(texU + texSizeX, texV - texSizeY + texSizeFixY);
+		// Up face (Top, Y+) - above South, uses X for width, min(Y,Z) for height
+		float texUpHeight = Math.Min(sizeY, sizeZ);
+		float texUpHeightFix = (texUpHeight - 1.0f/256.0f) / texHeight;
+		var texUp1 = new Vector2(texU, texV - texUpHeightFix);
+		var texUp2 = new Vector2(texU + texSizeFixX, texV - texUpHeightFix);
+		var texUp3 = new Vector2(texU + texSizeFixX, texV - texUpHeightFix + texUpHeightFix);
+		var texUp4 = new Vector2(texU, texV - texUpHeightFix + texUpHeightFix);
+		
+		// Down face (Bottom, Y-) - to the right of Up by X, uses X for width, min(Y,Z) for height
+		var texDown4 = new Vector2(texU + texSizeX, texV - texUpHeightFix);
+		var texDown3 = new Vector2(texU + texSizeX + texSizeFixX, texV - texUpHeightFix);
+		var texDown2 = new Vector2(texU + texSizeX + texSizeFixX, texV - texUpHeightFix + texUpHeightFix);
+		var texDown1 = new Vector2(texU + texSizeX, texV - texUpHeightFix + texUpHeightFix);
+		
+		// Debug: Print UV pixel coordinates for each face
+		GD.Print($"Shape UV Debug - Part: {partName}, ShapeIndex: {shapeIndex}, From: ({from.X * 16},{from.Y * 16},{from.Z * 16}), To: ({to.X * 16},{to.Y * 16},{to.Z * 16}), Size: {sizeX}x{sizeY}x{sizeZ}, Texture: {texWidth}x{texHeight}");
+		GD.Print($"  South: {texSouth1.X * texWidth},{texSouth1.Y * texHeight} -> {texSouth2.X * texWidth},{texSouth2.Y * texHeight} -> {texSouth3.X * texWidth},{texSouth3.Y * texHeight} -> {texSouth4.X * texWidth},{texSouth4.Y * texHeight}");
+		GD.Print($"  East:  {texEast1.X * texWidth},{texEast1.Y * texHeight} -> {texEast2.X * texWidth},{texEast2.Y * texHeight} -> {texEast3.X * texWidth},{texEast3.Y * texHeight} -> {texEast4.X * texWidth},{texEast4.Y * texHeight}");
+		GD.Print($"  West:  {texWest1.X * texWidth},{texWest1.Y * texHeight} -> {texWest2.X * texWidth},{texWest2.Y * texHeight} -> {texWest3.X * texWidth},{texWest3.Y * texHeight} -> {texWest4.X * texWidth},{texWest4.Y * texHeight}");
+		GD.Print($"  North: {texNorth1.X * texWidth},{texNorth1.Y * texHeight} -> {texNorth2.X * texWidth},{texNorth2.Y * texHeight} -> {texNorth3.X * texWidth},{texNorth3.Y * texHeight} -> {texNorth4.X * texWidth},{texNorth4.Y * texHeight}");
+		GD.Print($"  Up:    {texUp1.X * texWidth},{texUp1.Y * texHeight} -> {texUp2.X * texWidth},{texUp2.Y * texHeight} -> {texUp3.X * texWidth},{texUp3.Y * texHeight} -> {texUp4.X * texWidth},{texUp4.Y * texHeight}");
+		GD.Print($"  Down:  {texDown1.X * texWidth},{texDown1.Y * texHeight} -> {texDown2.X * texWidth},{texDown2.Y * texHeight} -> {texDown3.X * texWidth},{texDown3.Y * texHeight} -> {texDown4.X * texWidth},{texDown4.Y * texHeight}");
 		
 		// Apply texture mirror on X if needed
 		if (textureMirror)
@@ -629,10 +648,10 @@ public class MineImatorLoader
 		vertices.Add(new Vector3(max.X, max.Y, min.Z));
 		vertices.Add(new Vector3(min.X, max.Y, min.Z));
 		
-		normals.Add(Vector3.Forward);
-		normals.Add(Vector3.Forward);
-		normals.Add(Vector3.Forward);
-		normals.Add(Vector3.Forward);
+		normals.Add(Vector3.Back);
+		normals.Add(Vector3.Back);
+		normals.Add(Vector3.Back);
+		normals.Add(Vector3.Back);
 		
 		// UV mapping: tex1=bottom-left, tex2=bottom-right, tex3=top-right, tex4=top-left
 		uvs.Add(tex4);
