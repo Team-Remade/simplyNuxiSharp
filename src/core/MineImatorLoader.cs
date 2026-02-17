@@ -187,7 +187,7 @@ public class MineImatorLoader
 			rotation = new Vector3(
 				Mathf.DegToRad(part.Rotation[0]),
 				Mathf.DegToRad(part.Rotation[1]),
-				Mathf.DegToRad(part.Rotation[2]) 
+				Mathf.DegToRad(-part.Rotation[2]) // Inverted
 			);
 		}
 		
@@ -298,6 +298,20 @@ public class MineImatorLoader
 		float sizeY = Math.Abs(shape.To[1] - shape.From[1]);
 		float sizeZ = Math.Abs(shape.To[2] - shape.From[2]);
 		
+		// Apply position
+		Vector3 shapePosition = Vector3.Zero;
+		if (shape.Position != null && shape.Position.Length >= 3)
+		{
+			shapePosition = new Vector3(shape.Position[0] / 16, shape.Position[1] / 16, shape.Position[2] / 16);
+		}
+		
+		// Apply shape rotation if present
+		Vector3 shapeRotation = Vector3.Zero;
+		if (shape.Rotation != null && shape.Rotation.Length >= 3)
+		{
+			shapeRotation = new Vector3(Mathf.DegToRad(shape.Rotation[0]), Mathf.DegToRad(shape.Rotation[1]), Mathf.DegToRad(shape.Rotation[2]));
+		}
+		
 		// Apply shape scale if present
 		Vector3 shapeScale = Vector3.One;
 		if (shape.Scale != null && shape.Scale.Length >= 3)
@@ -327,8 +341,10 @@ public class MineImatorLoader
 		}
 		
 		// Apply shape scale to the mesh instance
-		if (meshInstance != null && shapeScale != Vector3.One)
+		if (meshInstance != null)
 		{
+			meshInstance.Position = shapePosition;
+			meshInstance.Rotation = shapeRotation;
 			meshInstance.Scale = shapeScale;
 		}
 		
@@ -907,6 +923,12 @@ public class MiPart
 	[JsonPropertyName("name")]
 	public string Name { get; set; }
 	
+	[JsonPropertyName("texture")]
+	public string Texture { get; set; }
+	
+	[JsonPropertyName("texture_size")]
+	public int[] TextureSize { get; set; }
+	
 	[JsonPropertyName("position")]
 	public float[] Position { get; set; }
 	
@@ -915,6 +937,15 @@ public class MiPart
 	
 	[JsonPropertyName("scale")]
 	public float[] Scale { get; set; }
+	
+	[JsonPropertyName("bend")]
+	public MiBend Bend { get; set; }
+	
+	[JsonPropertyName("lock_bend")]
+	public float LockBend { get; set; }
+	
+	[JsonPropertyName("locked")]
+	public bool Locked { get; set; }
 	
 	[JsonPropertyName("shapes")]
 	public List<MiShape> Shapes { get; set; }
@@ -940,6 +971,12 @@ public class MiShape
 	[JsonPropertyName("uv")]
 	public float[] Uv { get; set; }
 	
+	[JsonPropertyName("position")]
+	public float[] Position { get; set; }
+	
+	[JsonPropertyName("rotation")]
+	public float[] Rotation { get; set; }
+	
 	[JsonPropertyName("scale")]
 	public float[] Scale { get; set; }
 	
@@ -951,6 +988,27 @@ public class MiShape
 	
 	[JsonPropertyName("3d")]
 	public bool ThreeD { get; set; }
+}
+
+/// <summary>
+/// Represents bend settings for a Mine Imator model part
+/// </summary>
+public class MiBend
+{
+	[JsonPropertyName("offset")]
+	public float Offset { get; set; }
+	
+	[JsonPropertyName("size")]
+	public float Size { get; set; }
+	
+	[JsonPropertyName("part")]
+	public string Part { get; set; }
+	
+	[JsonPropertyName("axis")]
+	public object Axis { get; set; } // Can be string[] or string
+	
+	[JsonPropertyName("direction_min")]
+	public float DirectionMin { get; set; }
 }
 
 #endregion
