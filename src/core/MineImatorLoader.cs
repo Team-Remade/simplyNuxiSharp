@@ -42,7 +42,8 @@ public class MineImatorLoader
 			var jsonText = File.ReadAllText(modelPath);
 			var model = JsonSerializer.Deserialize<MiModel>(jsonText, new JsonSerializerOptions
 			{
-				PropertyNameCaseInsensitive = true
+				PropertyNameCaseInsensitive = true,
+				MaxDepth = 256 // Increase depth limit for deeply nested model structures
 			});
 			
 			if (model == null)
@@ -319,6 +320,9 @@ public class MineImatorLoader
 			shapeScale = new Vector3(shape.Scale[0], shape.Scale[1], shape.Scale[2]);
 		}
 		
+		// Get inflate value and scale it from Minecraft pixels to Godot units (divide by 16)
+		float inflate = shape.Inflate / 16.0f;
+		
 		MeshInstance3D meshInstance;
 		
 		if (shape.Type == "plane")
@@ -327,17 +331,17 @@ public class MineImatorLoader
 			if (shape.ThreeD)
 			{
 				// Create an extruded item-like plane with per-pixel hull mesh
-				meshInstance = CreateExtrudedPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, texture, shape.TextureMirror, shape.Invert);
+				meshInstance = CreateExtrudedPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, texture, shape.TextureMirror, shape.Invert, inflate);
 			}
 			else
 			{
 				// Regular 2D plane
-				meshInstance = CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, shape.TextureMirror, shape.Invert);
+				meshInstance = CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, shape.TextureMirror, shape.Invert, inflate);
 			}
 		}
 		else // "block" or default
 		{
-			meshInstance = CreateBlockMesh(from, to, uvU, uvV, sizeX, sizeY, sizeZ, texWidth, texHeight, shape.TextureMirror, shape.Invert);
+			meshInstance = CreateBlockMesh(from, to, uvU, uvV, sizeX, sizeY, sizeZ, texWidth, texHeight, shape.TextureMirror, shape.Invert, inflate);
 		}
 		
 		// Apply shape scale to the mesh instance
@@ -374,7 +378,7 @@ public class MineImatorLoader
 	/// </summary>
 	private MeshInstance3D CreateBlockMesh(Vector3 from, Vector3 to, float uvU, float uvV,
 		float sizeX, float sizeY, float sizeZ, int texWidth, int texHeight, 
-		bool textureMirror, bool invert)
+		bool textureMirror, bool invert, float inflate = 0.0f)
 	{
 		var vertices = new List<Vector3>();
 		var normals = new List<Vector3>();
@@ -392,6 +396,13 @@ public class MineImatorLoader
 			Math.Max(from.Y, to.Y),
 			Math.Max(from.Z, to.Z)
 		);
+		
+		// Apply inflate - expand the mesh bounds by the inflate amount in all directions
+		if (inflate != 0.0f)
+		{
+			min = new Vector3(min.X - inflate, min.Y - inflate, min.Z - inflate);
+			max = new Vector3(max.X + inflate, max.Y + inflate, max.Z + inflate);
+		}
 		
 		// Create all 6 faces
 		// Front face (Z+)
@@ -488,7 +499,7 @@ public class MineImatorLoader
 	/// </summary>
 	private MeshInstance3D CreatePlaneMesh(Vector3 from, Vector3 to, float uvU, float uvV,
 		float sizeX, float sizeY, int texWidth, int texHeight, 
-		bool textureMirror, bool invert)
+		bool textureMirror, bool invert, float inflate = 0.0f)
 	{
 		var vertices = new List<Vector3>();
 		var normals = new List<Vector3>();
@@ -506,6 +517,13 @@ public class MineImatorLoader
 			Math.Max(from.Y, to.Y),
 			Math.Max(from.Z, to.Z)
 		);
+		
+		// Apply inflate - expand the mesh bounds by the inflate amount in all directions
+		if (inflate != 0.0f)
+		{
+			min = new Vector3(min.X - inflate, min.Y - inflate, min.Z - inflate);
+			max = new Vector3(max.X + inflate, max.Y + inflate, max.Z + inflate);
+		}
 		
 		// UV coordinates (convert pixel coordinates to 0-1 range)
 		float u0 = uvU / texWidth;
@@ -576,18 +594,18 @@ public class MineImatorLoader
 	/// </summary>
 	private MeshInstance3D CreateExtrudedPlaneMesh(Vector3 from, Vector3 to, float uvU, float uvV,
 		float sizeX, float sizeY, int texWidth, int texHeight, ImageTexture texture,
-		bool textureMirror, bool invert)
+		bool textureMirror, bool invert, float inflate = 0.0f)
 	{
 		if (texture == null)
 		{
 			// Fallback to regular plane if no texture
-			return CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, textureMirror, invert);
+			return CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, textureMirror, invert, inflate);
 		}
 		
 		var image = texture.GetImage();
 		if (image == null)
 		{
-			return CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, textureMirror, invert);
+			return CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, textureMirror, invert, inflate);
 		}
 		
 		// Calculate the UV region we're using
@@ -607,12 +625,18 @@ public class MineImatorLoader
 		
 		if (regionWidth <= 0 || regionHeight <= 0)
 		{
-			return CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, textureMirror, invert);
+			return CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, textureMirror, invert, inflate);
 		}
 		
 		// Extrusion thickness (1 pixel = 1/16 of a block)
 		const float thickness = 1.0f / 16.0f;
 		float halfThickness = thickness / 2.0f;
+		
+		// Apply inflate to the extrusion thickness
+		if (inflate != 0.0f)
+		{
+			halfThickness += inflate;
+		}
 		
 		// Calculate scale for each pixel
 		Vector3 size = to - from;
@@ -645,9 +669,25 @@ public class MineImatorLoader
 					float posX = from.X + px * pixelScaleX;
 					float posY = from.Y + py * pixelScaleY;
 					
+					// Apply inflate to pixel position (expand outward)
+					if (inflate != 0.0f)
+					{
+						posX -= inflate;
+						posY -= inflate;
+					}
+					
+					// Adjust pixel scale for inflate
+					float adjustedPixelScaleX = pixelScaleX;
+					float adjustedPixelScaleY = pixelScaleY;
+					if (inflate != 0.0f)
+					{
+						adjustedPixelScaleX += inflate * 2;
+						adjustedPixelScaleY += inflate * 2;
+					}
+					
 					// Center of this pixel box
-					float centerX = posX + pixelScaleX / 2.0f;
-					float centerY = posY + pixelScaleY / 2.0f;
+					float centerX = posX + adjustedPixelScaleX / 2.0f;
+					float centerY = posY + adjustedPixelScaleY / 2.0f;
 					float centerZ = from.Z; // Plane is at Z=0 by default
 					
 					// UV coordinates for this pixel (normalized)
@@ -665,18 +705,18 @@ public class MineImatorLoader
 					// Front face (Z+)
 					AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
 						new Vector3(posX, posY, centerZ + halfThickness),
-						new Vector3(posX + pixelScaleX, posY, centerZ + halfThickness),
-						new Vector3(posX + pixelScaleX, posY + pixelScaleY, centerZ + halfThickness),
-						new Vector3(posX, posY + pixelScaleY, centerZ + halfThickness),
+						new Vector3(posX + adjustedPixelScaleX, posY, centerZ + halfThickness),
+						new Vector3(posX + adjustedPixelScaleX, posY + adjustedPixelScaleY, centerZ + halfThickness),
+						new Vector3(posX, posY + adjustedPixelScaleY, centerZ + halfThickness),
 						Vector3.Back, uvX, uvY, invert);
 					
 					baseVertex = vertices.Count;
 					// Back face (Z-)
 					AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
-						new Vector3(posX + pixelScaleX, posY, centerZ - halfThickness),
+						new Vector3(posX + adjustedPixelScaleX, posY, centerZ - halfThickness),
 						new Vector3(posX, posY, centerZ - halfThickness),
-						new Vector3(posX, posY + pixelScaleY, centerZ - halfThickness),
-						new Vector3(posX + pixelScaleX, posY + pixelScaleY, centerZ - halfThickness),
+						new Vector3(posX, posY + adjustedPixelScaleY, centerZ - halfThickness),
+						new Vector3(posX + adjustedPixelScaleX, posY + adjustedPixelScaleY, centerZ - halfThickness),
 						Vector3.Forward, uvX, uvY, invert);
 					
 					// Check adjacent pixels for edge faces
@@ -691,8 +731,8 @@ public class MineImatorLoader
 						AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
 							new Vector3(posX, posY, centerZ - halfThickness),
 							new Vector3(posX, posY, centerZ + halfThickness),
-							new Vector3(posX, posY + pixelScaleY, centerZ + halfThickness),
-							new Vector3(posX, posY + pixelScaleY, centerZ - halfThickness),
+							new Vector3(posX, posY + adjustedPixelScaleY, centerZ + halfThickness),
+							new Vector3(posX, posY + adjustedPixelScaleY, centerZ - halfThickness),
 							Vector3.Left, uvX, uvY, invert);
 					}
 					
@@ -700,10 +740,10 @@ public class MineImatorLoader
 					{
 						baseVertex = vertices.Count;
 						AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
-							new Vector3(posX + pixelScaleX, posY, centerZ + halfThickness),
-							new Vector3(posX + pixelScaleX, posY, centerZ - halfThickness),
-							new Vector3(posX + pixelScaleX, posY + pixelScaleY, centerZ - halfThickness),
-							new Vector3(posX + pixelScaleX, posY + pixelScaleY, centerZ + halfThickness),
+							new Vector3(posX + adjustedPixelScaleX, posY, centerZ + halfThickness),
+							new Vector3(posX + adjustedPixelScaleX, posY, centerZ - halfThickness),
+							new Vector3(posX + adjustedPixelScaleX, posY + adjustedPixelScaleY, centerZ - halfThickness),
+							new Vector3(posX + adjustedPixelScaleX, posY + adjustedPixelScaleY, centerZ + halfThickness),
 							Vector3.Right, uvX, uvY, invert);
 					}
 					
@@ -712,8 +752,8 @@ public class MineImatorLoader
 						baseVertex = vertices.Count;
 						AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
 							new Vector3(posX, posY, centerZ - halfThickness),
-							new Vector3(posX + pixelScaleX, posY, centerZ - halfThickness),
-							new Vector3(posX + pixelScaleX, posY, centerZ + halfThickness),
+							new Vector3(posX + adjustedPixelScaleX, posY, centerZ - halfThickness),
+							new Vector3(posX + adjustedPixelScaleX, posY, centerZ + halfThickness),
 							new Vector3(posX, posY, centerZ + halfThickness),
 							Vector3.Down, uvX, uvY, invert);
 					}
@@ -722,10 +762,10 @@ public class MineImatorLoader
 					{
 						baseVertex = vertices.Count;
 						AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
-							new Vector3(posX, posY + pixelScaleY, centerZ + halfThickness),
-							new Vector3(posX + pixelScaleX, posY + pixelScaleY, centerZ + halfThickness),
-							new Vector3(posX + pixelScaleX, posY + pixelScaleY, centerZ - halfThickness),
-							new Vector3(posX, posY + pixelScaleY, centerZ - halfThickness),
+							new Vector3(posX, posY + adjustedPixelScaleY, centerZ + halfThickness),
+							new Vector3(posX + adjustedPixelScaleX, posY + adjustedPixelScaleY, centerZ + halfThickness),
+							new Vector3(posX + adjustedPixelScaleX, posY + adjustedPixelScaleY, centerZ - halfThickness),
+							new Vector3(posX, posY + adjustedPixelScaleY, centerZ - halfThickness),
 							Vector3.Up, uvX, uvY, invert);
 					}
 				}
@@ -860,23 +900,119 @@ public class MineImatorLoader
 		
 		var texturePath = Path.Combine(model.DirectoryPath, model.Texture);
 		
+		GD.Print($"Attempting to load Mine Imator texture from: {texturePath}");
+		
 		if (!File.Exists(texturePath))
 		{
 			GD.PrintErr($"Mine Imator texture not found: {texturePath}");
 			return null;
 		}
 		
-		var image = Image.LoadFromFile(texturePath);
-		if (image == null)
+		try
 		{
-			GD.PrintErr($"Failed to load Mine Imator texture: {texturePath}");
+			// Read file bytes using System.IO (works for external paths)
+			byte[] fileBytes = File.ReadAllBytes(texturePath);
+			
+			GD.Print($"Read {fileBytes.Length} bytes from texture file");
+			
+			// Check for PNG header
+			if (fileBytes.Length >= 8)
+			{
+				bool isPng = fileBytes[0] == 0x89 && fileBytes[1] == 0x50 && 
+				             fileBytes[2] == 0x4E && fileBytes[3] == 0x47;
+				GD.Print($"PNG header check: {(isPng ? "Valid PNG header" : "Not a standard PNG header")}");
+				GD.Print($"First 16 bytes: {BitConverter.ToString(fileBytes, 0, Math.Min(16, fileBytes.Length))}");
+			}
+			
+			var image = new Image();
+			Error error;
+			
+			// Determine image format from extension and load from buffer
+			string extension = Path.GetExtension(texturePath).ToLowerInvariant();
+			switch (extension)
+			{
+				case ".png":
+					error = image.LoadPngFromBuffer(fileBytes);
+					break;
+				case ".jpg":
+				case ".jpeg":
+					error = image.LoadJpgFromBuffer(fileBytes);
+					break;
+				case ".webp":
+					error = image.LoadWebpFromBuffer(fileBytes);
+					break;
+				case ".bmp":
+					error = image.LoadBmpFromBuffer(fileBytes);
+					break;
+				case ".tga":
+					error = image.LoadTgaFromBuffer(fileBytes);
+					break;
+				default:
+					// Try PNG first, then other formats
+					error = image.LoadPngFromBuffer(fileBytes);
+					if (error != Error.Ok)
+					{
+						error = image.LoadJpgFromBuffer(fileBytes);
+					}
+					if (error != Error.Ok)
+					{
+						error = image.LoadWebpFromBuffer(fileBytes);
+					}
+					if (error != Error.Ok)
+					{
+						error = image.LoadBmpFromBuffer(fileBytes);
+					}
+					if (error != Error.Ok)
+					{
+						error = image.LoadTgaFromBuffer(fileBytes);
+					}
+					break;
+			}
+			
+			if (error != Error.Ok)
+			{
+				GD.PrintErr($"Failed to load Mine Imator texture: {texturePath} (Error: {error}, Format: {extension})");
+				
+				// Try loading with Godot's built-in image loader as fallback
+				GD.Print("Attempting fallback: copying to temp file and using Image.Load()");
+				string tempPath = Path.Combine(Path.GetTempPath(), $"mi_texture_{Guid.NewGuid()}{extension}");
+				try
+				{
+					File.Copy(texturePath, tempPath, true);
+					var fallbackImage = new Image();
+					var fallbackError = fallbackImage.Load(tempPath);
+					File.Delete(tempPath);
+					
+					if (fallbackError == Error.Ok && !fallbackImage.IsEmpty())
+					{
+						GD.Print($"Fallback succeeded! Loaded texture: {model.Texture} ({fallbackImage.GetWidth()}x{fallbackImage.GetHeight()})");
+						return ImageTexture.CreateFromImage(fallbackImage);
+					}
+				}
+				catch (Exception fallbackEx)
+				{
+					GD.PrintErr($"Fallback also failed: {fallbackEx.Message}");
+				}
+				
+				return null;
+			}
+			
+			if (image.IsEmpty())
+			{
+				GD.PrintErr($"Mine Imator texture loaded but image is empty: {texturePath}");
+				return null;
+			}
+			
+			var texture = ImageTexture.CreateFromImage(image);
+			GD.Print($"Loaded Mine Imator texture: {model.Texture} ({image.GetWidth()}x{image.GetHeight()})");
+			
+			return texture;
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"Exception loading Mine Imator texture '{texturePath}': {ex.Message}");
 			return null;
 		}
-		
-		var texture = ImageTexture.CreateFromImage(image);
-		GD.Print($"Loaded Mine Imator texture: {model.Texture} ({image.GetWidth()}x{image.GetHeight()})");
-		
-		return texture;
 	}
 	
 	/// <summary>
@@ -942,7 +1078,8 @@ public class MiPart
 	public MiBend Bend { get; set; }
 	
 	[JsonPropertyName("lock_bend")]
-	public float LockBend { get; set; }
+	[JsonNumberHandling(JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.AllowNamedFloatingPointLiterals)]
+	public float? LockBend { get; set; }
 	
 	[JsonPropertyName("locked")]
 	public bool Locked { get; set; }
@@ -988,6 +1125,9 @@ public class MiShape
 	
 	[JsonPropertyName("3d")]
 	public bool ThreeD { get; set; }
+	
+	[JsonPropertyName("inflate")]
+	public float Inflate { get; set; }
 }
 
 /// <summary>
@@ -996,10 +1136,20 @@ public class MiShape
 public class MiBend
 {
 	[JsonPropertyName("offset")]
-	public float Offset { get; set; }
+	[JsonNumberHandling(JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.AllowNamedFloatingPointLiterals)]
+	public float? Offset { get; set; }
 	
 	[JsonPropertyName("size")]
-	public float Size { get; set; }
+	[JsonNumberHandling(JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.AllowNamedFloatingPointLiterals)]
+	public float? Size { get; set; }
+	
+	[JsonPropertyName("detail")]
+	[JsonNumberHandling(JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.AllowNamedFloatingPointLiterals)]
+	public float? Detail { get; set; }
+	
+	[JsonPropertyName("inherit_bend")]
+	[JsonNumberHandling(JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.AllowNamedFloatingPointLiterals)]
+	public float? InheritBend { get; set; }
 	
 	[JsonPropertyName("part")]
 	public string Part { get; set; }
@@ -1008,7 +1158,64 @@ public class MiBend
 	public object Axis { get; set; } // Can be string[] or string
 	
 	[JsonPropertyName("direction_min")]
-	public float DirectionMin { get; set; }
+	[JsonConverter(typeof(SingleOrArrayConverter))]
+	public float[] DirectionMin { get; set; } // Can be single float or array of floats
+	
+	[JsonPropertyName("direction_max")]
+	[JsonConverter(typeof(SingleOrArrayConverter))]
+	public float[] DirectionMax { get; set; } // Can be single float or array of floats
+}
+
+/// <summary>
+/// Custom JSON converter that handles values that can be either a single float or an array of floats
+/// </summary>
+public class SingleOrArrayConverter : JsonConverter<float[]>
+{
+	public override float[] Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+	{
+		if (reader.TokenType == JsonTokenType.Number)
+		{
+			return new float[] { reader.GetSingle() };
+		}
+		else if (reader.TokenType == JsonTokenType.StartArray)
+		{
+			var list = new List<float>();
+			while (reader.Read())
+			{
+				if (reader.TokenType == JsonTokenType.EndArray)
+					break;
+				if (reader.TokenType == JsonTokenType.Number)
+					list.Add(reader.GetSingle());
+			}
+			return list.ToArray();
+		}
+		else if (reader.TokenType == JsonTokenType.Null)
+		{
+			return null;
+		}
+		throw new JsonException($"Unexpected token type {reader.TokenType} when parsing float or float array");
+	}
+
+	public override void Write(Utf8JsonWriter writer, float[] value, JsonSerializerOptions options)
+	{
+		if (value == null)
+		{
+			writer.WriteNullValue();
+		}
+		else if (value.Length == 1)
+		{
+			writer.WriteNumberValue(value[0]);
+		}
+		else
+		{
+			writer.WriteStartArray();
+			foreach (var v in value)
+			{
+				writer.WriteNumberValue(v);
+			}
+			writer.WriteEndArray();
+		}
+	}
 }
 
 #endregion
