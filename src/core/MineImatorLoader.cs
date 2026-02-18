@@ -638,10 +638,11 @@ public class MineImatorLoader
 		var tex3 = new Vector2(texU + texSizeX, texV + texSizeZ);
 		var tex4 = new Vector2(texU, texV + texSizeZ);
 		
-		// Mirror texture on X if needed
+		// Mirror texture on X if needed - this means flipping the geometry on X axis
+		// to create a mirrored version of the plane
 		if (textureMirror)
 		{
-			// Switch left/right points
+			// Switch left/right points for UV mirroring
 			(tex1, tex2) = (tex2, tex1);
 			(tex3, tex4) = (tex4, tex3);
 		}
@@ -649,10 +650,21 @@ public class MineImatorLoader
 		// Front face (at min.Z, normal pointing backward)
 		int baseVertex = vertices.Count;
 		
-		vertices.Add(new Vector3(min.X, min.Y, min.Z));
-		vertices.Add(new Vector3(max.X, min.Y, min.Z));
-		vertices.Add(new Vector3(max.X, max.Y, min.Z));
-		vertices.Add(new Vector3(min.X, max.Y, min.Z));
+		if (textureMirror)
+		{
+			// Mirrored geometry: swap min.X and max.X for each vertex to flip on X axis
+			vertices.Add(new Vector3(max.X, min.Y, min.Z));
+			vertices.Add(new Vector3(min.X, min.Y, min.Z));
+			vertices.Add(new Vector3(min.X, max.Y, min.Z));
+			vertices.Add(new Vector3(max.X, max.Y, min.Z));
+		}
+		else
+		{
+			vertices.Add(new Vector3(min.X, min.Y, min.Z));
+			vertices.Add(new Vector3(max.X, min.Y, min.Z));
+			vertices.Add(new Vector3(max.X, max.Y, min.Z));
+			vertices.Add(new Vector3(min.X, max.Y, min.Z));
+		}
 		
 		normals.Add(Vector3.Back);
 		normals.Add(Vector3.Back);
@@ -688,10 +700,21 @@ public class MineImatorLoader
 		baseVertex = vertices.Count;
 		
 		// Use the same vertices but in reverse order for the back face
-		vertices.Add(new Vector3(min.X, min.Y, max.Z));
-		vertices.Add(new Vector3(max.X, min.Y, max.Z));
-		vertices.Add(new Vector3(max.X, max.Y, max.Z));
-		vertices.Add(new Vector3(min.X, max.Y, max.Z));
+		if (textureMirror)
+		{
+			// Mirrored geometry: swap min.X and max.X for each vertex to flip on X axis
+			vertices.Add(new Vector3(max.X, min.Y, max.Z));
+			vertices.Add(new Vector3(min.X, min.Y, max.Z));
+			vertices.Add(new Vector3(min.X, max.Y, max.Z));
+			vertices.Add(new Vector3(max.X, max.Y, max.Z));
+		}
+		else
+		{
+			vertices.Add(new Vector3(min.X, min.Y, max.Z));
+			vertices.Add(new Vector3(max.X, min.Y, max.Z));
+			vertices.Add(new Vector3(max.X, max.Y, max.Z));
+			vertices.Add(new Vector3(min.X, max.Y, max.Z));
+		}
 		
 		normals.Add(Vector3.Forward);
 		normals.Add(Vector3.Forward);
@@ -818,7 +841,17 @@ public class MineImatorLoader
 				if (color.A > 0.5f)
 				{
 					// Calculate position for this pixel
-					float posX = from.X + px * pixelScaleX;
+					// When textureMirror is true, mirror the geometry on X axis
+					float posX;
+					if (textureMirror)
+					{
+						// Mirror: flip X position (start from right side and go left)
+						posX = to.X - (px + 1) * pixelScaleX;
+					}
+					else
+					{
+						posX = from.X + px * pixelScaleX;
+					}
 					float posY = from.Y + py * pixelScaleY;
 					
 					// Apply inflate to pixel position (expand outward)
@@ -846,11 +879,6 @@ public class MineImatorLoader
 					float uvX = (texX + 0.5f) / texWidth;
 					float uvY = (texY + 0.5f) / texHeight;
 					
-					if (textureMirror)
-					{
-						uvX = 1.0f - uvX;
-					}
-					
 					int baseVertex = vertices.Count;
 					
 					// Create a box for this pixel (6 faces)
@@ -872,12 +900,17 @@ public class MineImatorLoader
 						Vector3.Forward, uvX, uvY, invert);
 					
 					// Check adjacent pixels for edge faces
+					// When mirrored, left/right are swapped in the geometry
 					bool leftEmpty = px == 0 || image.GetPixel(uvStartX + px - 1, texY).A <= 0.5f;
 					bool rightEmpty = px == regionWidth - 1 || image.GetPixel(uvStartX + px + 1, texY).A <= 0.5f;
 					bool topEmpty = py == 0 || image.GetPixel(texX, uvStartY + py - 1).A <= 0.5f;
 					bool bottomEmpty = py == regionHeight - 1 || image.GetPixel(texX, uvStartY + py + 1).A <= 0.5f;
 					
-					if (leftEmpty)
+					// When textureMirror is true, swap left/right edge detection since geometry is flipped
+					bool geometryLeftEmpty = textureMirror ? rightEmpty : leftEmpty;
+					bool geometryRightEmpty = textureMirror ? leftEmpty : rightEmpty;
+					
+					if (geometryLeftEmpty)
 					{
 						baseVertex = vertices.Count;
 						AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
@@ -888,7 +921,7 @@ public class MineImatorLoader
 							Vector3.Left, uvX, uvY, invert);
 					}
 					
-					if (rightEmpty)
+					if (geometryRightEmpty)
 					{
 						baseVertex = vertices.Count;
 						AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
