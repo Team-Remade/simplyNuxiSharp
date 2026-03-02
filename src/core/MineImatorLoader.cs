@@ -93,12 +93,12 @@ public class MineImatorLoader
 		var skeleton = new Skeleton3D();
 		skeleton.Name = "Skeleton";
 		
-		// Flatten parts and create bones
-		var boneDataList = new List<(MiPart part, int boneIdx, int parentIdx)>();
-		FlattenPartsForBones(model.Parts, -1, boneDataList);
+		// Flatten parts and create bones (also tracking accumulated parent scale)
+		var boneDataList = new List<(MiPart part, int boneIdx, int parentIdx, Vector3 accumulatedParentScale)>();
+		FlattenPartsForBones(model.Parts, -1, Vector3.One, boneDataList);
 		
 		// Create all bones first
-		foreach (var (part, boneIdx, parentIdx) in boneDataList)
+		foreach (var (part, boneIdx, parentIdx, _) in boneDataList)
 		{
 			CreateBoneFromPart(skeleton, part, boneIdx, parentIdx);
 		}
@@ -114,18 +114,27 @@ public class MineImatorLoader
 		// Create BoneSceneObjects for each bone first
 		CreateBoneSceneObjects(character, skeleton);
 		
-			// Now add meshes to the BoneSceneObjects
-		foreach (var (part, boneIdx, parentIdx) in boneDataList)
+		// Now add meshes to the BoneSceneObjects
+		foreach (var (part, boneIdx, parentIdx, accumulatedParentScale) in boneDataList)
 		{
 			if (part.Shapes != null && part.Shapes.Count > 0)
 			{
 				string boneName = skeleton.GetBoneName(boneIdx);
 				if (character.BoneObjects.TryGetValue(boneName, out var boneObject))
 				{
+					// Compute this part's own scale
+					Vector3 partScale = Vector3.One;
+					if (part.Scale != null && part.Scale.Length >= 3)
+					{
+						partScale = new Vector3(part.Scale[0], part.Scale[1], part.Scale[2]);
+					}
+					// Full accumulated scale for shapes = parent accumulated scale * this part's scale
+					Vector3 accumulatedScale = accumulatedParentScale * partScale;
+					
 					int shapeIndex = 0;
 					foreach (var shape in part.Shapes)
 					{
-						var meshInstance = CreateShapeMesh(part.Name, shapeIndex, shape, model, texture);
+						var meshInstance = CreateShapeMesh(part.Name, shapeIndex, shape, model, texture, accumulatedScale);
 						if (meshInstance != null)
 						{
 							// Add the mesh as a visual child of the BoneSceneObject
@@ -144,21 +153,28 @@ public class MineImatorLoader
 	}
 	
 	/// <summary>
-	/// Flattens the part hierarchy for bone creation
+	/// Flattens the part hierarchy for bone creation, tracking accumulated parent scale
 	/// </summary>
-	private void FlattenPartsForBones(List<MiPart> parts, int parentIdx, 
-		List<(MiPart part, int boneIdx, int parentIdx)> boneDataList)
+	private void FlattenPartsForBones(List<MiPart> parts, int parentIdx, Vector3 accumulatedParentScale,
+		List<(MiPart part, int boneIdx, int parentIdx, Vector3 accumulatedParentScale)> boneDataList)
 	{
 		if (parts == null) return;
 		
 		foreach (var part in parts)
 		{
 			int currentIdx = boneDataList.Count;
-			boneDataList.Add((part, currentIdx, parentIdx));
+			boneDataList.Add((part, currentIdx, parentIdx, accumulatedParentScale));
 			
 			if (part.Parts != null && part.Parts.Count > 0)
 			{
-				FlattenPartsForBones(part.Parts, currentIdx, boneDataList);
+				// Compute this part's scale to pass down as accumulated scale to children
+				Vector3 partScale = Vector3.One;
+				if (part.Scale != null && part.Scale.Length >= 3)
+				{
+					partScale = new Vector3(part.Scale[0], part.Scale[1], part.Scale[2]);
+				}
+				Vector3 childAccumulatedScale = accumulatedParentScale * partScale;
+				FlattenPartsForBones(part.Parts, currentIdx, childAccumulatedScale, boneDataList);
 			}
 		}
 	}
@@ -272,7 +288,8 @@ public class MineImatorLoader
 	/// <summary>
 	/// Creates a MeshInstance3D for a single shape
 	/// </summary>
-	private MeshInstance3D CreateShapeMesh(string partName, int shapeIndex, MiShape shape, MiModel model, ImageTexture texture)
+	/// <param name="accumulatedParentScale">The product of all ancestor part scales up the hierarchy</param>
+	private MeshInstance3D CreateShapeMesh(string partName, int shapeIndex, MiShape shape, MiModel model, ImageTexture texture, Vector3 accumulatedParentScale)
 	{
 		if (shape == null || shape.From == null || shape.To == null)
 		{
@@ -318,12 +335,14 @@ public class MineImatorLoader
 			shapeRotation = new Vector3(Mathf.DegToRad(shape.Rotation[0]), Mathf.DegToRad(shape.Rotation[1]), Mathf.DegToRad(shape.Rotation[2]));
 		}
 		
-		// Apply shape scale if present
+		// Apply shape scale if present, then multiply by the accumulated parent scale from the hierarchy
 		Vector3 shapeScale = Vector3.One;
 		if (shape.Scale != null && shape.Scale.Length >= 3)
 		{
 			shapeScale = new Vector3(shape.Scale[0], shape.Scale[1], shape.Scale[2]);
 		}
+		// Incorporate the accumulated scale from all ancestor parts
+		shapeScale *= accumulatedParentScale;
 		
 		// Get inflate value and scale it from Minecraft pixels to Godot units (divide by 16)
 		float inflate = shape.Inflate / 16.0f;
