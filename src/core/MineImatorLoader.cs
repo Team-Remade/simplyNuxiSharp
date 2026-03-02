@@ -171,10 +171,9 @@ public class MineImatorLoader
 		string boneName = part.Name ?? $"Bone_{boneIdx}";
 		
 		// Convert position from Mine Imator to Godot
-		// Root parts (no parent) use (0,0,0) as position - the hierarchy handles positioning
-		// Child parts use their actual position relative to parent
+		// All parts (including root) use their actual position data
 		Vector3 position = Vector3.Zero;
-		if (parentIdx >= 0 && part.Position != null && part.Position.Length >= 3)
+		if (part.Position != null && part.Position.Length >= 3)
 		{
 			// Convert from pixels to blocks (divide by 16)
 			// Mine Imator: Y-up, Z-forward; Godot: Y-up, Z-forward
