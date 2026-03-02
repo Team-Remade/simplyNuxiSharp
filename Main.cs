@@ -33,7 +33,6 @@ public partial class Main : Control
 		
 	[Export] public SubViewport Viewport;
 	[Export] public SceneTree SceneTreePanel;
-	[Export] public Control SceneTree;
 	[Export] public ProjectPropertiesPanel ProjectPropertyPanel;
 	[Export] public ObjectPropertiesPanel ObjectPropertyPanel;
 	
@@ -61,6 +60,8 @@ public partial class Main : Control
 		
 		SceneTreePanel.ObjectSelected += OnSceneObjectSelected;
 		SelectionManager.Instance.SelectionChanged += OnSelectionChanged;
+		
+		IconEasterEgg();
 		
 		// Check if Minecraft assets are loaded
 		var loader = MinecraftJsonLoader.Instance;
