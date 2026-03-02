@@ -853,7 +853,6 @@ public class MineImatorLoader
 						posX = from.X + px * pixelScaleX;
 					}
 					float posY = from.Y + py * pixelScaleY;
-					float posZ = from.Z * pixelScaleY;
 					
 					// Apply inflate to pixel position (expand outward)
 					if (inflate != 0.0f)
