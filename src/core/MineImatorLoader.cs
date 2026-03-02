@@ -852,7 +852,9 @@ public class MineImatorLoader
 					{
 						posX = from.X + px * pixelScaleX;
 					}
-					float posY = from.Y + py * pixelScaleY;
+					// Flip Y: texture row 0 is the top of the image, but in 3D Y increases upward,
+					// so row 0 should map to the top of the plane (to.Y) and the last row to from.Y.
+					float posY = to.Y - (py + 1) * pixelScaleY;
 					
 					// Apply inflate to pixel position (expand outward)
 					if (inflate != 0.0f)
@@ -932,18 +934,11 @@ public class MineImatorLoader
 							Vector3.Right, uvX, uvY, invert);
 					}
 					
+					// After Y-flip: posY is the bottom of the pixel box in 3D space,
+					// posY + adjustedPixelScaleY is the top.
+					// topEmpty = no pixel above in texture = no pixel above in 3D (top face needed at posY + adjustedPixelScaleY)
+					// bottomEmpty = no pixel below in texture = no pixel below in 3D (bottom face needed at posY)
 					if (topEmpty)
-					{
-						baseVertex = vertices.Count;
-						AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
-							new Vector3(posX, posY, centerZ - halfThickness),
-							new Vector3(posX + adjustedPixelScaleX, posY, centerZ - halfThickness),
-							new Vector3(posX + adjustedPixelScaleX, posY, centerZ + halfThickness),
-							new Vector3(posX, posY, centerZ + halfThickness),
-							Vector3.Down, uvX, uvY, invert);
-					}
-					
-					if (bottomEmpty)
 					{
 						baseVertex = vertices.Count;
 						AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
@@ -952,6 +947,17 @@ public class MineImatorLoader
 							new Vector3(posX + adjustedPixelScaleX, posY + adjustedPixelScaleY, centerZ - halfThickness),
 							new Vector3(posX, posY + adjustedPixelScaleY, centerZ - halfThickness),
 							Vector3.Up, uvX, uvY, invert);
+					}
+					
+					if (bottomEmpty)
+					{
+						baseVertex = vertices.Count;
+						AddExtrudedQuad(vertices, normals, uvs, indices, baseVertex,
+							new Vector3(posX, posY, centerZ - halfThickness),
+							new Vector3(posX + adjustedPixelScaleX, posY, centerZ - halfThickness),
+							new Vector3(posX + adjustedPixelScaleX, posY, centerZ + halfThickness),
+							new Vector3(posX, posY, centerZ + halfThickness),
+							Vector3.Down, uvX, uvY, invert);
 					}
 				}
 			}
