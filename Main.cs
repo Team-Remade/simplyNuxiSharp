@@ -30,7 +30,7 @@ public partial class Main : Control
 	[Export] public Button PreviewToggleButton;
 	[Export] public Label MainViewportFpsLabel;
 	[Export] public Label GizmoHintLabel;
-		
+	
 	[Export] public SubViewport Viewport;
 	[Export] public SceneTree SceneTreePanel;
 	[Export] public ProjectPropertiesPanel ProjectPropertyPanel;

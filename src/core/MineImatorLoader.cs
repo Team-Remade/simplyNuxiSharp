@@ -853,6 +853,7 @@ public class MineImatorLoader
 						posX = from.X + px * pixelScaleX;
 					}
 					float posY = from.Y + py * pixelScaleY;
+					float posZ = from.Z * pixelScaleY;
 					
 					// Apply inflate to pixel position (expand outward)
 					if (inflate != 0.0f)
@@ -873,7 +874,7 @@ public class MineImatorLoader
 					// Center of this pixel box
 					float centerX = posX + adjustedPixelScaleX / 2.0f;
 					float centerY = posY + adjustedPixelScaleY / 2.0f;
-					float centerZ = from.Z; // Plane is at Z=0 by default
+					float centerZ = from.Z + (0.5f * 0.0625f); // Plane is at Z=0 by default
 					
 					// UV coordinates for this pixel (normalized)
 					float uvX = (texX + 0.5f) / texWidth;
