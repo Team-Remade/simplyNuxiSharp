@@ -668,21 +668,10 @@ public class MineImatorLoader
 		// Front face (at min.Z, normal pointing backward)
 		int baseVertex = vertices.Count;
 		
-		if (textureMirror)
-		{
-			// Mirrored geometry: swap min.X and max.X for each vertex to flip on X axis
-			vertices.Add(new Vector3(max.X, min.Y, min.Z));
-			vertices.Add(new Vector3(min.X, min.Y, min.Z));
-			vertices.Add(new Vector3(min.X, max.Y, min.Z));
-			vertices.Add(new Vector3(max.X, max.Y, min.Z));
-		}
-		else
-		{
-			vertices.Add(new Vector3(min.X, min.Y, min.Z));
-			vertices.Add(new Vector3(max.X, min.Y, min.Z));
-			vertices.Add(new Vector3(max.X, max.Y, min.Z));
-			vertices.Add(new Vector3(min.X, max.Y, min.Z));
-		}
+		vertices.Add(new Vector3(min.X, min.Y, min.Z));
+		vertices.Add(new Vector3(max.X, min.Y, min.Z));
+		vertices.Add(new Vector3(max.X, max.Y, min.Z));
+		vertices.Add(new Vector3(min.X, max.Y, min.Z));
 		
 		normals.Add(Vector3.Back);
 		normals.Add(Vector3.Back);
@@ -690,80 +679,66 @@ public class MineImatorLoader
 		normals.Add(Vector3.Back);
 		
 		// UV mapping: tex1=bottom-left, tex2=bottom-right, tex3=top-right, tex4=top-left
-		uvs.Add(tex4);
-		uvs.Add(tex3);
-		uvs.Add(tex2);
-		uvs.Add(tex1);
-		
+		// When inverted, flip UV coordinates horizontally to mirror the texture
 		if (invert)
 		{
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 1);
-			indices.Add(baseVertex + 2);
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 2);
-			indices.Add(baseVertex + 3);
+			uvs.Add(tex3);
+			uvs.Add(tex4);
+			uvs.Add(tex1);
+			uvs.Add(tex2);
 		}
 		else
 		{
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 2);
-			indices.Add(baseVertex + 1);
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 3);
-			indices.Add(baseVertex + 2);
+			uvs.Add(tex4);
+			uvs.Add(tex3);
+			uvs.Add(tex2);
+			uvs.Add(tex1);
 		}
+		
+		// Front face indices (counter-clockwise winding for front face)
+		indices.Add(baseVertex + 0);
+		indices.Add(baseVertex + 2);
+		indices.Add(baseVertex + 1);
+		indices.Add(baseVertex + 0);
+		indices.Add(baseVertex + 3);
+		indices.Add(baseVertex + 2);
 		
 		// Back face (at max.Z, normal pointing forward) - for two-sided rendering
 		baseVertex = vertices.Count;
 		
-		// Use the same vertices but in reverse order for the back face
-		if (textureMirror)
-		{
-			// Mirrored geometry: swap min.X and max.X for each vertex to flip on X axis
-			vertices.Add(new Vector3(max.X, min.Y, max.Z));
-			vertices.Add(new Vector3(min.X, min.Y, max.Z));
-			vertices.Add(new Vector3(min.X, max.Y, max.Z));
-			vertices.Add(new Vector3(max.X, max.Y, max.Z));
-		}
-		else
-		{
-			vertices.Add(new Vector3(min.X, min.Y, max.Z));
-			vertices.Add(new Vector3(max.X, min.Y, max.Z));
-			vertices.Add(new Vector3(max.X, max.Y, max.Z));
-			vertices.Add(new Vector3(min.X, max.Y, max.Z));
-		}
+		vertices.Add(new Vector3(min.X, min.Y, max.Z));
+		vertices.Add(new Vector3(max.X, min.Y, max.Z));
+		vertices.Add(new Vector3(max.X, max.Y, max.Z));
+		vertices.Add(new Vector3(min.X, max.Y, max.Z));
 		
 		normals.Add(Vector3.Forward);
 		normals.Add(Vector3.Forward);
 		normals.Add(Vector3.Forward);
 		normals.Add(Vector3.Forward);
 		
-		// UV mapping for back face (same orientation)
-		uvs.Add(tex4);
-		uvs.Add(tex3);
-		uvs.Add(tex2);
-		uvs.Add(tex1);
-		
-		// Back face indices - reverse winding from front face
+		// UV mapping for back face (same orientation, but also flip when inverted for consistency)
 		if (invert)
 		{
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 2);
-			indices.Add(baseVertex + 1);
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 3);
-			indices.Add(baseVertex + 2);
+			uvs.Add(tex3);
+			uvs.Add(tex4);
+			uvs.Add(tex1);
+			uvs.Add(tex2);
 		}
 		else
 		{
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 1);
-			indices.Add(baseVertex + 2);
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 2);
-			indices.Add(baseVertex + 3);
+			uvs.Add(tex4);
+			uvs.Add(tex3);
+			uvs.Add(tex2);
+			uvs.Add(tex1);
 		}
+		
+		// Back face indices - reverse winding from front face (clockwise for back face)
+		indices.Add(baseVertex + 0);
+		indices.Add(baseVertex + 1);
+		indices.Add(baseVertex + 2);
+		indices.Add(baseVertex + 0);
+		indices.Add(baseVertex + 2);
+		indices.Add(baseVertex + 3);
 		
 		// Create the mesh
 		var arrays = new Godot.Collections.Array();
@@ -1016,29 +991,29 @@ public class MineImatorLoader
 		normals.Add(normal);
 		
 		// Use the pixel's texture coordinate for all vertices
-		uvs.Add(new Vector2(uvX, uvY));
-		uvs.Add(new Vector2(uvX, uvY));
-		uvs.Add(new Vector2(uvX, uvY));
-		uvs.Add(new Vector2(uvX, uvY));
-		
+		// When inverted, flip UV coordinates horizontally to mirror the texture
 		if (invert)
 		{
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 1);
-			indices.Add(baseVertex + 2);
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 2);
-			indices.Add(baseVertex + 3);
+			uvs.Add(new Vector2(1.0f - uvX, uvY));
+			uvs.Add(new Vector2(1.0f - uvX, uvY));
+			uvs.Add(new Vector2(1.0f - uvX, uvY));
+			uvs.Add(new Vector2(1.0f - uvX, uvY));
 		}
 		else
 		{
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 2);
-			indices.Add(baseVertex + 1);
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 3);
-			indices.Add(baseVertex + 2);
+			uvs.Add(new Vector2(uvX, uvY));
+			uvs.Add(new Vector2(uvX, uvY));
+			uvs.Add(new Vector2(uvX, uvY));
+			uvs.Add(new Vector2(uvX, uvY));
 		}
+		
+		// Indices (counter-clockwise winding)
+		indices.Add(baseVertex + 0);
+		indices.Add(baseVertex + 2);
+		indices.Add(baseVertex + 1);
+		indices.Add(baseVertex + 0);
+		indices.Add(baseVertex + 3);
+		indices.Add(baseVertex + 2);
 	}
 	
 	/// <summary>
@@ -1072,29 +1047,29 @@ public class MineImatorLoader
 			(u0, u1) = (u1, u0);
 		}
 		
-		uvs.Add(new Vector2(u0, v1));
-		uvs.Add(new Vector2(u1, v1));
-		uvs.Add(new Vector2(u1, v0));
-		uvs.Add(new Vector2(u0, v0));
-		
+		// When inverted, flip UV coordinates horizontally to mirror the texture
 		if (invert)
 		{
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 1);
-			indices.Add(baseVertex + 2);
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 2);
-			indices.Add(baseVertex + 3);
+			uvs.Add(new Vector2(u1, v1));
+			uvs.Add(new Vector2(u0, v1));
+			uvs.Add(new Vector2(u0, v0));
+			uvs.Add(new Vector2(u1, v0));
 		}
 		else
 		{
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 2);
-			indices.Add(baseVertex + 1);
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 3);
-			indices.Add(baseVertex + 2);
+			uvs.Add(new Vector2(u0, v1));
+			uvs.Add(new Vector2(u1, v1));
+			uvs.Add(new Vector2(u1, v0));
+			uvs.Add(new Vector2(u0, v0));
 		}
+		
+		// Front face indices (counter-clockwise winding)
+		indices.Add(baseVertex + 0);
+		indices.Add(baseVertex + 2);
+		indices.Add(baseVertex + 1);
+		indices.Add(baseVertex + 0);
+		indices.Add(baseVertex + 3);
+		indices.Add(baseVertex + 2);
 	}
 
 	/// <summary>
@@ -1117,29 +1092,29 @@ public class MineImatorLoader
 		normals.Add(normal);
 		
 		// Use pre-calculated UV coordinates
-		uvs.Add(uv0);
-		uvs.Add(uv1);
-		uvs.Add(uv2);
-		uvs.Add(uv3);
-		
+		// When inverted, flip UV coordinates horizontally to mirror the texture
 		if (invert)
 		{
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 1);
-			indices.Add(baseVertex + 2);
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 2);
-			indices.Add(baseVertex + 3);
+			uvs.Add(uv2);
+			uvs.Add(uv3);
+			uvs.Add(uv0);
+			uvs.Add(uv1);
 		}
 		else
 		{
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 2);
-			indices.Add(baseVertex + 1);
-			indices.Add(baseVertex + 0);
-			indices.Add(baseVertex + 3);
-			indices.Add(baseVertex + 2);
+			uvs.Add(uv0);
+			uvs.Add(uv1);
+			uvs.Add(uv2);
+			uvs.Add(uv3);
 		}
+		
+		// Indices (counter-clockwise winding)
+		indices.Add(baseVertex + 0);
+		indices.Add(baseVertex + 2);
+		indices.Add(baseVertex + 1);
+		indices.Add(baseVertex + 0);
+		indices.Add(baseVertex + 3);
+		indices.Add(baseVertex + 2);
 	}
 	
 	/// <summary>
