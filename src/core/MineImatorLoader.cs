@@ -113,36 +113,57 @@ public class MineImatorLoader
 		
 		// Create BoneSceneObjects for each bone first
 		CreateBoneSceneObjects(character, skeleton);
-		
-		// Now add meshes to the BoneSceneObjects
+
+		// Configure bend data on BoneSceneObjects and add meshes
 		foreach (var (part, boneIdx, parentIdx, accumulatedParentScale) in boneDataList)
 		{
+			string boneName = skeleton.GetBoneName(boneIdx);
+			if (!character.BoneObjects.TryGetValue(boneName, out var boneObject))
+				continue;
+
+			// Set up bend configuration on the bone
+			if (part.Bend != null)
+			{
+				float[] partScale = part.Scale;
+				var bendConfig = BendHelper.ParseBendConfig(part.Bend, partScale);
+				if (bendConfig != null)
+				{
+					boneObject.BendConfig = bendConfig;
+					boneObject.LockBend = part.LockBend == null || part.LockBend.Value != 0;
+					boneObject.InheritBend = (part.Bend.InheritBend ?? 0) != 0;
+
+					// Set the default bend angles
+					boneObject.BendAngles = new Vector3(
+						bendConfig.DefaultAngle[0],
+						bendConfig.DefaultAngle[1],
+						bendConfig.DefaultAngle[2]
+					);
+				}
+			}
+
+			// Add meshes to the BoneSceneObject
 			if (part.Shapes != null && part.Shapes.Count > 0)
 			{
-				string boneName = skeleton.GetBoneName(boneIdx);
-				if (character.BoneObjects.TryGetValue(boneName, out var boneObject))
+				// Compute this part's own scale
+				Vector3 partScaleVec = Vector3.One;
+				if (part.Scale != null && part.Scale.Length >= 3)
 				{
-					// Compute this part's own scale
-					Vector3 partScale = Vector3.One;
-					if (part.Scale != null && part.Scale.Length >= 3)
+					partScaleVec = new Vector3(part.Scale[0], part.Scale[1], part.Scale[2]);
+				}
+				// Full accumulated scale for shapes = parent accumulated scale * this part's scale
+				Vector3 accumulatedScale = accumulatedParentScale * partScaleVec;
+
+				int shapeIndex = 0;
+				foreach (var shape in part.Shapes)
+				{
+					var meshInstance = CreateShapeMesh(part.Name, shapeIndex, shape, model, texture, accumulatedScale, part.Bend);
+					if (meshInstance != null)
 					{
-						partScale = new Vector3(part.Scale[0], part.Scale[1], part.Scale[2]);
+						// Add the mesh as a visual child of the BoneSceneObject
+						boneObject.AddVisualInstance(meshInstance);
+						meshInstance.Name = $"{part.Name}_Shape{shapeIndex}";
 					}
-					// Full accumulated scale for shapes = parent accumulated scale * this part's scale
-					Vector3 accumulatedScale = accumulatedParentScale * partScale;
-					
-					int shapeIndex = 0;
-					foreach (var shape in part.Shapes)
-					{
-						var meshInstance = CreateShapeMesh(part.Name, shapeIndex, shape, model, texture, accumulatedScale);
-						if (meshInstance != null)
-						{
-							// Add the mesh as a visual child of the BoneSceneObject
-							boneObject.AddVisualInstance(meshInstance);
-							meshInstance.Name = $"{part.Name}_Shape{shapeIndex}";
-						}
-						shapeIndex++;
-					}
+					shapeIndex++;
 				}
 			}
 		}
@@ -289,7 +310,8 @@ public class MineImatorLoader
 	/// Creates a MeshInstance3D for a single shape
 	/// </summary>
 	/// <param name="accumulatedParentScale">The product of all ancestor part scales up the hierarchy</param>
-	private MeshInstance3D CreateShapeMesh(string partName, int shapeIndex, MiShape shape, MiModel model, ImageTexture texture, Vector3 accumulatedParentScale)
+	/// <param name="partBend">Optional bend data from the parent part</param>
+	private MeshInstance3D CreateShapeMesh(string partName, int shapeIndex, MiShape shape, MiModel model, ImageTexture texture, Vector3 accumulatedParentScale, MiBend partBend = null)
 	{
 		if (shape == null || shape.From == null || shape.To == null)
 		{
@@ -349,6 +371,9 @@ public class MineImatorLoader
 		
 		MeshInstance3D meshInstance;
 		
+		// Check if we have bend data and should create a bent mesh
+		bool hasBend = partBend != null && partBend.Offset.HasValue && !string.IsNullOrEmpty(partBend.Part);
+		
 		if (shape.Type == "plane")
 		{
 			// Treat 3D planes like items - as extruded planes with per-pixel extrusion
@@ -357,6 +382,11 @@ public class MineImatorLoader
 				// Create an extruded item-like plane with per-pixel hull mesh
 				meshInstance = CreateExtrudedPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, texture, shape.TextureMirror, shape.Invert, inflate);
 			}
+			else if (hasBend)
+			{
+				// Bent plane mesh
+				meshInstance = CreateBentPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, shape.TextureMirror, shape.Invert, inflate, partBend, shapeScale);
+			}
 			else
 			{
 				// Regular 2D plane
@@ -364,16 +394,30 @@ public class MineImatorLoader
 			}
 		}
 		else // "block" or default
-		{
-			meshInstance = CreateBlockMesh(partName, shapeIndex, from, to, uvU, uvV, sizeX, sizeY, sizeZ, texWidth, texHeight, shape.TextureMirror, shape.Invert, inflate);
-		}
+	 {
+	 	if (hasBend)
+	 	{
+	 		// Create bent block mesh with default bend angle baked in
+	 		meshInstance = CreateBentBlockMesh(partName, shapeIndex, from, to, uvU, uvV, sizeX, sizeY, sizeZ, texWidth, texHeight, shape.TextureMirror, shape.Invert, inflate, partBend, shapeScale);
+	 	}
+	 	else
+	 	{
+	 		meshInstance = CreateBlockMesh(partName, shapeIndex, from, to, uvU, uvV, sizeX, sizeY, sizeZ, texWidth, texHeight, shape.TextureMirror, shape.Invert, inflate);
+	 	}
+	 }
 		
-		// Apply shape scale to the mesh instance
-		if (meshInstance != null)
+		// Apply shape scale to the mesh instance (only if not using bent mesh which handles scale internally)
+		if (meshInstance != null && !hasBend)
 		{
 			meshInstance.Position = shapePosition;
 			meshInstance.Rotation = shapeRotation;
 			meshInstance.Scale = shapeScale;
+		}
+		else if (meshInstance != null && hasBend)
+		{
+			// For bent meshes, still apply position and rotation but not scale (handled in bend)
+			meshInstance.Position = shapePosition;
+			meshInstance.Rotation = shapeRotation;
 		}
 		
 		// Apply material with texture
@@ -604,6 +648,524 @@ public class MineImatorLoader
 		meshInstance.Mesh = arrayMesh;
 		
 		return meshInstance;
+	}
+	
+	/// <summary>
+	/// Creates a bent block mesh by segmenting it along the bend axis and applying transformations.
+	/// This replicates MineImator's model_shape_generate_block function.
+	///
+	/// The mesh is segmented along the bend axis. Each segment's vertices are transformed by
+	/// a bend matrix that rotates them around the bend pivot point. The weight of the rotation
+	/// increases through the bend zone, creating a smooth curve.
+	/// </summary>
+	private MeshInstance3D CreateBentBlockMesh(string partName, int shapeIndex, Vector3 from, Vector3 to, float uvU, float uvV,
+		float sizeX, float sizeY, float sizeZ, int texWidth, int texHeight,
+		bool textureMirror, bool invert, float inflate, MiBend bend, Vector3 shapeScale)
+	{
+		var vertices = new List<Vector3>();
+		var normals = new List<Vector3>();
+		var uvs = new List<Vector2>();
+		var indices = new List<int>();
+
+		// Parse bend configuration
+		var config = BendHelper.ParseBendConfig(bend);
+		if (config == null)
+		{
+			// Fall back to regular block mesh if bend config is invalid
+			return CreateBlockMesh(partName, shapeIndex, from, to, uvU, uvV, sizeX, sizeY, sizeZ, texWidth, texHeight, textureMirror, invert, inflate);
+		}
+
+		int segAxis = BendHelper.GetSegmentAxis(config.Part);
+		float scalef = 0.005f; // Z-fighting prevention scale factor
+
+		// Get bend offset and size in Godot units
+		float bendOffsetGodot = config.Offset / 16.0f;
+		float? bendSizeGodot = config.Size.HasValue ? config.Size.Value / 16.0f : null;
+
+		// Get the default bend angles (these are baked into the mesh at load time)
+		Vector3 bendAngles = new Vector3(config.DefaultAngle[0], config.DefaultAngle[1], config.DefaultAngle[2]);
+
+		// Ensure proper ordering
+		Vector3 min = new Vector3(
+			Math.Min(from.X, to.X),
+			Math.Min(from.Y, to.Y),
+			Math.Min(from.Z, to.Z)
+		);
+		Vector3 max = new Vector3(
+			Math.Max(from.X, to.X),
+			Math.Max(from.Y, to.Y),
+			Math.Max(from.Z, to.Z)
+		);
+
+		// Apply inflate
+		if (inflate != 0.0f)
+		{
+			min -= new Vector3(inflate, inflate, inflate);
+			max += new Vector3(inflate, inflate, inflate);
+		}
+
+		// Calculate size
+		Vector3 size = max - min;
+		float sizeAlongAxis = size[segAxis];
+
+		// Calculate bend zone
+		float shapeFromAlongAxis = min[segAxis];
+		var (bendStart, bendEnd, actualBendSize) = BendHelper.GetBendZone(bendOffsetGodot, bendSizeGodot, shapeFromAlongAxis, realistic: true);
+
+		// Determine number of segments
+		float scaleOnAxis = shapeScale[segAxis];
+		int detail = BendHelper.GetBendDetail(bendSizeGodot, realistic: true, scale: scaleOnAxis);
+		float bendSegSize = actualBendSize / detail;
+
+		// Check if the mesh is actually bent (non-zero angles on active axes)
+		bool isBent = false;
+		for (int i = 0; i < 3; i++)
+		{
+			if (config.Axis[i] && Math.Abs(bendAngles[i]) > 0.001f)
+			{
+				isBent = true;
+				break;
+			}
+		}
+
+		// If not bent, fall back to regular block mesh
+		if (!isBent)
+		{
+			return CreateBlockMesh(partName, shapeIndex, from, to, uvU, uvV, sizeX, sizeY, sizeZ, texWidth, texHeight, textureMirror, invert, inflate);
+		}
+
+		// Calculate UV coordinates (same as regular block)
+		float texU = uvU / texWidth;
+		float texV = uvV / texHeight;
+		float texSizeXn = sizeX / texWidth;
+		float texSizeYn = sizeY / texHeight;
+		float texSizeZn = sizeZ / texHeight;
+		float texSizeFixX = (sizeX - 1.0f / 256.0f) / texWidth;
+		float texSizeFixY = (sizeY - 1.0f / 256.0f) / texHeight;
+		float texSizeFixZ = (sizeZ - 1.0f / 256.0f) / texHeight;
+
+		// Pre-calculate all face UVs (matching MineImator's block UV layout)
+		var texSouth1 = new Vector2(texU, texV);
+		var texSouth2 = new Vector2(texU + texSizeFixX, texV);
+		var texSouth3 = new Vector2(texU + texSizeFixX, texV + texSizeFixZ);
+		var texSouth4 = new Vector2(texU, texV + texSizeFixZ);
+
+		var texEast1 = new Vector2(texU + texSizeXn, texV);
+		var texEast2 = new Vector2(texU + texSizeXn + texSizeFixY, texV);
+		var texEast3 = new Vector2(texU + texSizeXn + texSizeFixY, texV + texSizeFixZ);
+		var texEast4 = new Vector2(texU + texSizeXn, texV + texSizeFixZ);
+
+		var texWest1 = new Vector2(texU - texSizeYn, texV);
+		var texWest2 = new Vector2(texU - texSizeYn + texSizeFixY, texV);
+		var texWest3 = new Vector2(texU - texSizeYn + texSizeFixY, texV + texSizeFixZ);
+		var texWest4 = new Vector2(texU - texSizeYn, texV + texSizeFixZ);
+
+		var texNorth1 = new Vector2(texU + texSizeXn + texSizeYn, texV);
+		var texNorth2 = new Vector2(texU + texSizeXn + texSizeYn + texSizeFixX, texV);
+		var texNorth3 = new Vector2(texU + texSizeXn + texSizeYn + texSizeFixX, texV + texSizeFixZ);
+		var texNorth4 = new Vector2(texU + texSizeXn + texSizeYn, texV + texSizeFixZ);
+
+		var texUp1 = new Vector2(texU, texV - texSizeYn);
+		var texUp2 = new Vector2(texU + texSizeFixX, texV - texSizeYn);
+		var texUp3 = new Vector2(texU + texSizeFixX, texV - texSizeYn + texSizeFixY);
+		var texUp4 = new Vector2(texU, texV - texSizeYn + texSizeFixY);
+
+		var texDown4 = new Vector2(texU + texSizeXn, texV - texSizeYn);
+		var texDown3 = new Vector2(texU + texSizeXn + texSizeFixX, texV - texSizeYn);
+		var texDown2 = new Vector2(texU + texSizeXn + texSizeFixX, texV - texSizeYn + texSizeFixY);
+		var texDown1 = new Vector2(texU + texSizeXn, texV - texSizeYn + texSizeFixY);
+
+		// Apply texture mirror
+		if (textureMirror)
+		{
+			(texEast1, texWest1) = (texWest1, texEast1);
+			(texEast2, texWest2) = (texWest2, texEast2);
+			(texEast3, texWest3) = (texWest3, texEast3);
+			(texEast4, texWest4) = (texWest4, texEast4);
+			(texEast1, texEast2) = (texEast2, texEast1);
+			(texEast3, texEast4) = (texEast4, texEast3);
+			(texWest1, texWest2) = (texWest2, texWest1);
+			(texWest3, texWest4) = (texWest4, texWest3);
+			(texSouth1, texSouth2) = (texSouth2, texSouth1);
+			(texSouth3, texSouth4) = (texSouth4, texSouth3);
+			(texNorth1, texNorth2) = (texNorth2, texNorth1);
+			(texNorth3, texNorth4) = (texNorth4, texNorth3);
+			(texUp1, texUp2) = (texUp2, texUp1);
+			(texUp3, texUp4) = (texUp4, texUp3);
+			(texDown1, texDown2) = (texDown2, texDown1);
+			(texDown3, texDown4) = (texDown4, texDown3);
+		}
+
+		// Set up initial points, start/end face UVs based on segment axis
+		Vector3 p1, p2, p3, p4;
+		Vector2 texStart1, texStart2, texStart3, texStart4;
+		Vector2 texEnd1, texEnd2, texEnd3, texEnd4;
+
+		if (segAxis == 0) // X axis (left/right bending)
+		{
+			p1 = new Vector3(min.X, min.Y, max.Z);
+			p2 = new Vector3(min.X, max.Y, max.Z);
+			p3 = new Vector3(min.X, max.Y, min.Z);
+			p4 = new Vector3(min.X, min.Y, min.Z);
+			texStart1 = texWest1; texStart2 = texWest2; texStart3 = texWest3; texStart4 = texWest4;
+			texEnd1 = texEast1; texEnd2 = texEast2; texEnd3 = texEast3; texEnd4 = texEast4;
+		}
+		else if (segAxis == 1) // Y axis (front/back bending)
+		{
+			p1 = new Vector3(max.X, min.Y, max.Z);
+			p2 = new Vector3(min.X, min.Y, max.Z);
+			p3 = new Vector3(min.X, min.Y, min.Z);
+			p4 = new Vector3(max.X, min.Y, min.Z);
+			texStart1 = texNorth1; texStart2 = texNorth2; texStart3 = texNorth3; texStart4 = texNorth4;
+			texEnd1 = texSouth1; texEnd2 = texSouth2; texEnd3 = texSouth3; texEnd4 = texSouth4;
+		}
+		else // Z axis (upper/lower bending)
+		{
+			p1 = new Vector3(min.X, max.Y, min.Z);
+			p2 = new Vector3(max.X, max.Y, min.Z);
+			p3 = new Vector3(max.X, min.Y, min.Z);
+			p4 = new Vector3(min.X, min.Y, min.Z);
+			texStart1 = texDown1; texStart2 = texDown2; texStart3 = texDown3; texStart4 = texDown4;
+			texEnd1 = texUp1; texEnd2 = texUp2; texEnd3 = texUp3; texEnd4 = texUp4;
+		}
+
+		// Helper to compute the bend matrix for a given segment position
+		Transform3D ComputeSegmentBendMatrix(float segPos)
+		{
+			float weight = BendHelper.CalculateBendWeight(segPos, bendStart, bendEnd, actualBendSize, config.Part);
+			Vector3 easedBend = BendHelper.GetBendVector(bendAngles, weight);
+
+			// Scale includes Z-fighting prevention: scale increases with weight
+			Vector3 matScale = Vector3.One + new Vector3(weight * scalef, weight * scalef, weight * scalef);
+
+			return BendHelper.GetShapeBendMatrix(config, easedBend, matScale);
+		}
+
+		// Apply initial bend transform to starting points
+		Transform3D startMat = ComputeSegmentBendMatrix(0);
+		p1 = startMat * p1;
+		p2 = startMat * p2;
+		p3 = startMat * p3;
+		p4 = startMat * p4;
+
+		// Generate segments
+		float segPos = 0.0f;
+
+		while (true)
+		{
+			// Check if we've reached the end
+			if (segPos >= sizeAlongAxis - 0.0001f)
+			{
+				// Add end face
+				int baseIdx = vertices.Count;
+				vertices.Add(p1); vertices.Add(p2); vertices.Add(p3); vertices.Add(p4);
+
+				Vector3 faceNormal = (p2 - p1).Cross(p4 - p1).Normalized();
+				normals.Add(faceNormal); normals.Add(faceNormal); normals.Add(faceNormal); normals.Add(faceNormal);
+
+				uvs.Add(texEnd1); uvs.Add(texEnd2); uvs.Add(texEnd3); uvs.Add(texEnd4);
+
+				if (invert)
+				{
+					indices.Add(baseIdx + 2); indices.Add(baseIdx + 1); indices.Add(baseIdx + 0);
+					indices.Add(baseIdx + 3); indices.Add(baseIdx + 2); indices.Add(baseIdx + 0);
+				}
+				else
+				{
+					indices.Add(baseIdx + 0); indices.Add(baseIdx + 1); indices.Add(baseIdx + 2);
+					indices.Add(baseIdx + 0); indices.Add(baseIdx + 2); indices.Add(baseIdx + 3);
+				}
+				break;
+			}
+
+			// Add start face for first segment
+			if (segPos < 0.001f)
+			{
+				int baseIdx = vertices.Count;
+				vertices.Add(p1); vertices.Add(p2); vertices.Add(p3); vertices.Add(p4);
+
+				Vector3 faceNormal = (p2 - p1).Cross(p4 - p1).Normalized();
+				normals.Add(faceNormal); normals.Add(faceNormal); normals.Add(faceNormal); normals.Add(faceNormal);
+
+				uvs.Add(texStart1); uvs.Add(texStart2); uvs.Add(texStart3); uvs.Add(texStart4);
+
+				if (invert)
+				{
+					indices.Add(baseIdx + 0); indices.Add(baseIdx + 1); indices.Add(baseIdx + 2);
+					indices.Add(baseIdx + 0); indices.Add(baseIdx + 2); indices.Add(baseIdx + 3);
+				}
+				else
+				{
+					indices.Add(baseIdx + 2); indices.Add(baseIdx + 1); indices.Add(baseIdx + 0);
+					indices.Add(baseIdx + 3); indices.Add(baseIdx + 2); indices.Add(baseIdx + 0);
+				}
+			}
+
+			// Calculate segment size (matching MineImator's logic)
+			float segSize;
+			if (segPos < bendStart)
+			{
+				segSize = Math.Min(sizeAlongAxis - segPos, bendStart - segPos);
+			}
+			else if (segPos >= bendEnd)
+			{
+				segSize = sizeAlongAxis - segPos;
+			}
+			else
+			{
+				segSize = bendSegSize;
+				if (segPos == 0)
+					segSize -= (shapeFromAlongAxis - bendStart) % bendSegSize;
+				segSize = Math.Min(segSize, sizeAlongAxis - segPos);
+			}
+			segSize = Math.Max(segSize, 0.005f);
+
+			// Advance position
+			segPos += segSize;
+
+			// Calculate next points (un-transformed)
+			Vector3 np1, np2, np3, np4;
+
+			if (segAxis == 0) // X axis
+			{
+				np1 = new Vector3(min.X + segPos, min.Y, max.Z);
+				np2 = new Vector3(min.X + segPos, max.Y, max.Z);
+				np3 = new Vector3(min.X + segPos, max.Y, min.Z);
+				np4 = new Vector3(min.X + segPos, min.Y, min.Z);
+			}
+			else if (segAxis == 1) // Y axis
+			{
+				np1 = new Vector3(max.X, min.Y + segPos, max.Z);
+				np2 = new Vector3(min.X, min.Y + segPos, max.Z);
+				np3 = new Vector3(min.X, min.Y + segPos, min.Z);
+				np4 = new Vector3(max.X, min.Y + segPos, min.Z);
+			}
+			else // Z axis
+			{
+				np1 = new Vector3(min.X, max.Y, min.Z + segPos);
+				np2 = new Vector3(max.X, max.Y, min.Z + segPos);
+				np3 = new Vector3(max.X, min.Y, min.Z + segPos);
+				np4 = new Vector3(min.X, min.Y, min.Z + segPos);
+			}
+
+			// Apply bend transform to next points
+			Transform3D nextMat = ComputeSegmentBendMatrix(segPos);
+			np1 = nextMat * np1;
+			np2 = nextMat * np2;
+			np3 = nextMat * np3;
+			np4 = nextMat * np4;
+
+			// Add side faces between current and next points
+			AddBentSideFaces(vertices, normals, uvs, indices, p1, p2, p3, p4, np1, np2, np3, np4,
+				segPos / sizeAlongAxis, texSizeFixX, texSizeFixY, texSizeFixZ, segAxis, invert);
+
+			// Update current points
+			p1 = np1; p2 = np2; p3 = np3; p4 = np4;
+		}
+
+		// Create the mesh
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
+		arrays[(int)Mesh.ArrayType.Normal] = normals.ToArray();
+		arrays[(int)Mesh.ArrayType.TexUV] = uvs.ToArray();
+		arrays[(int)Mesh.ArrayType.Index] = indices.ToArray();
+
+		var arrayMesh = new ArrayMesh();
+		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+
+		var meshInstance = new MeshInstance3D();
+		meshInstance.Mesh = arrayMesh;
+
+		return meshInstance;
+	}
+	
+	/// <summary>
+	/// Adds the 4 side faces between two segment cross-sections
+	/// </summary>
+	private void AddBentSideFaces(List<Vector3> vertices, List<Vector3> normals, List<Vector2> uvs, List<int> indices,
+		Vector3 p1, Vector3 p2, Vector3 p3, Vector3 p4, Vector3 np1, Vector3 np2, Vector3 np3, Vector3 np4,
+		float texOffset, float texSizeX, float texSizeY, float texSizeZ, int segAxis, bool invert)
+	{
+		// Add 4 side faces
+		// The faces depend on which axis we're segmenting along
+		
+		if (segAxis == 0) // X axis segmentation
+		{
+			// South face (Y+ side, toward max.Y)
+			AddQuadWithCalculatedNormal(vertices, normals, uvs, indices,
+				p2, np2, np3, p3,
+				new Vector2(texOffset, 0),
+				new Vector2(texOffset + texSizeX, 0),
+				new Vector2(texOffset + texSizeX, texSizeY),
+				new Vector2(texOffset, texSizeY),
+				invert);
+			
+			// North face (Y- side, toward min.Y)
+			AddQuadWithCalculatedNormal(vertices, normals, uvs, indices,
+				np1, p1, p4, np4,
+				new Vector2(texOffset, 0),
+				new Vector2(texOffset + texSizeX, 0),
+				new Vector2(texOffset + texSizeX, texSizeY),
+				new Vector2(texOffset, texSizeY),
+				invert);
+			
+			// Up face (Z+ side)
+			AddQuadWithCalculatedNormal(vertices, normals, uvs, indices,
+				p1, np1, np2, p2,
+				new Vector2(texOffset, 0),
+				new Vector2(texOffset + texSizeX, 0),
+				new Vector2(texOffset + texSizeX, texSizeZ),
+				new Vector2(texOffset, texSizeZ),
+				invert);
+			
+			// Down face (Z- side)
+			AddQuadWithCalculatedNormal(vertices, normals, uvs, indices,
+				np4, p4, p3, np3,
+				new Vector2(texOffset, 0),
+				new Vector2(texOffset + texSizeX, 0),
+				new Vector2(texOffset + texSizeX, texSizeZ),
+				new Vector2(texOffset, texSizeZ),
+				invert);
+		}
+		else if (segAxis == 1) // Y axis segmentation
+		{
+			// East face (X+ side)
+			AddQuadWithCalculatedNormal(vertices, normals, uvs, indices,
+				p1, np1, np4, p4,
+				new Vector2(texOffset, 0),
+				new Vector2(texOffset + texSizeX, 0),
+				new Vector2(texOffset + texSizeX, texSizeZ),
+				new Vector2(texOffset, texSizeZ),
+				invert);
+			
+			// West face (X- side)
+			AddQuadWithCalculatedNormal(vertices, normals, uvs, indices,
+				np2, p2, p3, np3,
+				new Vector2(texOffset, 0),
+				new Vector2(texOffset + texSizeX, 0),
+				new Vector2(texOffset + texSizeX, texSizeZ),
+				new Vector2(texOffset, texSizeZ),
+				invert);
+			
+			// Front face (Z+ side)
+			AddQuadWithCalculatedNormal(vertices, normals, uvs, indices,
+				p2, np2, np1, p1,
+				new Vector2(texOffset, 0),
+				new Vector2(texOffset + texSizeX, 0),
+				new Vector2(texOffset + texSizeX, texSizeZ),
+				new Vector2(texOffset, texSizeZ),
+				invert);
+			
+			// Back face (Z- side)
+			AddQuadWithCalculatedNormal(vertices, normals, uvs, indices,
+				np4, p4, p3, np3,
+				new Vector2(texOffset, 0),
+				new Vector2(texOffset + texSizeX, 0),
+				new Vector2(texOffset + texSizeX, texSizeZ),
+				new Vector2(texOffset, texSizeZ),
+				invert);
+		}
+		else // Z axis segmentation
+		{
+			// East face (X+ side)
+			AddQuadWithCalculatedNormal(vertices, normals, uvs, indices,
+				p2, np2, np3, p3,
+				new Vector2(texOffset, 0),
+				new Vector2(texOffset + texSizeX, 0),
+				new Vector2(texOffset + texSizeX, texSizeY),
+				new Vector2(texOffset, texSizeY),
+				invert);
+			
+			// West face (X- side)
+			AddQuadWithCalculatedNormal(vertices, normals, uvs, indices,
+				np1, p1, p4, np4,
+				new Vector2(texOffset, 0),
+				new Vector2(texOffset + texSizeX, 0),
+				new Vector2(texOffset + texSizeX, texSizeY),
+				new Vector2(texOffset, texSizeY),
+				invert);
+			
+			// North face (Y+ side)
+			AddQuadWithCalculatedNormal(vertices, normals, uvs, indices,
+				p1, np1, np2, p2,
+				new Vector2(texOffset, 0),
+				new Vector2(texOffset + texSizeX, 0),
+				new Vector2(texOffset + texSizeX, texSizeY),
+				new Vector2(texOffset, texSizeY),
+				invert);
+			
+			// South face (Y- side)
+			AddQuadWithCalculatedNormal(vertices, normals, uvs, indices,
+				np4, p4, p3, np3,
+				new Vector2(texOffset, 0),
+				new Vector2(texOffset + texSizeX, 0),
+				new Vector2(texOffset + texSizeX, texSizeY),
+				new Vector2(texOffset, texSizeY),
+				invert);
+		}
+	}
+	
+	/// <summary>
+	/// Adds a quad with normal calculated from vertices
+	/// </summary>
+	private void AddQuadWithCalculatedNormal(List<Vector3> vertices, List<Vector3> normals, List<Vector2> uvs, List<int> indices,
+		Vector3 v1, Vector3 v2, Vector3 v3, Vector3 v4,
+		Vector2 uv1, Vector2 uv2, Vector2 uv3, Vector2 uv4,
+		bool invert)
+	{
+		int baseIdx = vertices.Count;
+		
+		vertices.Add(v1);
+		vertices.Add(v2);
+		vertices.Add(v3);
+		vertices.Add(v4);
+		
+		// Calculate normal from cross product
+		Vector3 edge1 = v2 - v1;
+		Vector3 edge2 = v4 - v1;
+		Vector3 normal = edge1.Cross(edge2).Normalized();
+		
+		normals.Add(normal);
+		normals.Add(normal);
+		normals.Add(normal);
+		normals.Add(normal);
+		
+		uvs.Add(uv1);
+		uvs.Add(uv2);
+		uvs.Add(uv3);
+		uvs.Add(uv4);
+		
+		if (invert)
+		{
+			indices.Add(baseIdx + 2);
+			indices.Add(baseIdx + 1);
+			indices.Add(baseIdx + 0);
+			indices.Add(baseIdx + 3);
+			indices.Add(baseIdx + 2);
+			indices.Add(baseIdx + 0);
+		}
+		else
+		{
+			indices.Add(baseIdx + 0);
+			indices.Add(baseIdx + 1);
+			indices.Add(baseIdx + 2);
+			indices.Add(baseIdx + 0);
+			indices.Add(baseIdx + 2);
+			indices.Add(baseIdx + 3);
+		}
+	}
+	
+	/// <summary>
+	/// Creates a bent plane mesh
+	/// </summary>
+	private MeshInstance3D CreateBentPlaneMesh(Vector3 from, Vector3 to, float uvU, float uvV,
+		float sizeX, float sizeY, int texWidth, int texHeight, 
+		bool textureMirror, bool invert, float inflate, MiBend bend, Vector3 shapeScale)
+	{
+		// For now, fall back to regular plane mesh
+		// Bent plane implementation would be similar to bent block but with only front/back faces
+		return CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, textureMirror, invert, inflate);
 	}
 	
 	/// <summary>
@@ -1368,6 +1930,10 @@ public class MiBend
 	[JsonNumberHandling(JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.AllowNamedFloatingPointLiterals)]
 	public float? Offset { get; set; }
 	
+	[JsonPropertyName("end_offset")]
+	[JsonNumberHandling(JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.AllowNamedFloatingPointLiterals)]
+	public float? EndOffset { get; set; }
+	
 	[JsonPropertyName("size")]
 	[JsonNumberHandling(JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.AllowNamedFloatingPointLiterals)]
 	public float? Size { get; set; }
@@ -1393,6 +1959,14 @@ public class MiBend
 	[JsonPropertyName("direction_max")]
 	[JsonConverter(typeof(SingleOrArrayConverter))]
 	public float[] DirectionMax { get; set; } // Can be single float or array of floats
+	
+	[JsonPropertyName("invert")]
+	[JsonConverter(typeof(BoolOrArrayConverter))]
+	public bool[] Invert { get; set; } // Can be single bool or array of bools
+	
+	[JsonPropertyName("angle")]
+	[JsonConverter(typeof(SingleOrArrayConverter))]
+	public float[] Angle { get; set; } // Can be single float or array of floats (default angle)
 }
 
 /// <summary>
@@ -1441,6 +2015,64 @@ public class SingleOrArrayConverter : JsonConverter<float[]>
 			foreach (var v in value)
 			{
 				writer.WriteNumberValue(v);
+			}
+			writer.WriteEndArray();
+		}
+	}
+}
+
+/// <summary>
+/// Custom JSON converter that handles values that can be either a single bool or an array of bools
+/// </summary>
+public class BoolOrArrayConverter : JsonConverter<bool[]>
+{
+	public override bool[] Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+	{
+		if (reader.TokenType == JsonTokenType.True)
+		{
+			return new bool[] { true };
+		}
+		else if (reader.TokenType == JsonTokenType.False)
+		{
+			return new bool[] { false };
+		}
+		else if (reader.TokenType == JsonTokenType.StartArray)
+		{
+			var list = new List<bool>();
+			while (reader.Read())
+			{
+				if (reader.TokenType == JsonTokenType.EndArray)
+					break;
+				if (reader.TokenType == JsonTokenType.True)
+					list.Add(true);
+				else if (reader.TokenType == JsonTokenType.False)
+					list.Add(false);
+			}
+			return list.ToArray();
+		}
+		else if (reader.TokenType == JsonTokenType.Null)
+		{
+			return null;
+		}
+		throw new JsonException($"Unexpected token type {reader.TokenType} when parsing bool or bool array");
+	}
+
+	public override void Write(Utf8JsonWriter writer, bool[] value, JsonSerializerOptions options)
+	{
+		if (value == null)
+		{
+			writer.WriteNullValue();
+		}
+		else if (value.Length == 1)
+		{
+			writer.WriteBooleanValue(value[0]);
+		}
+		else
+		{
+			writer.WriteStartArray();
+			foreach (var v in value)
+			{
+				writer.WriteBooleanValue(v);
 			}
 			writer.WriteEndArray();
 		}

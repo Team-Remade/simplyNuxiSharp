@@ -1,4 +1,5 @@
 using Godot;
+using System;
 using System.Collections.Generic;
 
 namespace simplyRemadeNuxi.core;
@@ -183,25 +184,27 @@ public partial class CharacterSceneObject : SceneObject
 }
 
 /// <summary>
-/// Represents a single bone in a character's skeleton as a SceneObject
+/// Represents a single bone in a character's skeleton as a SceneObject.
+/// Supports MineImator-style bending where the mesh is deformed by segmenting
+/// it along a bend axis and rotating each segment.
 /// </summary>
 public partial class BoneSceneObject : SceneObject
 {
 	private Skeleton3D _skeleton;
 	private int _boneIdx;
-	
+
 	// Target position and rotation for bones - shows as zero in editor but keeps internal values
 	private Vector3 _targetPosition = Vector3.Zero;
 	private Vector3 _targetRotation = Vector3.Zero;
-	
+
 	// Store the base pose position and rotation (from bone rest pose)
 	private Vector3 _basePosePosition = Vector3.Zero;
 	private Vector3 _basePoseRotation = Vector3.Zero;
-	
+
 	// Store the internal "real" position and rotation
 	private Vector3 _internalPosition = Vector3.Zero;
 	private Vector3 _internalRotation = Vector3.Zero;
-	
+
 	// Alpha override for bones that control a single mesh
 	private float _alphaOverride = 1.0f;
 	public float AlphaOverride
@@ -213,9 +216,60 @@ public partial class BoneSceneObject : SceneObject
 			ApplyAlphaToControlledMesh();
 		}
 	}
-	
+
 	public int BoneIndex => _boneIdx;
 	public Skeleton3D Skeleton => _skeleton;
+
+	// ---- Bend system properties ----
+
+	/// <summary>
+	/// The bend configuration for this bone (null if this bone doesn't support bending).
+	/// Parsed from the MiBend data in the model file.
+	/// </summary>
+	public BendHelper.BendConfig BendConfig { get; set; }
+
+	/// <summary>
+	/// Whether this bone has bend support (has a valid BendConfig).
+	/// </summary>
+	public bool HasBend => BendConfig != null && BendConfig.Part != BendHelper.BendPart.None;
+
+	/// <summary>
+	/// Whether child parts should be locked to the bent half of this bone.
+	/// When true, children are transformed by the bend matrix.
+	/// Matches MineImator's lock_bend property.
+	/// </summary>
+	public bool LockBend { get; set; } = true;
+
+	/// <summary>
+	/// Whether this bone inherits bend angles from its parent.
+	/// Matches MineImator's inherit_bend property.
+	/// </summary>
+	public bool InheritBend { get; set; }
+
+	/// <summary>
+	/// The current bend angles in degrees (X, Y, Z).
+	/// These are the animated values that control the bend deformation.
+	/// Setting this will trigger mesh regeneration if the angles changed.
+	/// </summary>
+	private Vector3 _bendAngles = Vector3.Zero;
+	public Vector3 BendAngles
+	{
+		get => _bendAngles;
+		set
+		{
+			if (_bendAngles != value)
+			{
+				_bendAngles = value;
+				OnBendAnglesChanged();
+			}
+		}
+	}
+
+	/// <summary>
+	/// The inherited bend angles (accumulated from parent bones).
+	/// This is the final bend angle used for mesh deformation.
+	/// </summary>
+	public Vector3 InheritedBendAngles { get; private set; } = Vector3.Zero;
 	
 	/// <summary>
 	/// Override Position to show TargetPosition (offset from base pose) in the editor
@@ -386,12 +440,60 @@ public partial class BoneSceneObject : SceneObject
 	}
 	
 	/// <summary>
+	/// Called when bend angles change. Updates the inherited bend angles
+	/// and could trigger mesh regeneration in the future.
+	/// </summary>
+	private void OnBendAnglesChanged()
+	{
+		UpdateInheritedBendAngles();
+		// TODO: In the future, regenerate bent meshes here when runtime bend animation is supported.
+		// For now, the default bend angles are baked into the mesh at load time.
+	}
+
+	/// <summary>
+	/// Updates the inherited bend angles by accumulating from parent bones.
+	/// Matches MineImator's tl_update_matrix bend inheritance logic.
+	/// </summary>
+	public void UpdateInheritedBendAngles()
+	{
+		InheritedBendAngles = _bendAngles;
+
+		// Walk up the parent chain and accumulate bend angles from parents
+		// that have inherit_bend enabled
+		var current = this as SceneObject;
+		while (current != null)
+		{
+			var parent = current.GetParent() as BoneSceneObject;
+			if (parent == null) break;
+
+			if (!InheritBend) break;
+
+			InheritedBendAngles += parent.BendAngles;
+			current = parent;
+		}
+	}
+
+	/// <summary>
+	/// Gets the bend transformation matrix for positioning child parts.
+	/// This is used when lock_bend is true on a child part.
+	/// Matches MineImator's model_part_get_bend_matrix called from tl_update_matrix.
+	/// </summary>
+	/// <returns>The bend transform matrix, or Identity if no bend</returns>
+	public Transform3D GetBendTransformForChildren()
+	{
+		if (!HasBend)
+			return Transform3D.Identity;
+
+		return BendHelper.GetBendPartMatrix(BendConfig, InheritedBendAngles, Vector3.Zero);
+	}
+
+	/// <summary>
 	/// Called when this bone is transformed
 	/// </summary>
 	public override void _Process(double delta)
 	{
 		base._Process(delta);
-		
+
 		// Continuously update skeleton from bone transforms during editing
 		// This allows real-time manipulation of the character
 		UpdateSkeleton();
