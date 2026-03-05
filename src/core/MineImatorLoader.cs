@@ -113,7 +113,7 @@ public class MineImatorLoader
 		// Create BoneSceneObjects for each bone first
 		CreateBoneSceneObjects(character, skeleton);
 
-		// Configure bend data on BoneSceneObjects and add meshes
+		// First pass: Configure bend data on all BoneSceneObjects
 		foreach (var (part, boneIdx, parentIdx, accumulatedParentScale) in boneDataList)
 		{
 			string boneName = skeleton.GetBoneName(boneIdx);
@@ -139,6 +139,20 @@ public class MineImatorLoader
 					);
 				}
 			}
+		}
+
+		// Second pass: Update all inherited bend angles now that hierarchy is complete
+		foreach (var boneObject in character.BoneObjects.Values)
+		{
+			boneObject.UpdateInheritedBendAngles();
+		}
+
+		// Third pass: Add meshes to BoneSceneObjects with correct bend angles
+		foreach (var (part, boneIdx, parentIdx, accumulatedParentScale) in boneDataList)
+		{
+			string boneName = skeleton.GetBoneName(boneIdx);
+			if (!character.BoneObjects.TryGetValue(boneName, out var boneObject))
+				continue;
 
 			// Add meshes to the BoneSceneObject
 			if (part.Shapes != null && part.Shapes.Count > 0)
@@ -1163,16 +1177,264 @@ public class MineImatorLoader
 	}
 	
 	/// <summary>
-	/// Creates a bent plane mesh
+	/// Creates a bent plane mesh by segmenting it along the bend axis and applying transformations.
+	/// This replicates MineImator's model_shape_generate_plane function.
 	/// </summary>
 	private MeshInstance3D CreateBentPlaneMesh(Vector3 from, Vector3 to, float uvU, float uvV,
-		float sizeX, float sizeY, int texWidth, int texHeight, 
+		float sizeX, float sizeY, int texWidth, int texHeight,
 		bool textureMirror, bool invert, float inflate, BendHelper.BendConfig config, Vector3 bendAngles, Vector3 shapeScale)
 	{
-		// For now, fall back to regular plane mesh
-		// Bent plane implementation would be similar to bent block but with only front/back faces
-		// TODO: Implement bent plane mesh deformation
-		return CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, textureMirror, invert, inflate);
+		var vertices = new List<Vector3>();
+		var normals = new List<Vector3>();
+		var uvs = new List<Vector2>();
+		var indices = new List<int>();
+
+		if (config == null)
+		{
+			return CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, textureMirror, invert, inflate);
+		}
+
+		int segAxis = BendHelper.GetSegmentAxis(config.Part);
+		float scalef = 0.005f;
+
+		float bendOffsetGodot = config.Offset / 16.0f;
+		float? bendSizeGodot = config.Size.HasValue ? config.Size.Value / 16.0f : null;
+
+		Vector3 min = new Vector3(
+			Math.Min(from.X, to.X),
+			Math.Min(from.Y, to.Y),
+			Math.Min(from.Z, to.Z)
+		);
+		Vector3 max = new Vector3(
+			Math.Max(from.X, to.X),
+			Math.Max(from.Y, to.Y),
+			Math.Max(from.Z, to.Z)
+		);
+
+		if (inflate != 0.0f)
+		{
+			min -= new Vector3(inflate, inflate, inflate);
+			max += new Vector3(inflate, inflate, inflate);
+		}
+
+		Vector3 size = max - min;
+		float sizeAlongAxis = size[segAxis];
+
+		float shapeFromAlongAxis = min[segAxis];
+		var (bendStart, bendEnd, actualBendSize) = BendHelper.GetBendZone(bendOffsetGodot, bendSizeGodot, shapeFromAlongAxis, realistic: true);
+
+		float scaleOnAxis = shapeScale[segAxis];
+		int detail = BendHelper.GetBendDetail(bendSizeGodot, realistic: true, scale: scaleOnAxis);
+		float bendSegSize = actualBendSize / detail;
+
+		bool isBent = false;
+		for (int i = 0; i < 3; i++)
+		{
+			if (config.Axis[i] && Math.Abs(bendAngles[i]) > 0.001f)
+			{
+				isBent = true;
+				break;
+			}
+		}
+
+		if (!isBent)
+		{
+			return CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, textureMirror, invert, inflate);
+		}
+
+		float texU = uvU / texWidth;
+		float texV = uvV / texHeight;
+		float texSizeX = sizeX / texWidth;
+		float texSizeY = sizeY / texHeight;
+		float texSizeFixX = (sizeX - 1.0f / 256.0f) / texWidth;
+		float texSizeFixY = (sizeY - 1.0f / 256.0f) / texHeight;
+
+		Vector3 p1, p2, p3, p4;
+		if (segAxis == 0) // X axis (left/right bending)
+		{
+			p1 = new Vector3(min.X, min.Y, max.Z);
+			p2 = new Vector3(min.X, max.Y, max.Z);
+			p3 = new Vector3(min.X, max.Y, min.Z);
+			p4 = new Vector3(min.X, min.Y, min.Z);
+		}
+		else if (segAxis == 1) // Y axis (front/back bending)
+		{
+			p1 = new Vector3(max.X, min.Y, max.Z);
+			p2 = new Vector3(min.X, min.Y, max.Z);
+			p3 = new Vector3(min.X, min.Y, min.Z);
+			p4 = new Vector3(max.X, min.Y, min.Z);
+		}
+		else // Z axis (upper/lower bending)
+		{
+			p1 = new Vector3(min.X, max.Y, min.Z);
+			p2 = new Vector3(max.X, max.Y, min.Z);
+			p3 = new Vector3(max.X, min.Y, min.Z);
+			p4 = new Vector3(min.X, min.Y, min.Z);
+		}
+
+		Transform3D ComputeSegmentBendMatrix(float segPos)
+		{
+			float weight = BendHelper.CalculateBendWeight(segPos, bendStart, bendEnd, actualBendSize, config.Part);
+			Vector3 easedBend = BendHelper.GetBendVector(bendAngles, weight);
+			Vector3 matScale = Vector3.One + new Vector3(weight * scalef, weight * scalef, weight * scalef);
+			return BendHelper.GetShapeBendMatrix(config, easedBend, matScale);
+		}
+
+		Transform3D startMat = ComputeSegmentBendMatrix(0);
+		p1 = startMat * p1;
+		p2 = startMat * p2;
+		p3 = startMat * p3;
+		p4 = startMat * p4;
+
+		float segPos = 0.0f;
+
+		while (true)
+		{
+			if (segPos >= sizeAlongAxis - 0.0001f)
+			{
+				int baseIdx = vertices.Count;
+				vertices.Add(p1); vertices.Add(p2); vertices.Add(p3); vertices.Add(p4);
+
+				Vector3 faceNormal = (p2 - p1).Cross(p4 - p1).Normalized();
+				normals.Add(faceNormal); normals.Add(faceNormal); normals.Add(faceNormal); normals.Add(faceNormal);
+
+				uvs.Add(new Vector2(texU, texV));
+				uvs.Add(new Vector2(texU + texSizeFixX, texV));
+				uvs.Add(new Vector2(texU + texSizeFixX, texV + texSizeFixY));
+				uvs.Add(new Vector2(texU, texV + texSizeFixY));
+
+				if (invert)
+				{
+					indices.Add(baseIdx + 2); indices.Add(baseIdx + 1); indices.Add(baseIdx + 0);
+					indices.Add(baseIdx + 3); indices.Add(baseIdx + 2); indices.Add(baseIdx + 0);
+				}
+				else
+				{
+					indices.Add(baseIdx + 0); indices.Add(baseIdx + 1); indices.Add(baseIdx + 2);
+					indices.Add(baseIdx + 0); indices.Add(baseIdx + 2); indices.Add(baseIdx + 3);
+				}
+				break;
+			}
+
+			if (segPos < 0.001f)
+			{
+				int baseIdx = vertices.Count;
+				vertices.Add(p1); vertices.Add(p2); vertices.Add(p3); vertices.Add(p4);
+
+				Vector3 faceNormal = (p2 - p1).Cross(p4 - p1).Normalized();
+				normals.Add(faceNormal); normals.Add(faceNormal); normals.Add(faceNormal); normals.Add(faceNormal);
+
+				uvs.Add(new Vector2(texU, texV));
+				uvs.Add(new Vector2(texU + texSizeFixX, texV));
+				uvs.Add(new Vector2(texU + texSizeFixX, texV + texSizeFixY));
+				uvs.Add(new Vector2(texU, texV + texSizeFixY));
+
+				if (invert)
+				{
+					indices.Add(baseIdx + 0); indices.Add(baseIdx + 1); indices.Add(baseIdx + 2);
+					indices.Add(baseIdx + 0); indices.Add(baseIdx + 2); indices.Add(baseIdx + 3);
+				}
+				else
+				{
+					indices.Add(baseIdx + 2); indices.Add(baseIdx + 1); indices.Add(baseIdx + 0);
+					indices.Add(baseIdx + 3); indices.Add(baseIdx + 2); indices.Add(baseIdx + 0);
+				}
+			}
+
+			float segSize;
+			if (segPos < bendStart)
+			{
+				segSize = Math.Min(sizeAlongAxis - segPos, bendStart - segPos);
+			}
+			else if (segPos >= bendEnd)
+			{
+				segSize = sizeAlongAxis - segPos;
+			}
+			else
+			{
+				segSize = bendSegSize;
+				if (segPos == 0)
+					segSize -= (shapeFromAlongAxis - bendStart) % bendSegSize;
+				segSize = Math.Min(segSize, sizeAlongAxis - segPos);
+			}
+			segSize = Math.Max(segSize, 0.005f);
+
+			segPos += segSize;
+
+			Vector3 np1, np2, np3, np4;
+			if (segAxis == 0) // X axis
+			{
+				np1 = new Vector3(min.X + segPos, min.Y, max.Z);
+				np2 = new Vector3(min.X + segPos, max.Y, max.Z);
+				np3 = new Vector3(min.X + segPos, max.Y, min.Z);
+				np4 = new Vector3(min.X + segPos, min.Y, min.Z);
+			}
+			else if (segAxis == 1) // Y axis
+			{
+				np1 = new Vector3(max.X, min.Y + segPos, max.Z);
+				np2 = new Vector3(min.X, min.Y + segPos, max.Z);
+				np3 = new Vector3(min.X, min.Y + segPos, min.Z);
+				np4 = new Vector3(max.X, min.Y + segPos, min.Z);
+			}
+			else // Z axis
+			{
+				np1 = new Vector3(min.X, max.Y, min.Z + segPos);
+				np2 = new Vector3(max.X, max.Y, min.Z + segPos);
+				np3 = new Vector3(max.X, min.Y, min.Z + segPos);
+				np4 = new Vector3(min.X, min.Y, min.Z + segPos);
+			}
+
+			Transform3D nextMat = ComputeSegmentBendMatrix(segPos);
+			np1 = nextMat * np1;
+			np2 = nextMat * np2;
+			np3 = nextMat * np3;
+			np4 = nextMat * np4;
+
+			AddBentPlaneSideFaces(vertices, normals, uvs, indices, p1, p2, p3, p4, np1, np2, np3, np4,
+				segPos / sizeAlongAxis, texSizeFixX, texSizeFixY, segAxis, invert);
+
+			p1 = np1; p2 = np2; p3 = np3; p4 = np4;
+		}
+
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
+		arrays[(int)Mesh.ArrayType.Normal] = normals.ToArray();
+		arrays[(int)Mesh.ArrayType.TexUV] = uvs.ToArray();
+		arrays[(int)Mesh.ArrayType.Index] = indices.ToArray();
+
+		var arrayMesh = new ArrayMesh();
+		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+
+		var meshInstance = new MeshInstance3D();
+		meshInstance.Mesh = arrayMesh;
+
+		return meshInstance;
+	}
+
+	/// <summary>
+	/// Adds the side faces between two segment cross-sections for a plane
+	/// </summary>
+	private void AddBentPlaneSideFaces(List<Vector3> vertices, List<Vector3> normals, List<Vector2> uvs, List<int> indices,
+		Vector3 p1, Vector3 p2, Vector3 p3, Vector3 p4, Vector3 np1, Vector3 np2, Vector3 np3, Vector3 np4,
+		float texOffset, float texSizeX, float texSizeY, int segAxis, bool invert)
+	{
+		// A plane has only 2 side faces (front and back), but since it's a single face, we just need to connect the segments
+		AddQuadWithCalculatedNormal(vertices, normals, uvs, indices,
+			p1, np1, np2, p2,
+			new Vector2(0, 0),
+			new Vector2(texSizeX, 0),
+			new Vector2(texSizeX, texSizeY),
+			new Vector2(0, texSizeY),
+			invert);
+
+		AddQuadWithCalculatedNormal(vertices, normals, uvs, indices,
+			np3, p3, p4, np4,
+			new Vector2(texSizeX, texSizeY),
+			new Vector2(0, texSizeY),
+			new Vector2(0, 0),
+			new Vector2(texSizeX, 0),
+			invert);
 	}
 	
 	/// <summary>
