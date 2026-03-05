@@ -6,8 +6,8 @@ For all your Minecraft animation needs!
 
 Requirements
 
-- Dotnet 8.0+
-- Godot 4.6 Mono
+- Dotnet 9.0+
+- Godot 4.6.1 Mono
 
 ## Contributing
 
