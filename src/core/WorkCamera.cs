@@ -94,8 +94,6 @@ public partial class WorkCamera : Camera3D
 			if (SelectionManager.Instance?.Gizmo != null)
 			{
 				SelectionManager.Instance.Gizmo.UseLocalSpace = !SelectionManager.Instance.Gizmo.UseLocalSpace;
-				string mode = SelectionManager.Instance.Gizmo.UseLocalSpace ? "Local" : "Global";
-				GD.Print($"Transform mode: {mode}");
 			}
 		}
 

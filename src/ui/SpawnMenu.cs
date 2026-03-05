@@ -244,11 +244,6 @@ public partial class SpawnMenu : PopupPanel
 		if (blocks.Count > 0)
 		{
 			_categories["Blocks"] = blocks;
-			GD.Print($"Added {blocks.Count} Minecraft blocks to spawn menu from blockstates");
-		}
-		else
-		{
-			GD.Print("No Minecraft blockstates found");
 		}
 	}
 	
@@ -286,11 +281,6 @@ public partial class SpawnMenu : PopupPanel
 		if (items.Count > 0)
 		{
 			_categories["Items"] = items;
-			GD.Print($"Added {items.Count} Minecraft texture items to spawn menu");
-		}
-		else
-		{
-			GD.Print("No Minecraft textures found");
 		}
 	}
 	
@@ -308,11 +298,6 @@ public partial class SpawnMenu : PopupPanel
 		if (characters.Count > 0)
 		{
 			_categories["Characters"] = characters;
-			GD.Print($"Added {characters.Count} characters to spawn menu");
-		}
-		else
-		{
-			GD.Print("No character GLB files found");
 		}
 	}
 	
@@ -334,7 +319,6 @@ public partial class SpawnMenu : PopupPanel
 	private void OnTextureTypeSelected(long index)
 	{
 		_selectedTextureType = index == 0 ? "block" : "item";
-		GD.Print($"Texture type changed to: {_selectedTextureType}");
 		
 		// Reload the Items category with the new texture type
 		ReloadTextureItems();
@@ -453,8 +437,6 @@ public partial class SpawnMenu : PopupPanel
 		_selectedObjectIndex = (int)index;
 		_selectedVariantIndex = -1;
 		
-		GD.Print($"Selected object index: {index}, category: {_selectedCategory}");
-		
 		// Check if this is the "Load..." option in Custom Models
 		if (_selectedCategory == "Custom Models")
 		{
@@ -480,7 +462,6 @@ public partial class SpawnMenu : PopupPanel
 		if (_selectedCategory == "Blocks")
 		{
 			var objectName = _objectList.GetItemText((int)index);
-			GD.Print($"Selected block: {objectName}");
 			UpdateVariantList(objectName);
 			// Don't set disabled here - let UpdateVariantList handle it
 		}
@@ -489,14 +470,12 @@ public partial class SpawnMenu : PopupPanel
 			// For texture items, no variant selection needed
 			_variantList.Clear();
 			_spawnButton.Disabled = false;
-			GD.Print("Texture item selected - button enabled");
 		}
 		else
 		{
 			// For primitives, no variant selection needed
 			_variantList.Clear();
 			_spawnButton.Disabled = false;
-			GD.Print("Primitive selected - button enabled");
 		}
 	}
 	
@@ -547,12 +526,8 @@ public partial class SpawnMenu : PopupPanel
 		// Convert display name back to file name format
 		var fileName = blockName.ToLower().Replace(" ", "_");
 		
-		GD.Print($"Loading variants for blockstate: {fileName}");
-		
 		// Get variants for this blockstate
 		var variants = MinecraftModelHelper.GetBlockStateVariants(fileName);
-		
-		GD.Print($"Found {variants?.Count ?? 0} variants");
 		
 		if (variants != null && variants.Count > 0)
 		{
@@ -569,14 +544,12 @@ public partial class SpawnMenu : PopupPanel
 				_variantList.Select(0);
 				_selectedVariantIndex = 0;
 				_spawnButton.Disabled = false;
-				GD.Print("Spawn button enabled with variant auto-selected");
 			}
 		}
 		else
 		{
 			_variantList.AddItem("(No variants found)");
 			_spawnButton.Disabled = true;
-			GD.Print("No variants found - spawn button disabled");
 		}
 		
 		_selectedBlockState = fileName;
@@ -604,8 +577,6 @@ public partial class SpawnMenu : PopupPanel
 			GD.PrintErr("Viewport not set for SpawnMenu");
 			return;
 		}
-		
-		GD.Print($"Spawning object: {objectName}");
 		
 		// Get the next available number for this object type
 		int nextNumber = GetNextAvailableObjectNumber(objectName);
@@ -641,7 +612,6 @@ public partial class SpawnMenu : PopupPanel
 			if (workCamera != null)
 			{
 				cameraObject.GlobalTransform = workCamera.GlobalTransform;
-				GD.Print($"Camera spawned at work camera position: {workCamera.GlobalPosition}");
 			}
 			else
 			{
@@ -769,7 +739,6 @@ public partial class SpawnMenu : PopupPanel
 		
 		if (blockNode != null)
 		{
-			GD.Print($"Successfully created Minecraft block: {blockName} (variant: {(string.IsNullOrEmpty(variant) ? "default" : variant)})");
 			return blockNode;
 		}
 		
@@ -848,7 +817,6 @@ public partial class SpawnMenu : PopupPanel
 		var fileName = itemName.ToLower().Replace(" ", "_");
 		
 		bool create3DPlane = _spawn3DPlaneCheckbox.ButtonPressed;
-		GD.Print($"Creating texture plane for: {fileName} (type: {_selectedTextureType}, 3D: {create3DPlane})");
 		
 		// Get the texture from the texture loader
 		var textureLoader = MinecraftTextureLoader.Instance;
@@ -912,7 +880,6 @@ public partial class SpawnMenu : PopupPanel
 			resultNode = meshInstance;
 		}
 		
-		GD.Print($"Successfully created texture plane for: {itemName}");
 		return resultNode;
 	}
 	
@@ -1103,8 +1070,6 @@ public partial class SpawnMenu : PopupPanel
 	
 	private void CreateCharacter(string characterName, string fullObjectName)
 	{
-		GD.Print($"Creating character: {characterName}");
-		
 		// Get the character GLB path
 		var characterLoader = CharacterLoader.Instance;
 		var glbPath = characterLoader.GetCharacterPath(characterName);
@@ -1120,8 +1085,6 @@ public partial class SpawnMenu : PopupPanel
 			GD.PrintErr($"GLB file does not exist: {glbPath}");
 			return;
 		}
-		
-		GD.Print($"Loading GLB from: {glbPath}");
 		
 		// Load the GLB file using Godot's gltf_document and gltf_state
 		var gltfDocument = new GltfDocument();
@@ -1152,8 +1115,6 @@ public partial class SpawnMenu : PopupPanel
 			return;
 		}
 		
-		GD.Print($"Successfully loaded GLB scene: {glbRoot3D.Name}");
-		
 		// Create a CharacterSceneObject
 		var characterObject = new CharacterSceneObject();
 		characterObject.Name = fullObjectName;
@@ -1173,14 +1134,10 @@ public partial class SpawnMenu : PopupPanel
 		{
 			main.SceneTreePanel.Refresh();
 		}
-		
-		GD.Print($"Character '{fullObjectName}' spawned successfully with {characterObject.BoneObjects.Count} bones");
 	}
 	
 	private void OpenCustomModelFileDialog()
 	{
-		GD.Print("Opening file dialog for custom 3D model...");
-		
 		NativeFileDialog.ShowOpenFile(
 			"Select 3D Model (GLB/GLTF/Mine Imator)",
 			NativeFileDialog.Filters.All3DModels,
@@ -1188,12 +1145,7 @@ public partial class SpawnMenu : PopupPanel
 			{
 				if (success && !string.IsNullOrEmpty(filePath))
 				{
-					GD.Print($"Selected 3D model file: {filePath}");
 					LoadAndSpawnCustomModel(filePath);
-				}
-				else
-				{
-					GD.Print("3D model file selection cancelled");
 				}
 			}
 		);
@@ -1206,8 +1158,6 @@ public partial class SpawnMenu : PopupPanel
 			GD.PrintErr($"Model file does not exist: {modelPath}");
 			return;
 		}
-		
-		GD.Print($"Loading custom 3D model from: {modelPath}");
 		
 		// Get a display name from the file
 		var fileName = System.IO.Path.GetFileNameWithoutExtension(modelPath);
@@ -1248,7 +1198,6 @@ public partial class SpawnMenu : PopupPanel
 			
 			if (hasSkeleton)
 			{
-				GD.Print("Model has skeleton - using CharacterSceneObject");
 				// Create a CharacterSceneObject for rigged models
 				var characterObject = new CharacterSceneObject();
 				characterObject.Name = fullObjectName;
@@ -1264,7 +1213,6 @@ public partial class SpawnMenu : PopupPanel
 			}
 			else
 			{
-				GD.Print("Model has no skeleton - using regular SceneObject");
 				// Create a regular SceneObject for static models
 				customModelObject = new SceneObject();
 				customModelObject.Name = fullObjectName;
@@ -1293,8 +1241,6 @@ public partial class SpawnMenu : PopupPanel
 		{
 			main.SceneTreePanel.Refresh();
 		}
-		
-		GD.Print($"Custom model '{fullObjectName}' spawned successfully");
 		
 		// Add to history
 		AddToCustomModelHistory(modelPath, displayName);
@@ -1337,7 +1283,6 @@ public partial class SpawnMenu : PopupPanel
 			return null;
 		}
 		
-		GD.Print($"Successfully loaded GLB scene: {glbRoot3D.Name}");
 		return glbRoot3D;
 	}
 	
@@ -1364,7 +1309,6 @@ public partial class SpawnMenu : PopupPanel
 			return null;
 		}
 		
-		GD.Print($"Successfully loaded Mine Imator model: {model.Name}");
 		return character;
 	}
 	
@@ -1421,8 +1365,6 @@ public partial class SpawnMenu : PopupPanel
 								}
 							}
 						}
-						
-						GD.Print($"Loaded {_customModelHistory.Count} custom models from history");
 					}
 				}
 			}
@@ -1476,8 +1418,6 @@ public partial class SpawnMenu : PopupPanel
 			
 			using var file = FileAccess.Open(CustomModelHistoryPath, FileAccess.ModeFlags.Write);
 			file.StoreString(jsonText);
-			
-			GD.Print($"Saved {_customModelHistory.Count} custom models to history");
 		}
 		catch (System.Exception ex)
 		{

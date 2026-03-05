@@ -57,7 +57,6 @@ public class MineImatorLoader
 			model.FullPath = modelPath;
 			
 			_modelCache[modelPath] = model;
-			GD.Print($"Loaded Mine Imator model: {model.Name}");
 			
 			return model;
 		}
@@ -154,21 +153,39 @@ public class MineImatorLoader
 				Vector3 accumulatedScale = accumulatedParentScale * partScaleVec;
 
 				int shapeIndex = 0;
+				BendHelper.BendConfig bendConfig = null;
+				if (part.Bend != null)
+				{
+					float[] partScale = part.Scale;
+					bendConfig = BendHelper.ParseBendConfig(part.Bend, partScale);
+				}
 				foreach (var shape in part.Shapes)
 				{
-					var meshInstance = CreateShapeMesh(part.Name, shapeIndex, shape, model, texture, accumulatedScale, part.Bend);
+					// Get shape position and rotation for bend calculations
+					Vector3 shapePosition = Vector3.Zero;
+					Vector3 shapeRotationDeg = Vector3.Zero;
+					if (shape.Position != null && shape.Position.Length >= 3)
+					{
+						shapePosition = new Vector3(shape.Position[0] / 16.0f, shape.Position[1] / 16.0f, shape.Position[2] / 16.0f);
+					}
+					if (shape.Rotation != null && shape.Rotation.Length >= 3)
+					{
+						shapeRotationDeg = new Vector3(shape.Rotation[0], shape.Rotation[1], shape.Rotation[2]);
+					}
+					
+					// Use inherited bend angles to account for parent bone bends
+					Vector3 bendAngles = boneObject.HasBend ? boneObject.InheritedBendAngles : Vector3.Zero;
+					
+					var meshInstance = CreateShapeMesh(part.Name, shapeIndex, shape, model, texture, accumulatedScale, bendConfig, bendAngles);
 					if (meshInstance != null)
 					{
 						// Add the mesh as a visual child of the BoneSceneObject
 						boneObject.AddVisualInstance(meshInstance);
-						meshInstance.Name = $"{part.Name}_Shape{shapeIndex}";
 					}
 					shapeIndex++;
 				}
 			}
 		}
-		
-		GD.Print($"Created Mine Imator character: {model.Name} with {skeleton.GetBoneCount()} bones");
 		
 		return character;
 	}
@@ -310,8 +327,9 @@ public class MineImatorLoader
 	/// Creates a MeshInstance3D for a single shape
 	/// </summary>
 	/// <param name="accumulatedParentScale">The product of all ancestor part scales up the hierarchy</param>
-	/// <param name="partBend">Optional bend data from the parent part</param>
-	private MeshInstance3D CreateShapeMesh(string partName, int shapeIndex, MiShape shape, MiModel model, ImageTexture texture, Vector3 accumulatedParentScale, MiBend partBend = null)
+	/// <param name="bendConfig">Parsed bend configuration from the part (null if no bend)</param>
+	/// <param name="bendAngles">Runtime bend angles to apply to the mesh</param>
+	private MeshInstance3D CreateShapeMesh(string partName, int shapeIndex, MiShape shape, MiModel model, ImageTexture texture, Vector3 accumulatedParentScale, BendHelper.BendConfig bendConfig = null, Vector3 bendAngles = default)
 	{
 		if (shape == null || shape.From == null || shape.To == null)
 		{
@@ -372,7 +390,7 @@ public class MineImatorLoader
 		MeshInstance3D meshInstance;
 		
 		// Check if we have bend data and should create a bent mesh
-		bool hasBend = partBend != null && partBend.Offset.HasValue && !string.IsNullOrEmpty(partBend.Part);
+		bool hasBend = bendConfig != null && bendConfig.Part != BendHelper.BendPart.None;
 		
 		if (shape.Type == "plane")
 		{
@@ -385,7 +403,7 @@ public class MineImatorLoader
 			else if (hasBend)
 			{
 				// Bent plane mesh
-				meshInstance = CreateBentPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, shape.TextureMirror, shape.Invert, inflate, partBend, shapeScale);
+				meshInstance = CreateBentPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, shape.TextureMirror, shape.Invert, inflate, bendConfig, bendAngles, shapeScale);
 			}
 			else
 			{
@@ -398,7 +416,7 @@ public class MineImatorLoader
 	 	if (hasBend)
 	 	{
 	 		// Create bent block mesh with default bend angle baked in
-	 		meshInstance = CreateBentBlockMesh(partName, shapeIndex, from, to, uvU, uvV, sizeX, sizeY, sizeZ, texWidth, texHeight, shape.TextureMirror, shape.Invert, inflate, partBend, shapeScale);
+	 		meshInstance = CreateBentBlockMesh(partName, shapeIndex, from, to, uvU, uvV, sizeX, sizeY, sizeZ, texWidth, texHeight, shape.TextureMirror, shape.Invert, inflate, bendConfig, bendAngles, shapeScale);
 	 	}
 	 	else
 	 	{
@@ -540,14 +558,6 @@ public class MineImatorLoader
 		var texDown2 = new Vector2(texU + texSizeX + texSizeFixX, texV - texUpHeightFix + texUpHeightFix);
 		var texDown1 = new Vector2(texU + texSizeX, texV - texUpHeightFix + texUpHeightFix);
 		
-		// Debug: Print UV pixel coordinates for each face
-		GD.Print($"Shape UV Debug - Part: {partName}, ShapeIndex: {shapeIndex}, From: ({from.X * 16},{from.Y * 16},{from.Z * 16}), To: ({to.X * 16},{to.Y * 16},{to.Z * 16}), Size: {sizeX}x{sizeY}x{sizeZ}, Texture: {texWidth}x{texHeight}");
-		GD.Print($"  South: {texSouth1.X * texWidth},{texSouth1.Y * texHeight} -> {texSouth2.X * texWidth},{texSouth2.Y * texHeight} -> {texSouth3.X * texWidth},{texSouth3.Y * texHeight} -> {texSouth4.X * texWidth},{texSouth4.Y * texHeight}");
-		GD.Print($"  East:  {texEast1.X * texWidth},{texEast1.Y * texHeight} -> {texEast2.X * texWidth},{texEast2.Y * texHeight} -> {texEast3.X * texWidth},{texEast3.Y * texHeight} -> {texEast4.X * texWidth},{texEast4.Y * texHeight}");
-		GD.Print($"  West:  {texWest1.X * texWidth},{texWest1.Y * texHeight} -> {texWest2.X * texWidth},{texWest2.Y * texHeight} -> {texWest3.X * texWidth},{texWest3.Y * texHeight} -> {texWest4.X * texWidth},{texWest4.Y * texHeight}");
-		GD.Print($"  North: {texNorth1.X * texWidth},{texNorth1.Y * texHeight} -> {texNorth2.X * texWidth},{texNorth2.Y * texHeight} -> {texNorth3.X * texWidth},{texNorth3.Y * texHeight} -> {texNorth4.X * texWidth},{texNorth4.Y * texHeight}");
-		GD.Print($"  Up:    {texUp1.X * texWidth},{texUp1.Y * texHeight} -> {texUp2.X * texWidth},{texUp2.Y * texHeight} -> {texUp3.X * texWidth},{texUp3.Y * texHeight} -> {texUp4.X * texWidth},{texUp4.Y * texHeight}");
-		GD.Print($"  Down:  {texDown1.X * texWidth},{texDown1.Y * texHeight} -> {texDown2.X * texWidth},{texDown2.Y * texHeight} -> {texDown3.X * texWidth},{texDown3.Y * texHeight} -> {texDown4.X * texWidth},{texDown4.Y * texHeight}");
 		
 		// Apply texture mirror on X if needed
 		if (textureMirror)
@@ -660,15 +670,14 @@ public class MineImatorLoader
 	/// </summary>
 	private MeshInstance3D CreateBentBlockMesh(string partName, int shapeIndex, Vector3 from, Vector3 to, float uvU, float uvV,
 		float sizeX, float sizeY, float sizeZ, int texWidth, int texHeight,
-		bool textureMirror, bool invert, float inflate, MiBend bend, Vector3 shapeScale)
+		bool textureMirror, bool invert, float inflate, BendHelper.BendConfig config, Vector3 bendAngles, Vector3 shapeScale)
 	{
 		var vertices = new List<Vector3>();
 		var normals = new List<Vector3>();
 		var uvs = new List<Vector2>();
 		var indices = new List<int>();
 
-		// Parse bend configuration
-		var config = BendHelper.ParseBendConfig(bend);
+		// Use the provided bend configuration
 		if (config == null)
 		{
 			// Fall back to regular block mesh if bend config is invalid
@@ -681,9 +690,6 @@ public class MineImatorLoader
 		// Get bend offset and size in Godot units
 		float bendOffsetGodot = config.Offset / 16.0f;
 		float? bendSizeGodot = config.Size.HasValue ? config.Size.Value / 16.0f : null;
-
-		// Get the default bend angles (these are baked into the mesh at load time)
-		Vector3 bendAngles = new Vector3(config.DefaultAngle[0], config.DefaultAngle[1], config.DefaultAngle[2]);
 
 		// Ensure proper ordering
 		Vector3 min = new Vector3(
@@ -1161,10 +1167,11 @@ public class MineImatorLoader
 	/// </summary>
 	private MeshInstance3D CreateBentPlaneMesh(Vector3 from, Vector3 to, float uvU, float uvV,
 		float sizeX, float sizeY, int texWidth, int texHeight, 
-		bool textureMirror, bool invert, float inflate, MiBend bend, Vector3 shapeScale)
+		bool textureMirror, bool invert, float inflate, BendHelper.BendConfig config, Vector3 bendAngles, Vector3 shapeScale)
 	{
 		// For now, fall back to regular plane mesh
 		// Bent plane implementation would be similar to bent block but with only front/back faces
+		// TODO: Implement bent plane mesh deformation
 		return CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, textureMirror, invert, inflate);
 	}
 	
@@ -1691,8 +1698,6 @@ public class MineImatorLoader
 		
 		var texturePath = Path.Combine(model.DirectoryPath, model.Texture);
 		
-		GD.Print($"Attempting to load Mine Imator texture from: {texturePath}");
-		
 		if (!File.Exists(texturePath))
 		{
 			GD.PrintErr($"Mine Imator texture not found: {texturePath}");
@@ -1703,17 +1708,6 @@ public class MineImatorLoader
 		{
 			// Read file bytes using System.IO (works for external paths)
 			byte[] fileBytes = File.ReadAllBytes(texturePath);
-			
-			GD.Print($"Read {fileBytes.Length} bytes from texture file");
-			
-			// Check for PNG header
-			if (fileBytes.Length >= 8)
-			{
-				bool isPng = fileBytes[0] == 0x89 && fileBytes[1] == 0x50 && 
-				             fileBytes[2] == 0x4E && fileBytes[3] == 0x47;
-				GD.Print($"PNG header check: {(isPng ? "Valid PNG header" : "Not a standard PNG header")}");
-				GD.Print($"First 16 bytes: {BitConverter.ToString(fileBytes, 0, Math.Min(16, fileBytes.Length))}");
-			}
 			
 			var image = new Image();
 			Error error;
@@ -1760,42 +1754,7 @@ public class MineImatorLoader
 					break;
 			}
 			
-			if (error != Error.Ok)
-			{
-				GD.PrintErr($"Failed to load Mine Imator texture: {texturePath} (Error: {error}, Format: {extension})");
-				
-				// Try loading with Godot's built-in image loader as fallback
-				GD.Print("Attempting fallback: copying to temp file and using Image.Load()");
-				string tempPath = Path.Combine(Path.GetTempPath(), $"mi_texture_{Guid.NewGuid()}{extension}");
-				try
-				{
-					File.Copy(texturePath, tempPath, true);
-					var fallbackImage = new Image();
-					var fallbackError = fallbackImage.Load(tempPath);
-					File.Delete(tempPath);
-					
-					if (fallbackError == Error.Ok && !fallbackImage.IsEmpty())
-					{
-						GD.Print($"Fallback succeeded! Loaded texture: {model.Texture} ({fallbackImage.GetWidth()}x{fallbackImage.GetHeight()})");
-						return ImageTexture.CreateFromImage(fallbackImage);
-					}
-				}
-				catch (Exception fallbackEx)
-				{
-					GD.PrintErr($"Fallback also failed: {fallbackEx.Message}");
-				}
-				
-				return null;
-			}
-			
-			if (image.IsEmpty())
-			{
-				GD.PrintErr($"Mine Imator texture loaded but image is empty: {texturePath}");
-				return null;
-			}
-			
 			var texture = ImageTexture.CreateFromImage(image);
-			GD.Print($"Loaded Mine Imator texture: {model.Texture} ({image.GetWidth()}x{image.GetHeight()})");
 			
 			return texture;
 		}

@@ -248,7 +248,6 @@ public static class MinecraftModelHelper
 						var animMaterial = AnimatedTextureMaterial.CreateAnimatedMaterial(texture, metadata);
 						if (animMaterial != null)
 						{
-							GD.Print($"Using animated material for texture: {texturePath}");
 							return animMaterial;
 						}
 					}
@@ -390,8 +389,6 @@ public static class MinecraftModelHelper
 			return null;
 		}
 		
-		GD.Print($"CreateNodeFromModel: Starting with model (parent: {model.Parent ?? "none"}), rotations X={xRotation}, Y={yRotation}");
-		
 		// Resolve the complete model with parents
 		var resolvedModel = ResolveModelParents(model);
 		
@@ -407,8 +404,6 @@ public static class MinecraftModelHelper
 			GD.PrintErr($"Resolved model info: parent={model.Parent}, textures={resolvedModel.Textures?.Count ?? 0}");
 			return null;
 		}
-		
-		GD.Print($"Successfully resolved model with {resolvedModel.Elements.Count} elements");
 		
 		float scale = 1.0f / 16.0f;
 		
@@ -433,15 +428,11 @@ public static class MinecraftModelHelper
 			}
 		}
 		
-		GD.Print($"Model bounds: X[{minX}, {maxX}], Y[{minY}, {maxY}], Z[{minZ}, {maxZ}]");
-		
 		// Calculate the pivot offset to center the model at [8, 0, 8] in Minecraft coords
 		// This ensures all blocks have a consistent pivot point at the bottom center
 		Vector3 mcPivot = new Vector3(8, 0, 8);
 		Vector3 mcCenter = new Vector3((minX + maxX) / 2.0f, minY, (minZ + maxZ) / 2.0f);
 		Vector3 pivotOffset = (mcPivot - mcCenter) * scale;
-		
-		GD.Print($"MC Center: {mcCenter}, MC Pivot: {mcPivot}, Pivot Offset: {pivotOffset}");
 		
 		var root = new Node3D();
 		
@@ -449,8 +440,6 @@ public static class MinecraftModelHelper
 		Basis rotationBasis = Basis.Identity;
 		if (yRotation != 0 || xRotation != 0)
 		{
-			GD.Print($"Creating blockstate rotation basis X={xRotation}, Y={yRotation}");
-			
 			// Apply rotations in the correct order (Y then X, matching Minecraft)
 			if (yRotation != 0)
 			{
@@ -568,7 +557,6 @@ public static class MinecraftModelHelper
 			var cachedTexture = textureLoader.GetTexture(textureKey);
 			if (cachedTexture != null)
 			{
-				GD.Print($"  ✓ Loaded texture from cache: {textureKey}");
 				return cachedTexture;
 			}
 		}
@@ -603,7 +591,6 @@ public static class MinecraftModelHelper
 						if (image != null)
 						{
 							var texture = ImageTexture.CreateFromImage(image);
-							GD.Print($"  ✓ Loaded texture from file: {path}");
 							return texture;
 						}
 					}
@@ -642,16 +629,12 @@ public static class MinecraftModelHelper
 		var current = model;
 		var visited = new HashSet<string>();
 		
-		GD.Print($"Building parent chain starting from model with parent: {model.Parent ?? "none"}");
-		
 		while (current != null)
 		{
 			chain.Add(current);
-			GD.Print($"  Chain depth {chain.Count}: parent={current.Parent ?? "none"}, elements={current.Elements?.Count ?? 0}, textures={current.Textures?.Count ?? 0}");
 			
 			if (string.IsNullOrEmpty(current.Parent))
 			{
-				GD.Print("  Reached root of parent chain");
 				break;
 			}
 			
@@ -665,7 +648,6 @@ public static class MinecraftModelHelper
 			
 			// Load parent model
 			var parentPath = NormalizeModelPath(current.Parent);
-			GD.Print($"  Loading parent: {current.Parent} (normalized: {parentPath})");
 			current = GetModelByPath(parentPath);
 			
 			if (current == null)
@@ -674,8 +656,6 @@ public static class MinecraftModelHelper
 				break;
 			}
 		}
-		
-		GD.Print($"Parent chain built with {chain.Count} models, merging in reverse order...");
 		
 		// Merge from root parent down to child (reverse order)
 		chain.Reverse();
@@ -695,15 +675,12 @@ public static class MinecraftModelHelper
 			if (m.Elements != null && m.Elements.Count > 0 && resolved.Elements.Count == 0)
 			{
 				resolved.Elements = new List<ModelElement>(m.Elements);
-				GD.Print($"  Inherited {m.Elements.Count} elements from parent");
 			}
 			
 			// Other properties
 			if (m.Display != null)
 				resolved.Display = m.Display;
 		}
-		
-		GD.Print($"Final resolved model has {resolved.Elements?.Count ?? 0} elements and {resolved.Textures?.Count ?? 0} textures");
 		
 		// Resolve texture variables in textures dictionary
 		ResolveTextureVariables(resolved);
@@ -754,19 +731,15 @@ public static class MinecraftModelHelper
 	{
 		var loader = MinecraftJsonLoader.Instance;
 		
-		GD.Print($"GetModelByPath: searching for path '{path}'");
-		
 		// Try direct path
 		if (loader.HasModel(path))
 		{
-			GD.Print($"  ✓ Found with direct path: {path}");
 			return loader.GetModel(path);
 		}
 		
 		//Try with .json extension
 		if (loader.HasModel(path + ".json"))
 		{
-			GD.Print($"  ✓ Found with .json extension: {path}.json");
 			return loader.GetModel(path + ".json");
 		}
 		
@@ -803,7 +776,6 @@ public static class MinecraftModelHelper
 		{
 			if (loader.HasModel(pattern))
 			{
-				GD.Print($"  ✓ Found with pattern: {pattern}");
 				return loader.GetModel(pattern);
 			}
 		}
@@ -821,7 +793,6 @@ public static class MinecraftModelHelper
 		
 		if (exactMatches.Count > 0)
 		{
-			GD.Print($"  ✓ Found via exact ending match: {exactMatches[0]}");
 			return loader.GetModel(exactMatches[0]);
 		}
 		
@@ -839,17 +810,10 @@ public static class MinecraftModelHelper
 		
 		if (segmentMatches.Count > 0)
 		{
-			GD.Print($"  ✓ Found via segment match: {segmentMatches[0]}");
 			return loader.GetModel(segmentMatches[0]);
 		}
 		
 		GD.PrintErr($"  ✗ No model found for path: {path}");
-		GD.Print("  Available model paths (sample):");
-		var samplePaths = allPaths.Take(10);
-		foreach (var p in samplePaths)
-		{
-			GD.Print($"    - {p}");
-		}
 		
 		return null;
 	}
@@ -870,23 +834,6 @@ public static class MinecraftModelHelper
 		path = path.Replace(":", "/");
 		
 		return path;
-	}
-	
-	/// <summary>
-	/// Searches for models matching a pattern
-	/// </summary>
-	public static IEnumerable<string> SearchModels(string searchTerm)
-	{
-		var loader = MinecraftJsonLoader.Instance;
-		
-		if (!loader.IsLoaded)
-		{
-			return Enumerable.Empty<string>();
-		}
-		
-		return loader.GetAllModelPaths()
-			.Where(path => path.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
-			.OrderBy(path => path);
 	}
 	
 	/// <summary>
@@ -932,8 +879,6 @@ public static class MinecraftModelHelper
 	/// </summary>
 	public static Node3D CreateNodeFromBlockState(string blockStateName, string variant = "")
 	{
-		GD.Print($"CreateNodeFromBlockState: blockStateName={blockStateName}, variant={variant}");
-		
 		var blockState = GetBlockStateByName(blockStateName);
 		if (blockState == null)
 		{
@@ -944,7 +889,6 @@ public static class MinecraftModelHelper
 		// Check if it's a multipart blockstate
 		if (blockState.Multipart != null && blockState.Multipart.Count > 0)
 		{
-			GD.Print("Creating multipart blockstate node");
 			return CreateNodeFromMultipartBlockState(blockState);
 		}
 		
@@ -957,11 +901,8 @@ public static class MinecraftModelHelper
 			return null;
 		}
 		
-		GD.Print($"Variant model reference: {variantData.Model}");
-		
 		// Load the model
 		var modelPath = NormalizeModelPath(variantData.Model);
-		GD.Print($"Normalized model path: {modelPath}");
 		
 		var model = GetModelByPath(modelPath);
 		
@@ -971,15 +912,8 @@ public static class MinecraftModelHelper
 			return null;
 		}
 		
-		GD.Print("Model loaded successfully, creating node...");
-		
 		// Create the node from the model, passing rotations to maintain pivot point
 		var node = CreateNodeFromModel(model, variantData.X, variantData.Y);
-		
-		if (node != null)
-		{
-			GD.Print("Node created successfully with rotations applied to geometry");
-		}
 		
 		return node;
 	}
@@ -989,8 +923,6 @@ public static class MinecraftModelHelper
 	/// </summary>
 	private static Node3D CreateNodeFromMultipartBlockState(BlockState blockState)
 	{
-		GD.Print($"CreateNodeFromMultipartBlockState: processing {blockState.Multipart.Count} parts");
-		
 		var rootNode = new Node3D();
 		
 		// For basic multipart support, we'll apply all parts that don't have conditions
@@ -1039,8 +971,6 @@ public static class MinecraftModelHelper
 			// If the part has no conditions, always apply it (like fence_post)
 			if (shouldApply)
 			{
-				GD.Print($"  Applying model: {variantData.Model}");
-				
 				var modelPath = NormalizeModelPath(variantData.Model);
 				var model = GetModelByPath(modelPath);
 				
@@ -1067,7 +997,6 @@ public static class MinecraftModelHelper
 			return null;
 		}
 		
-		GD.Print($"Successfully created multipart node with {rootNode.GetChildCount()} parts");
 		return rootNode;
 	}
 	

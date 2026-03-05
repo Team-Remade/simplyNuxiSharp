@@ -799,7 +799,6 @@ public partial class TimelinePanel : Panel
 					// Don't start drag selection if dragging playhead or keyframe
 					if (_isDraggingPlayhead || _isDraggingKeyframe)
 					{
-						GD.Print("[OnKeyframesContainerInput] Not starting drag selection - playhead or keyframe is being dragged");
 						return;
 					}
 					
@@ -816,7 +815,6 @@ public partial class TimelinePanel : Panel
 						_keyframeOwners.Clear();
 					}
 					
-					GD.Print($"[OnKeyframesContainerInput] Started potential drag selection at {mouseButton.Position}");
 					_selectionBoxContainer?.QueueRedraw();
 				}
 				else
@@ -824,7 +822,6 @@ public partial class TimelinePanel : Panel
 					// End drag selection
 					if (_isDragSelecting)
 					{
-						GD.Print($"[OnKeyframesContainerInput] Ending drag selection, _wasDragging: {_wasDragging}");
 						_isDragSelecting = false;
 						
 						// If we didn't actually drag (just clicked), clear selection
@@ -855,7 +852,6 @@ public partial class TimelinePanel : Panel
 				if (distance >= DRAG_THRESHOLD && !_wasDragging)
 				{
 					_wasDragging = true;
-					GD.Print($"[OnKeyframesContainerInput] Started dragging (moved {distance} pixels)");
 				}
 				
 				// Update drag selection box
@@ -873,7 +869,6 @@ public partial class TimelinePanel : Panel
 			else if (_isDragSelecting && (_isDraggingKeyframe || _isDraggingPlayhead))
 			{
 				// Cancel drag selection if keyframe or playhead drag started
-				GD.Print("[OnKeyframesContainerInput] Cancelling drag selection - keyframe or playhead drag detected");
 				_isDragSelecting = false;
 				_wasDragging = false;
 				_selectionBoxContainer?.QueueRedraw();
@@ -1037,7 +1032,6 @@ public partial class TimelinePanel : Panel
 				// End drag selection
 				if (_isDragSelecting)
 				{
-					GD.Print($"[TimelinePanel._Input] Ending drag selection, _wasDragging: {_wasDragging}");
 					_isDragSelecting = false;
 					
 					// If we didn't actually drag (just clicked), clear selection
@@ -1113,8 +1107,6 @@ public partial class TimelinePanel : Panel
 								_selectedKeyframes.Clear();
 								_keyframeOwners.Clear();
 							}
-							
-							GD.Print($"[TimelinePanel._Input] Started drag selection after deferred check (moved {distance} pixels)");
 						}
 					}
 				}
@@ -1141,7 +1133,6 @@ public partial class TimelinePanel : Panel
 					if (distance >= DRAG_THRESHOLD && !_wasDragging)
 					{
 						_wasDragging = true;
-						GD.Print($"[TimelinePanel._Input] Started dragging (moved {distance} pixels)");
 					}
 					
 					_dragSelectEnd = localPos;
@@ -1369,14 +1360,11 @@ public partial class TimelinePanel : Panel
 						var keyframes = GetKeyframesForProperty(obj, propertyPath);
 						var clickedKeyframe = keyframes.Find(k => Mathf.Abs(k.Frame - frame) <= 1);
 						
-						GD.Print($"[Track {propertyPath}] Click at frame {frame}, found keyframe: {clickedKeyframe != null}");
-						
 						if (clickedKeyframe != null && mouseButton.AltPressed)
 						{
 							// Alt+Click to remove keyframe
 							RemoveKeyframeForProperty(obj, propertyPath, clickedKeyframe.Frame);
 							track.AcceptEvent(); // Consume the event
-							GD.Print($"[Track {propertyPath}] Removed keyframe, event consumed");
 						}
 						else if (clickedKeyframe != null)
 						{
@@ -1407,11 +1395,6 @@ public partial class TimelinePanel : Panel
 							}
 							
 							track.AcceptEvent(); // Consume the event
-							GD.Print($"[Track {propertyPath}] Started dragging keyframe, _keyframeWasClicked set to true");
-						}
-						else
-						{
-							GD.Print($"[Track {propertyPath}] No keyframe clicked, event NOT consumed (should bubble up)");
 						}
 						// If no keyframe was clicked, don't consume the event - let it bubble up for drag selection
 					}

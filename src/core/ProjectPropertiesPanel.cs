@@ -562,7 +562,6 @@ public partial class ProjectPropertiesPanel : Panel
 		if (_backgroundColorNode != null)
 		{
 			_backgroundColorNode.Color = color;
-			GD.Print($"Background color changed to: {color}");
 			
 			// Sync to preview viewport
 			Main.Instance?.SyncPreviewBackground();
@@ -620,8 +619,6 @@ public partial class ProjectPropertiesPanel : Panel
 			// Apply the current stretch mode setting
 			OnStretchToFitToggled(_stretchToFitCheckbox.ButtonPressed);
 			
-			GD.Print($"Background image changed to: {path}");
-			
 			// Sync to preview viewport
 			Main.Instance?.SyncPreviewBackground();
 		}
@@ -636,14 +633,12 @@ public partial class ProjectPropertiesPanel : Panel
 				// Stretch to fit: IgnoreSize + Scale
 				_backgroundImageNode.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 				_backgroundImageNode.StretchMode = TextureRect.StretchModeEnum.Scale;
-				GD.Print("Background image stretch mode: Stretch to Fit");
 			}
 			else
 			{
 				// Keep aspect: IgnoreSize + Keep
 				_backgroundImageNode.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 				_backgroundImageNode.StretchMode = TextureRect.StretchModeEnum.Keep;
-				GD.Print("Background image stretch mode: Keep Aspect");
 			}
 			
 			// Sync to preview viewport
@@ -658,7 +653,6 @@ public partial class ProjectPropertiesPanel : Panel
 			_backgroundImageNode.Texture = null;
 			_currentBackgroundImagePath = "";
 			_backgroundImageLabel.Text = "No image selected";
-			GD.Print("Background image cleared");
 			
 			// Sync to preview viewport
 			Main.Instance?.SyncPreviewBackground();
@@ -736,7 +730,6 @@ public partial class ProjectPropertiesPanel : Panel
 		}
 		
 		_floorTextureLabel.Text = $"{_blockTexturePaths.Count} block textures available";
-		GD.Print($"Loaded {_blockTexturePaths.Count} block textures for floor selection");
 	}
 	
 	private void LoadCurrentFloorSettings()
@@ -757,14 +750,12 @@ public partial class ProjectPropertiesPanel : Panel
 			{
 				_floorTextureDropdown.Selected = grassIndex;
 				OnFloorTextureSelected(grassIndex);
-				GD.Print("Set default floor texture to grass_block_top");
 			}
 			else
 			{
 				// Fallback to first texture if grass_block_top not found
 				_floorTextureDropdown.Selected = 0;
 				OnFloorTextureSelected(0);
-				GD.Print("grass_block_top not found, using first available texture");
 			}
 		}
 	}
@@ -774,7 +765,6 @@ public partial class ProjectPropertiesPanel : Panel
 		if (_floorNode != null)
 		{
 			_floorNode.Visible = visible;
-			GD.Print($"Floor visibility set to: {visible}");
 		}
 	}
 	
@@ -826,14 +816,12 @@ public partial class ProjectPropertiesPanel : Panel
 			// Minecraft grass green tint: #91BD59 (approximately RGB: 145, 189, 89)
 			material.AlbedoColor = new Color(145f / 255f, 189f / 255f, 89f / 255f, 1.0f);
 			_floorTextureLabel.Text = $"Selected: {blockName} (with tint)";
-			GD.Print($"Floor texture changed to: {selectedPath} with green tint");
 		}
 		else
 		{
 			// Reset to white (no tint)
 			material.AlbedoColor = new Color(1, 1, 1, 1);
 			_floorTextureLabel.Text = $"Selected: {blockName}";
-			GD.Print($"Floor texture changed to: {selectedPath}");
 		}
 	}
 	
@@ -872,7 +860,6 @@ public partial class ProjectPropertiesPanel : Panel
 	
 	private void OnProjectNameChanged(string newName)
 	{
-		GD.Print($"Project name changed to: {newName}");
 		// TODO: Save to project file or settings
 	}
 	
@@ -880,7 +867,6 @@ public partial class ProjectPropertiesPanel : Panel
 	{
 		var width = (int)_resolutionWidthSpinBox.Value;
 		var height = (int)_resolutionHeightSpinBox.Value;
-		GD.Print($"Resolution changed to: {width}x{height}");
 		// TODO: Apply resolution to render viewport
 	}
 	
@@ -888,21 +874,18 @@ public partial class ProjectPropertiesPanel : Panel
 	{
 		_resolutionWidthSpinBox.Value = width;
 		_resolutionHeightSpinBox.Value = height;
-		GD.Print($"Resolution preset applied: {width}x{height}");
 		// OnResolutionChanged will be called automatically via ValueChanged signal
 	}
 	
 	private void OnFramerateChanged(double value)
 	{
 		var fps = (int)value;
-		GD.Print($"Framerate changed to: {fps} FPS");
 		// TODO: Apply framerate to animation timeline
 	}
 	
 	private void OnFrameratePresetPressed(int fps)
 	{
 		_framerateSpinBox.Value = fps;
-		GD.Print($"Framerate preset applied: {fps} FPS");
 		// OnFramerateChanged will be called automatically via ValueChanged signal
 	}
 	
@@ -915,14 +898,11 @@ public partial class ProjectPropertiesPanel : Panel
 		{
 			AnimatedTextureManager.Instance.SetTextureAnimationFps(fps);
 		}
-		
-		GD.Print($"Texture animation speed changed to: {fps} FPS");
 	}
 	
 	private void OnTextureAnimationFpsPresetPressed(int fps)
 	{
 		_textureAnimationFpsSpinBox.Value = fps;
-		GD.Print($"Texture animation speed preset applied: {fps} FPS");
 		// OnTextureAnimationFpsChanged will be called automatically via ValueChanged signal
 	}
 	

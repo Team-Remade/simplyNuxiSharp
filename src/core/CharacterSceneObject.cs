@@ -48,19 +48,8 @@ public partial class CharacterSceneObject : SceneObject
 			return;
 		}
 		
-		GD.Print($"Found skeleton with {Skeleton.GetBoneCount()} bones");
-		
 		// Try to find a skinned mesh (some models like Steve have individual meshes per bone instead)
 		SkinnedMesh = FindSkinnedMesh(glbRoot);
-		
-		if (SkinnedMesh == null)
-		{
-			GD.Print("No skinned mesh found - character likely uses separate meshes per bone");
-		}
-		else
-		{
-			GD.Print($"Found skinned mesh: {SkinnedMesh.Name}");
-		}
 		
 		// Add the entire GLB hierarchy to our Visual node
 		// Use AddChild instead of Reparent since the glbRoot may not be in the scene tree yet
@@ -68,8 +57,6 @@ public partial class CharacterSceneObject : SceneObject
 		
 		// Create BoneSceneObjects for each bone
 		CreateBoneHierarchy();
-		
-		GD.Print($"Character setup complete with {BoneObjects.Count} bone objects");
 	}
 	
 	/// <summary>
@@ -458,15 +445,15 @@ public partial class BoneSceneObject : SceneObject
 	{
 		InheritedBendAngles = _bendAngles;
 
+		// Don't inherit if inherit_bend is not enabled
+		if (!InheritBend) return;
+
 		// Walk up the parent chain and accumulate bend angles from parents
-		// that have inherit_bend enabled
 		var current = this as SceneObject;
 		while (current != null)
 		{
 			var parent = current.GetParent() as BoneSceneObject;
 			if (parent == null) break;
-
-			if (!InheritBend) break;
 
 			InheritedBendAngles += parent.BendAngles;
 			current = parent;

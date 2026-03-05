@@ -68,31 +68,18 @@ public partial class Main : Control
 		var textureLoader = MinecraftTextureLoader.Instance;
 		var characterLoader = CharacterLoader.Instance;
 		
-		if (loader.IsLoaded)
-		{
-			GD.Print($"Main scene started with {loader.TotalFilesLoaded} Minecraft JSON files loaded.");
-		}
-		else
+		if (!loader.IsLoaded)
 		{
 			GD.PrintErr("Warning: Main scene started without Minecraft JSON files loaded!");
 		}
 		
-		if (textureLoader.IsLoaded)
-		{
-			GD.Print($"Main scene started with {textureLoader.TotalTexturesLoaded} Minecraft textures loaded.");
-			GD.Print($"  - Block textures: {textureLoader.GetAllBlockTexturePaths().Count()}");
-			GD.Print($"  - Item textures: {textureLoader.GetAllItemTexturePaths().Count()}");
-		}
-		else
+		
+		if (!textureLoader.IsLoaded)
 		{
 			GD.PrintErr("Warning: Main scene started without Minecraft textures loaded!");
 		}
 		
-		if (characterLoader.IsLoaded)
-		{
-			GD.Print($"Main scene started with {characterLoader.TotalCharactersFound} character GLB files found.");
-		}
-		else
+		if (!characterLoader.IsLoaded)
 		{
 			GD.PrintErr("Warning: Main scene started without character files scanned!");
 		}
@@ -291,7 +278,6 @@ public partial class Main : Control
 		// Ensure render mode is enabled
 		if (!_renderModeEnabled)
 		{
-			GD.Print("Enabling render mode for image render");
 			ToggleRenderMode();
 		}
 		
@@ -304,7 +290,6 @@ public partial class Main : Control
 		dialog.SetResolution(width, height);
 		dialog.SetRenderCallback((filePath, format) =>
 		{
-			GD.Print($"Rendering image to: {filePath} (format: {format})");
 			PreviewViewportControl.RenderImage(filePath, format, width, height);
 		});
 		
@@ -316,7 +301,6 @@ public partial class Main : Control
 		// Ensure render mode is enabled
 		if (!_renderModeEnabled)
 		{
-			GD.Print("Enabling render mode for animation render");
 			ToggleRenderMode();
 		}
 		
@@ -328,8 +312,6 @@ public partial class Main : Control
 		
 		if (lastKeyframe == 0)
 		{
-			GD.PrintErr("Cannot render animation: No keyframes found");
-			
 			// Show error dialog to user
 			var errorDialog = new AcceptDialog();
 			errorDialog.Title = "Cannot Render Animation";
@@ -354,7 +336,6 @@ public partial class Main : Control
 		dialog.SetLastKeyframe(lastKeyframe);
 		dialog.SetRenderCallback((outputPath, format, isPngSequence, bitrateMbps) =>
 		{
-			GD.Print($"Rendering animation to: {outputPath} (format: {format}, PNG sequence: {isPngSequence})");
 			PreviewViewportControl.RenderAnimation(outputPath, format, isPngSequence, bitrateMbps, width, height, framerate, lastKeyframe);
 		});
 		
@@ -421,7 +402,6 @@ public partial class Main : Control
 	private void ToggleRenderMode()
 	{
 		_renderModeEnabled = !_renderModeEnabled;
-		GD.Print($"Render mode: {(_renderModeEnabled ? "Enabled" : "Disabled")}");
 		
 		// Check if preview is visible
 		bool previewVisible = PreviewViewportControl != null && PreviewViewportControl.Visible;
@@ -459,7 +439,6 @@ public partial class Main : Control
 		if (_renderModeEnabled && previewVisible && PreviewViewportControl != null)
 		{
 			PreviewViewportControl.Visible = true;
-			GD.Print("Preview viewport enabled with render mode");
 		}
 	}
 	
@@ -487,8 +466,6 @@ public partial class Main : Control
 		
 		bool wasVisible = PreviewViewportControl.Visible;
 		PreviewViewportControl.Visible = !wasVisible;
-		
-		GD.Print($"Preview viewport: {(PreviewViewportControl.Visible ? "Visible" : "Hidden")}");
 		
 		// Update FPS label visibility if render mode is on
 		if (_renderModeEnabled)

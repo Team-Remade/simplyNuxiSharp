@@ -28,8 +28,6 @@ public class CharacterLoader
 		var userDataPath = OS.GetUserDataDir();
 		_projectAssetsPath = Path.Combine(userDataPath, "data", "SimplyRemadeAssetsV1");
 		_characterPaths = new Dictionary<string, string>();
-		
-		GD.Print($"CharacterLoader initialized with assets path: {_projectAssetsPath}");
 	}
 	
 	/// <summary>
@@ -39,11 +37,8 @@ public class CharacterLoader
 	{
 		if (_isLoaded)
 		{
-			GD.Print("Character list already loaded.");
 			return true;
 		}
-		
-		GD.Print($"Starting to scan for character GLB files from: {_projectAssetsPath}");
 		
 		if (!Directory.Exists(_projectAssetsPath))
 		{
@@ -59,7 +54,6 @@ public class CharacterLoader
 			// Search for all GLB files recursively in the SimplyRemadeAssetsV1 folder
 			var glbFiles = Directory.GetFiles(_projectAssetsPath, "*.glb", SearchOption.AllDirectories);
 			
-			GD.Print($"Found {glbFiles.Length} GLB character files.");
 			progressCallback?.Invoke($"Found {glbFiles.Length} character files", 50);
 			
 			_characterPaths.Clear();
@@ -72,14 +66,10 @@ public class CharacterLoader
 				
 				// Store the full path
 				_characterPaths[displayName] = filePath;
-				
-				GD.Print($"  Found character: {displayName} at {filePath}");
 			}
 			
 			_isLoaded = true;
 			progressCallback?.Invoke($"Completed: {_characterPaths.Count} characters found", 100);
-			
-			GD.Print($"Character scanning complete. Total characters: {_characterPaths.Count}");
 			
 			return true;
 		}

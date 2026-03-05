@@ -39,16 +39,9 @@ public partial class CameraSceneObject : SceneObject
 		// Generate the scene from GLTF
 		var cameraNode = gltfDocument.GenerateScene(gltfState);
 		
-		if (cameraNode == null)
-		{
-			GD.PrintErr("Failed to generate scene from Camera.glb");
-			return;
-		}
-		
 		// Cast to Node3D
 		if (cameraNode is not Node3D cameraNode3D)
 		{
-			GD.PrintErr($"Camera.glb root is not a Node3D, it's a {cameraNode.GetType().Name}");
 			cameraNode.QueueFree();
 			return;
 		}
@@ -57,7 +50,6 @@ public partial class CameraSceneObject : SceneObject
 		SetCullLayerToLayer2Only(cameraNode3D);
 		
 		AddVisualInstance(cameraNode3D);
-		GD.Print("Camera visual loaded from Camera.glb");
 	}
 	
 	private void SetCullLayerToLayer2Only(Node node)

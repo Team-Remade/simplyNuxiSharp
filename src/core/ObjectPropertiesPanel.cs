@@ -616,7 +616,6 @@ public partial class ObjectPropertiesPanel : Panel
 			{
 				// This bone is part of a skinned mesh or controls multiple meshes
 				// Alpha should be controlled by the material editor, not here
-				GD.Print("This bone is part of a skinned mesh. Alpha should be controlled via the material editor.");
 				// Reset the slider to show that it's not applicable
 				_materialAlphaSlider.SetValueNoSignal(1.0);
 				_materialAlphaLabel.Text = "N/A";
