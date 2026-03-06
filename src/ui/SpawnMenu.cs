@@ -26,7 +26,6 @@ public partial class SpawnMenu : PopupPanel
 	// Custom model history (in-memory only - per project when project system is implemented)
 	private List<string> _customModelHistory = new List<string>();
 	private Dictionary<string, string> _customModelPaths = new Dictionary<string, string>(); // Display name -> full path
-	private const int MaxHistoryItems = 20;
 	
 	public SubViewport Viewport { get; set; }
 
@@ -1459,20 +1458,6 @@ public partial class SpawnMenu : PopupPanel
 		// Add to the beginning of the list (most recent first)
 		_customModelHistory.Insert(0, glbPath);
 		_customModelPaths[displayName] = glbPath;
-		
-		// Limit history size
-		while (_customModelHistory.Count > MaxHistoryItems)
-		{
-			var removePath = _customModelHistory[_customModelHistory.Count - 1];
-			_customModelHistory.RemoveAt(_customModelHistory.Count - 1);
-			
-			// Remove from paths dictionary
-			var removeKey = _customModelPaths.FirstOrDefault(x => x.Value == removePath).Key;
-			if (!string.IsNullOrEmpty(removeKey))
-			{
-				_customModelPaths.Remove(removeKey);
-			}
-		}
 		
 		// Update the category list
 		UpdateCustomModelsCategory();
