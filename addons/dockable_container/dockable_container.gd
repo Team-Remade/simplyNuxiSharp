@@ -11,10 +11,10 @@ const DockableLayout := preload("layout.gd")
 	get:
 		return _tab_align
 	set(value):
-		_tab_align = value
+		_tab_align = mini(maxi(value, 0), TabBar.ALIGNMENT_MAX - 1)
 		for i in range(1, _panel_container.get_child_count()):
 			var panel := _panel_container.get_child(i) as DockablePanel
-			panel.tab_alignment = value
+			panel.tab_alignment = _tab_align
 @export var use_hidden_tabs_for_min_size := false:
 	get:
 		return _use_hidden_tabs_for_min_size
@@ -238,13 +238,20 @@ func get_tab_count() -> int:
 
 
 func _can_handle_drag_data(data) -> bool:
-	if data is Dictionary and data.get("type") in ["tab_container_tab", "tabc_element"]:
-		var tabc := get_node_or_null(data.get("from_path"))
-		return (
-			tabc
-			and tabc.has_method("get_tabs_rearrange_group")
-			and tabc.get_tabs_rearrange_group() == rearrange_group
-		)
+	if not data is Dictionary:
+		return false
+	var type = data.get("type", "")
+	var tab_type = data.get("tab_type", "")
+	var is_valid_type = (
+		type in ["tab", "tab_container_tab", "tabc_element"]
+		or tab_type in ["tab_container_tab", "tabc_element"]
+	)
+	if is_valid_type:
+		var from_path = data.get("from_path")
+		if from_path:
+			var source_node = get_node_or_null(from_path)
+			if source_node and source_node.has_method("get_tabs_rearrange_group"):
+				return source_node.get_tabs_rearrange_group() == rearrange_group
 	return false
 
 
@@ -397,7 +404,7 @@ func _get_panel(idx: int) -> DockablePanel:
 	if idx < _panel_container.get_child_count():
 		return _panel_container.get_child(idx)
 	var panel := DockablePanel.new()
-	panel.tab_alignment = _tab_align
+	panel.tab_alignment = mini(maxi(_tab_align, 0), TabBar.ALIGNMENT_MAX - 1)
 	panel.show_tabs = _tabs_visible
 	panel.hide_single_tab = _hide_single_tab
 	panel.use_hidden_tabs_for_min_size = _use_hidden_tabs_for_min_size

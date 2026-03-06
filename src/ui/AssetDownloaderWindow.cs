@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Collections.Generic;
 using System.Linq;
 using simplyRemadeNuxi.core;
+using SceneTree = Godot.SceneTree;
 
 namespace simplyRemadeNuxi.ui;
 
@@ -23,6 +24,7 @@ public partial class AssetDownloaderWindow : Window
 	private HttpRequest _httpRequest;
 	private bool _isDownloading = false;
 	private bool _hasInternet = false;
+	private bool _isClosing = false;
 	
 	public override void _Ready()
 	{
@@ -57,10 +59,10 @@ public partial class AssetDownloaderWindow : Window
 		AddChild(_httpRequest);
 		_httpRequest.RequestCompleted += OnHttpRequestCompleted;
 		
-		// Connect button signals
-		if (DownloadButton != null)
+		// Connect button signals (with check to prevent duplicate connections)
+		if (DownloadButton != null && !DownloadButton.IsConnected("pressed", Callable.From(OnDownloadButtonPressed)))
 			DownloadButton.Pressed += OnDownloadButtonPressed;
-		if (SkipButton != null)
+		if (SkipButton != null && !SkipButton.IsConnected("pressed", Callable.From(OnSkipButtonPressed)))
 			SkipButton.Pressed += OnSkipButtonPressed;
 		
 		// Update status
@@ -451,11 +453,21 @@ public partial class AssetDownloaderWindow : Window
 	
 	private void UpdateStatus(string message, int progress)
 	{
+		// Don't update UI if window is closing or disposed
+		if (_isClosing || IsDisposedOrInvalid(StatusLabel))
+			return;
+		
 		if (StatusLabel != null)
 			StatusLabel.Text = message;
 		if (ProgressBar != null)
 			ProgressBar.Value = progress;
-		
+	}
+	
+	private bool IsDisposedOrInvalid(GodotObject obj)
+	{
+		if (obj == null)
+			return true;
+		return !GodotObject.IsInstanceValid(obj);
 	}
 	
 	private void ResetButtons()
@@ -543,11 +555,19 @@ public partial class AssetDownloaderWindow : Window
 	
 	private void CloseAndLoadMainScene()
 	{
-		// Hide this window
-		Hide();
+		// Mark window as closing to prevent further UI updates
+		_isClosing = true;
 		
-		// Load the main scene
-		GetTree().ChangeSceneToFile("res://Main.tscn");
+		// Get the scene tree from the root node to avoid null reference
+		if (Engine.GetMainLoop() is SceneTree tree)
+		{
+			// Load the main scene
+			tree.ChangeSceneToFile("res://Main.tscn");
+		}
+		else
+		{
+			GD.PrintErr("Failed to get SceneTree - cannot load main scene");
+		}
 	}
 }
 

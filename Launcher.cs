@@ -105,7 +105,8 @@ public partial class Launcher : Node
 		_loadingWindow.AddChild(margin);
 		
 		AddChild(_loadingWindow);
-		_loadingWindow.PopupCentered();
+		_loadingWindow.Position = (DisplayServer.ScreenGetSize() / 2) - (_loadingWindow.Size / 2);
+		_loadingWindow.Show();
 	}
 	
 	private void UpdateLoadingWindow(string message)
