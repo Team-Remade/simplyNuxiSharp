@@ -1080,7 +1080,7 @@ public partial class SpawnMenu : PopupPanel
 		PopupOnParent(rect);
 	}
 	
-	private void CreateCharacter(string characterName, string fullObjectName)
+	private async void CreateCharacter(string characterName, string fullObjectName)
 	{
 		// Get the character GLB path
 		var characterLoader = CharacterLoader.Instance;
@@ -1127,18 +1127,29 @@ public partial class SpawnMenu : PopupPanel
 			return;
 		}
 
-        // Create a CharacterSceneObject
-        var characterObject = new CharacterSceneObject
-        {
-            Name = fullObjectName,
-            ObjectType = characterName
-        };
+	       // Create a CharacterSceneObject
+	       var characterObject = new CharacterSceneObject
+	       {
+	           Name = fullObjectName,
+	           ObjectType = characterName
+	       };
 
-        // Add to viewport first
-        Viewport.AddChild(characterObject);
+		// Hide while shaders compile to prevent a first-frame crash caused by
+		// synchronous shader variant compilation during rendering.
+		characterObject.Visible = false;
+
+	       // Add to viewport first
+	       Viewport.AddChild(characterObject);
 		
 		// Setup the character from the GLB data
 		characterObject.SetupFromGlb(glbRoot3D);
+
+		// Wait one frame so Godot's shader compilation pipeline can process the
+		// new materials before they are rendered for the first time.
+		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+
+		// Now safe to show
+		characterObject.Visible = true;
 		
 		// Position at world origin
 		characterObject.GlobalPosition = Vector3.Zero;
@@ -1165,7 +1176,7 @@ public partial class SpawnMenu : PopupPanel
 		);
 	}
 	
-	private void LoadAndSpawnCustomModel(string modelPath)
+	private async void LoadAndSpawnCustomModel(string modelPath)
 	{
 		if (!System.IO.File.Exists(modelPath))
 		{
@@ -1217,6 +1228,8 @@ public partial class SpawnMenu : PopupPanel
 					Name = fullObjectName,
 					ObjectType = displayName
 				};
+				// Hide while shaders compile to prevent a first-frame crash.
+				characterObject.Visible = false;
 				Viewport.AddChild(characterObject);
 				characterObject.SetupFromGlb(modelRoot);
 				// Convert materials after node is in the scene tree so textures are resolved
@@ -1231,6 +1244,8 @@ public partial class SpawnMenu : PopupPanel
 					ObjectType = displayName,
 					PivotOffset = Vector3.Zero
 				};
+				// Hide while shaders compile to prevent a first-frame crash.
+				customModelObject.Visible = false;
 				Viewport.AddChild(customModelObject);
 				customModelObject.AddVisualInstance(modelRoot);
 				// Convert materials after node is in the scene tree so textures are resolved
@@ -1252,15 +1267,18 @@ public partial class SpawnMenu : PopupPanel
 			
 			if (hasSkeleton)
 			{
-		              // Create a CharacterSceneObject for rigged models
-		              var characterObject = new CharacterSceneObject
-		              {
-		                  Name = fullObjectName,
-		                  ObjectType = displayName
-		              };
+				// Create a CharacterSceneObject for rigged models
+				var characterObject = new CharacterSceneObject
+				{
+					Name = fullObjectName,
+					ObjectType = displayName
+				};
 
-		              // Add to viewport first
-		              Viewport.AddChild(characterObject);
+				// Hide while shaders compile to prevent a first-frame crash.
+				characterObject.Visible = false;
+
+				// Add to viewport first
+				Viewport.AddChild(characterObject);
 				
 				// Setup the character from the GLB data
 				characterObject.SetupFromGlb(modelRoot);
@@ -1269,16 +1287,19 @@ public partial class SpawnMenu : PopupPanel
 			}
 			else
 			{
-		              // Create a regular SceneObject for static models
-		              customModelObject = new SceneObject
-		              {
-		                  Name = fullObjectName,
-		                  ObjectType = displayName,
-		                  PivotOffset = Vector3.Zero
-		              };
+				// Create a regular SceneObject for static models
+				customModelObject = new SceneObject
+				{
+					Name = fullObjectName,
+					ObjectType = displayName,
+					PivotOffset = Vector3.Zero
+				};
 
-		              // Add to viewport first
-		              Viewport.AddChild(customModelObject);
+				// Hide while shaders compile to prevent a first-frame crash.
+				customModelObject.Visible = false;
+
+				// Add to viewport first
+				Viewport.AddChild(customModelObject);
 				
 				// Add the model root directly to the visual node
 				customModelObject.AddVisualInstance(modelRoot);
@@ -1290,6 +1311,15 @@ public partial class SpawnMenu : PopupPanel
 			GD.PrintErr($"Failed to create scene object from model: {modelPath}");
 			return;
 		}
+
+		// Wait one frame so Godot's shader compilation pipeline can process all
+		// new materials before they are rendered for the first time.  Without this
+		// the first load crashes because shader variant compilation happens
+		// synchronously on the first rendered frame.
+		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+
+		// Now safe to show
+		customModelObject.Visible = true;
 		
 		// Position at world origin
 		customModelObject.GlobalPosition = Vector3.Zero;

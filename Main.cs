@@ -82,6 +82,11 @@ public partial class Main : Control
 		{
 			GD.PrintErr("Warning: Main scene started without character files scanned!");
 		}
+
+		// Pre-warm the Blender PBR shader so the GPU compiles it before the first
+		// GLB is loaded.  Without this, the first load triggers synchronous shader
+		// compilation during rendering which can crash the application.
+		BlendFileLoader.PreWarmShader();
 	}
 
 	private void IconEasterEgg()

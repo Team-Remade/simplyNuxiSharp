@@ -15,6 +15,10 @@ public class BlendFileLoader
 	private static BlendFileLoader _instance;
 	public static BlendFileLoader Instance => _instance ??= new BlendFileLoader();
 
+	// Cached shader instance – shared across all material conversions so the GPU
+	// only needs to compile it once.  Lazily initialised on first use.
+	private static Shader _cachedBlenderShader;
+
 	// Cache of exported GLB paths keyed by blend file path + modification time
 	private readonly Dictionary<string, string> _exportCache = new();
 
@@ -404,16 +408,59 @@ void fragment() {
 	}
 
 	/// <summary>
+	/// Returns the shared Blender PBR shader, loading it from the .gdshader resource
+	/// file when first called so Godot can cache and pre-compile it properly.
+	/// Falls back to creating an inline Shader if the resource is not found.
+	/// </summary>
+	private static Shader GetOrCreateBlenderShader()
+	{
+		if (_cachedBlenderShader != null)
+			return _cachedBlenderShader;
+
+		// Prefer the pre-existing .gdshader resource so Godot's shader cache can
+		// warm it up before the first GLB is rendered.
+		const string shaderResPath = "res://assets/Shaders/Blender.gdshader";
+		if (ResourceLoader.Exists(shaderResPath))
+		{
+			_cachedBlenderShader = ResourceLoader.Load<Shader>(shaderResPath);
+			if (_cachedBlenderShader != null)
+			{
+				GD.Print("BlendFileLoader: Loaded Blender shader from resource file.");
+				return _cachedBlenderShader;
+			}
+		}
+
+		// Fallback: create inline (same behaviour as before, but still cached)
+		GD.PrintErr("BlendFileLoader: Could not load Blender.gdshader resource, falling back to inline shader.");
+		_cachedBlenderShader = new Shader { Code = BlenderPbrShaderCode };
+		return _cachedBlenderShader;
+	}
+
+	/// <summary>
+	/// Pre-warms the Blender PBR shader by creating a dummy ShaderMaterial that
+	/// references it.  Call this early (e.g. on app startup) so the GPU driver
+	/// compiles the shader before the first GLB is loaded, preventing a first-load
+	/// crash caused by synchronous shader compilation during rendering.
+	/// </summary>
+	public static void PreWarmShader()
+	{
+		var shader = GetOrCreateBlenderShader();
+		// Creating a ShaderMaterial that references the shader is enough to
+		// trigger Godot's background shader compilation pipeline.
+		var dummy = new ShaderMaterial { Shader = shader };
+		// Immediately discard – we only needed the compilation side-effect.
+		dummy.Dispose();
+		GD.Print("BlendFileLoader: Blender PBR shader pre-warm requested.");
+	}
+
+	/// <summary>
 	/// Converts a StandardMaterial3D (as imported from GLTF/GLB) into a ShaderMaterial
-	/// that uses a custom Blender PBR-compatible shader.
+	/// that uses the shared Blender PBR-compatible shader.
 	/// </summary>
 	public ShaderMaterial ConvertStandardToShaderMaterial(StandardMaterial3D stdMat)
 	{
-		var shader = new Shader();
-		shader.Code = BlenderPbrShaderCode;
-
 		var shaderMat = new ShaderMaterial();
-		shaderMat.Shader = shader;
+		shaderMat.Shader = GetOrCreateBlenderShader();
 
 		// --- Albedo ---
 		shaderMat.SetShaderParameter("albedo_color", stdMat.AlbedoColor);
