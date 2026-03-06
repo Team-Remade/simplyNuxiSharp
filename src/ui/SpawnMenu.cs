@@ -1163,7 +1163,7 @@ public partial class SpawnMenu : PopupPanel
 	{
 		NativeFileDialog.ShowOpenFile(
 			"Select 3D Model (GLB/GLTF/Mine Imator/.blend)",
-			NativeFileDialog.Filters.All3DModels,
+			NativeFileDialog.Filters.Models,
 			(success, filePath) =>
 			{
 				if (success && !string.IsNullOrEmpty(filePath))
