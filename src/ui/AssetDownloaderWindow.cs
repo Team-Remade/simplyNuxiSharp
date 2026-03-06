@@ -25,6 +25,8 @@ public partial class AssetDownloaderWindow : Window
 	private bool _isDownloading = false;
 	private bool _hasInternet = false;
 	private bool _isClosing = false;
+	private bool _isLoadingAssets = false;
+	private bool _checkForUpdatesCalled = false;
 	
 	public override void _Ready()
 	{
@@ -74,6 +76,11 @@ public partial class AssetDownloaderWindow : Window
 	
 	private async void CheckForUpdates()
 	{
+		// Prevent multiple concurrent calls to CheckForUpdates
+		if (_checkForUpdatesCalled)
+			return;
+		_checkForUpdatesCalled = true;
+		
 		UpdateStatus("Checking for asset updates...", 0);
 		
 		// Check if we need to download
@@ -481,6 +488,11 @@ public partial class AssetDownloaderWindow : Window
 	
 	private async Task LoadMinecraftJsonFiles()
 	{
+		// Prevent multiple concurrent loading operations
+		if (_isLoadingAssets)
+			return;
+		_isLoadingAssets = true;
+		
 		try
 		{
 			// Load textures first
@@ -550,6 +562,10 @@ public partial class AssetDownloaderWindow : Window
 			UpdateStatus($"Error loading assets: {ex.Message}", 0);
 			GD.PrintErr($"Error in LoadMinecraftJsonFiles: {ex.Message}");
 			GD.PrintErr($"Stack trace: {ex.StackTrace}");
+		}
+		finally
+		{
+			_isLoadingAssets = false;
 		}
 	}
 	
