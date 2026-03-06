@@ -1232,24 +1232,25 @@ public partial class SpawnMenu : PopupPanel
 				characterObject.Visible = false;
 				Viewport.AddChild(characterObject);
 				characterObject.SetupFromGlb(modelRoot);
-				// Convert materials after node is in the scene tree so textures are resolved
-				BlendFileLoader.Instance.ConvertMaterialsInHierarchy(characterObject);
-				customModelObject = characterObject;
-			}
-			else
-			{
-				customModelObject = new SceneObject
+					// Convert materials after node is in the scene tree so textures are resolved
+					// Use ConvertMaterialsForBlendFile so the node-graph shader is used when available
+					BlendFileLoader.Instance.ConvertMaterialsForBlendFile(characterObject, modelPath);
+					customModelObject = characterObject;
+				}
+				else
 				{
-					Name = fullObjectName,
-					ObjectType = displayName,
-					PivotOffset = Vector3.Zero
-				};
-				// Hide while shaders compile to prevent a first-frame crash.
-				customModelObject.Visible = false;
-				Viewport.AddChild(customModelObject);
-				customModelObject.AddVisualInstance(modelRoot);
-				// Convert materials after node is in the scene tree so textures are resolved
-				BlendFileLoader.Instance.ConvertMaterialsInHierarchy(customModelObject);
+					customModelObject = new SceneObject
+					{
+						Name = fullObjectName,
+						ObjectType = displayName,
+						PivotOffset = Vector3.Zero
+					};
+					// Hide while shaders compile to prevent a first-frame crash.
+					customModelObject.Visible = false;
+					Viewport.AddChild(customModelObject);
+					customModelObject.AddVisualInstance(modelRoot);
+					// Convert materials after node is in the scene tree so textures are resolved
+					BlendFileLoader.Instance.ConvertMaterialsForBlendFile(customModelObject, modelPath);
 			}
 		}
 		else

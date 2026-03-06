@@ -1,4 +1,7 @@
 shader_type spatial;
+// depth_draw_opaque ensures the material writes to the depth buffer and is
+// sorted with opaque geometry, preventing it from rendering on top of everything.
+render_mode depth_draw_opaque, depth_prepass_alpha;
 
 uniform vec4 albedo_color : source_color = vec4(0.8, 0.8, 0.8, 1.0);
 uniform sampler2D albedo_texture : source_color, hint_default_white;
@@ -35,7 +38,12 @@ void fragment() {
 	}
 
 	ALBEDO = base_color.rgb;
-	ALPHA = base_color.a;
+	// Only write ALPHA when alpha scissor is active; writing ALPHA unconditionally
+	// switches Godot into the transparent render queue which disables depth writes
+	// and causes the mesh to render on top of all opaque geometry.
+	if (use_alpha_scissor) {
+		ALPHA = base_color.a;
+	}
 
 	float metal = metallic;
 	if (use_metallic_texture) {
