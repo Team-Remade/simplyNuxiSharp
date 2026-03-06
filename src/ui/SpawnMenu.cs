@@ -23,10 +23,9 @@ public partial class SpawnMenu : PopupPanel
 	private string _searchQuery = "";
 	private string _selectedTextureType = "item"; // "block" or "item"
 	
-	// Custom model history
+	// Custom model history (in-memory only - per project when project system is implemented)
 	private List<string> _customModelHistory = new List<string>();
 	private Dictionary<string, string> _customModelPaths = new Dictionary<string, string>(); // Display name -> full path
-	private const string CustomModelHistoryPath = "user://custom_model_history.json";
 	private const int MaxHistoryItems = 20;
 	
 	public SubViewport Viewport { get; set; }
@@ -1433,94 +1432,14 @@ public partial class SpawnMenu : PopupPanel
 	
 	private void LoadCustomModelHistory()
 	{
-		try
-		{
-			if (FileAccess.FileExists(CustomModelHistoryPath))
-			{
-				using var file = FileAccess.Open(CustomModelHistoryPath, FileAccess.ModeFlags.Read);
-				var jsonText = file.GetAsText();
-				var json = Json.ParseString(jsonText);
-				
-				if (json.VariantType == Variant.Type.Dictionary)
-				{
-					var dict = json.AsGodotDictionary();
-					if (dict.ContainsKey("history"))
-					{
-						var historyArray = dict["history"].AsGodotArray();
-						foreach (var item in historyArray)
-						{
-							var itemDict = item.AsGodotDictionary();
-							if (itemDict.ContainsKey("path") && itemDict.ContainsKey("name"))
-							{
-								var path = itemDict["path"].ToString();
-								var name = itemDict["name"].ToString();
-								
-								// Only add if file still exists
-								if (System.IO.File.Exists(path))
-								{
-									_customModelHistory.Add(path);
-									_customModelPaths[name] = path;
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-		catch (System.Exception ex)
-		{
-			GD.PrintErr($"Error loading custom model history: {ex.Message}");
-		}
-		
+		// History is now in-memory only - will be set per-project when project system is implemented
 		// Update the Custom Models category list
 		UpdateCustomModelsCategory();
 	}
 	
 	private void SaveCustomModelHistory()
 	{
-		try
-		{
-			var historyArray = new Godot.Collections.Array();
-			
-			// Build array of history items
-			foreach (var path in _customModelHistory)
-			{
-				// Find the display name for this path
-				string displayName = "";
-				foreach (var kvp in _customModelPaths)
-				{
-					if (kvp.Value == path)
-					{
-						displayName = kvp.Key;
-						break;
-					}
-				}
-				
-				if (!string.IsNullOrEmpty(displayName))
-				{
-					var itemDict = new Godot.Collections.Dictionary
-					{
-						{ "path", path },
-						{ "name", displayName }
-					};
-					historyArray.Add(itemDict);
-				}
-			}
-			
-			var rootDict = new Godot.Collections.Dictionary
-			{
-				{ "history", historyArray }
-			};
-			
-			var jsonText = Json.Stringify(rootDict, "\t");
-			
-			using var file = FileAccess.Open(CustomModelHistoryPath, FileAccess.ModeFlags.Write);
-			file.StoreString(jsonText);
-		}
-		catch (System.Exception ex)
-		{
-			GD.PrintErr($"Error saving custom model history: {ex.Message}");
-		}
+		// History is now in-memory only - will be saved per-project when project system is implemented
 	}
 	
 	private void AddToCustomModelHistory(string glbPath, string displayName)
@@ -1554,9 +1473,6 @@ public partial class SpawnMenu : PopupPanel
 				_customModelPaths.Remove(removeKey);
 			}
 		}
-		
-		// Save to disk
-		SaveCustomModelHistory();
 		
 		// Update the category list
 		UpdateCustomModelsCategory();
