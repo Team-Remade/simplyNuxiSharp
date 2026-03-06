@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using Godot.Collections;
 
 namespace simplyRemadeNuxi.core;
@@ -95,7 +95,6 @@ public partial class WorkCamera : Camera3D
 			{
 				SelectionManager.Instance.Gizmo.UseLocalSpace = !SelectionManager.Instance.Gizmo.UseLocalSpace;
 				string mode = SelectionManager.Instance.Gizmo.UseLocalSpace ? "Local" : "Global";
-				GD.Print($"Transform mode: {mode}");
 			}
 		}
 

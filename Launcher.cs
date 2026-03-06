@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using FFMpegCore;
 using FFMpegCore.Extensions.Downloader;
 
@@ -16,7 +16,6 @@ public partial class Launcher : Node
 		ShowLoadingWindow("Checking FFMpeg binaries...");
 		
 		// Download FFMpeg binaries if not present
-		GD.Print("Checking for FFMpeg binaries...");
 		try
 		{
 			// Set the binary folder path for FFMpeg in user data directory
@@ -40,7 +39,6 @@ public partial class Launcher : Node
 				
 				if (process.ExitCode == 0)
 				{
-					GD.Print("FFMpeg binaries already present, skipping download");
 					UpdateLoadingWindow("FFMpeg binaries found");
 					ffmpegAvailable = true;
 				}
@@ -53,10 +51,8 @@ public partial class Launcher : Node
 			
 			if (!ffmpegAvailable)
 			{
-				GD.Print("FFMpeg binaries not found, downloading...");
 				UpdateLoadingWindow("Downloading FFMpeg binaries...");
 				await FFMpegDownloader.DownloadBinaries();
-				GD.Print("FFMpeg binaries downloaded successfully");
 			}
 		}
 		catch (System.Exception ex)

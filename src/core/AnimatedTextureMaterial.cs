@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 
 namespace simplyRemadeNuxi.core;
@@ -111,7 +111,6 @@ void fragment() {
 		// Register the material with the manager
 		AnimatedTextureManager.Instance?.RegisterMaterial(material);
 		
-		GD.Print($"Created animated material: {frameCount} frames, {frameTimeSeconds}s per frame, interpolate={metadata.Animation.Interpolate}");
 		
 		return material;
 	}

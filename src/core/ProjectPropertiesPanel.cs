@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -118,46 +118,56 @@ public partial class ProjectPropertiesPanel : Panel
 		// Resolution
 		var resolutionRow = new VBoxContainer();
 		projectSettingsContainer.AddChild(resolutionRow);
-		
-		var resolutionLabel = new Label();
-		resolutionLabel.Text = "Resolution:";
-		resolutionRow.AddChild(resolutionLabel);
+
+        var resolutionLabel = new Label
+        {
+            Text = "Resolution:"
+        };
+        resolutionRow.AddChild(resolutionLabel);
 		
 		var resolutionInputRow = new HBoxContainer();
 		resolutionInputRow.AddThemeConstantOverride("separation", 8);
 		resolutionRow.AddChild(resolutionInputRow);
-		
-		_resolutionWidthSpinBox = new SpinBox();
-		_resolutionWidthSpinBox.Name = "ResolutionWidthSpinBox";
-		_resolutionWidthSpinBox.MinValue = 16;
-		_resolutionWidthSpinBox.MaxValue = 7680;
-		_resolutionWidthSpinBox.Value = 1920;
-		_resolutionWidthSpinBox.Step = 1;
-		_resolutionWidthSpinBox.CustomMinimumSize = new Vector2(100, 0);
-		_resolutionWidthSpinBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		_resolutionWidthSpinBox.ValueChanged += OnResolutionChanged;
+
+        _resolutionWidthSpinBox = new SpinBox
+        {
+            Name = "ResolutionWidthSpinBox",
+            MinValue = 16,
+            MaxValue = 7680,
+            Value = 1920,
+            Step = 1,
+            CustomMinimumSize = new Vector2(100, 0),
+            SizeFlagsHorizontal = SizeFlags.ExpandFill
+        };
+        _resolutionWidthSpinBox.ValueChanged += OnResolutionChanged;
 		resolutionInputRow.AddChild(_resolutionWidthSpinBox);
-		
-		var xLabel = new Label();
-		xLabel.Text = "×";
-		xLabel.VerticalAlignment = VerticalAlignment.Center;
-		resolutionInputRow.AddChild(xLabel);
-		
-		_resolutionHeightSpinBox = new SpinBox();
-		_resolutionHeightSpinBox.Name = "ResolutionHeightSpinBox";
-		_resolutionHeightSpinBox.MinValue = 16;
-		_resolutionHeightSpinBox.MaxValue = 4320;
-		_resolutionHeightSpinBox.Value = 1080;
-		_resolutionHeightSpinBox.Step = 1;
-		_resolutionHeightSpinBox.CustomMinimumSize = new Vector2(100, 0);
-		_resolutionHeightSpinBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		_resolutionHeightSpinBox.ValueChanged += OnResolutionChanged;
+
+        var xLabel = new Label
+        {
+            Text = "×",
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        resolutionInputRow.AddChild(xLabel);
+
+        _resolutionHeightSpinBox = new SpinBox
+        {
+            Name = "ResolutionHeightSpinBox",
+            MinValue = 16,
+            MaxValue = 4320,
+            Value = 1080,
+            Step = 1,
+            CustomMinimumSize = new Vector2(100, 0),
+            SizeFlagsHorizontal = SizeFlags.ExpandFill
+        };
+        _resolutionHeightSpinBox.ValueChanged += OnResolutionChanged;
 		resolutionInputRow.AddChild(_resolutionHeightSpinBox);
-		
-		// Add preset resolution buttons
-		var presetsResolutionLabel = new Label();
-		presetsResolutionLabel.Text = "Presets:";
-		presetsResolutionLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
+
+        // Add preset resolution buttons
+        var presetsResolutionLabel = new Label
+        {
+            Text = "Presets:"
+        };
+        presetsResolutionLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
 		presetsResolutionLabel.AddThemeFontSizeOverride("font_size", 11);
 		resolutionRow.AddChild(presetsResolutionLabel);
 		
@@ -175,49 +185,59 @@ public partial class ProjectPropertiesPanel : Panel
 		
 		foreach (var preset in resolutionPresets)
 		{
-			var presetButton = new Button();
-			presetButton.Text = preset.name;
-			presetButton.CustomMinimumSize = new Vector2(60, 24);
-			presetButton.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-			
-			var capturedWidth = preset.width;
+            var presetButton = new Button
+            {
+                Text = preset.name,
+                CustomMinimumSize = new Vector2(60, 24),
+                SizeFlagsHorizontal = SizeFlags.ExpandFill
+            };
+
+            var capturedWidth = preset.width;
 			var capturedHeight = preset.height;
 			presetButton.Pressed += () => OnResolutionPresetPressed(capturedWidth, capturedHeight);
 			
 			presetsResolutionRow.AddChild(presetButton);
 		}
-		
-		// Add spacing
-		var spacerResolution = new Control();
-		spacerResolution.CustomMinimumSize = new Vector2(0, 8);
-		projectSettingsContainer.AddChild(spacerResolution);
+
+        // Add spacing
+        var spacerResolution = new Control
+        {
+            CustomMinimumSize = new Vector2(0, 8)
+        };
+        projectSettingsContainer.AddChild(spacerResolution);
 		
 		// Framerate
 		var framerateRow = new VBoxContainer();
 		projectSettingsContainer.AddChild(framerateRow);
-		
-		var framerateLabel = new Label();
-		framerateLabel.Text = "Framerate (FPS):";
-		framerateRow.AddChild(framerateLabel);
+
+        var framerateLabel = new Label
+        {
+            Text = "Framerate (FPS):"
+        };
+        framerateRow.AddChild(framerateLabel);
 		
 		var framerateInputRow = new HBoxContainer();
 		framerateInputRow.AddThemeConstantOverride("separation", 8);
 		framerateRow.AddChild(framerateInputRow);
-		
-		_framerateSpinBox = new SpinBox();
-		_framerateSpinBox.Name = "FramerateSpinBox";
-		_framerateSpinBox.MinValue = 1;
-		_framerateSpinBox.MaxValue = 120;
-		_framerateSpinBox.Value = 30;
-		_framerateSpinBox.Step = 1;
-		_framerateSpinBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		_framerateSpinBox.ValueChanged += OnFramerateChanged;
+
+        _framerateSpinBox = new SpinBox
+        {
+            Name = "FramerateSpinBox",
+            MinValue = 1,
+            MaxValue = 120,
+            Value = 30,
+            Step = 1,
+            SizeFlagsHorizontal = SizeFlags.ExpandFill
+        };
+        _framerateSpinBox.ValueChanged += OnFramerateChanged;
 		framerateInputRow.AddChild(_framerateSpinBox);
-		
-		// Add preset framerate buttons
-		var presetsFramerateLabel = new Label();
-		presetsFramerateLabel.Text = "Presets:";
-		presetsFramerateLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
+
+        // Add preset framerate buttons
+        var presetsFramerateLabel = new Label
+        {
+            Text = "Presets:"
+        };
+        presetsFramerateLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
 		presetsFramerateLabel.AddThemeFontSizeOverride("font_size", 11);
 		framerateRow.AddChild(presetsFramerateLabel);
 		
@@ -229,49 +249,59 @@ public partial class ProjectPropertiesPanel : Panel
 		
 		foreach (var fps in frameratePresets)
 		{
-			var presetButton = new Button();
-			presetButton.Text = $"{fps}";
-			presetButton.CustomMinimumSize = new Vector2(50, 24);
-			presetButton.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-			
-			var capturedFps = fps;
+            var presetButton = new Button
+            {
+                Text = $"{fps}",
+                CustomMinimumSize = new Vector2(50, 24),
+                SizeFlagsHorizontal = SizeFlags.ExpandFill
+            };
+
+            var capturedFps = fps;
 			presetButton.Pressed += () => OnFrameratePresetPressed(capturedFps);
 			
 			presetsFramerateRow.AddChild(presetButton);
 		}
-		
-		// Add spacing
-		var spacerFramerate = new Control();
-		spacerFramerate.CustomMinimumSize = new Vector2(0, 8);
-		projectSettingsContainer.AddChild(spacerFramerate);
+
+        // Add spacing
+        var spacerFramerate = new Control
+        {
+            CustomMinimumSize = new Vector2(0, 8)
+        };
+        projectSettingsContainer.AddChild(spacerFramerate);
 		
 		// Texture Animation Speed
 		var textureAnimationRow = new VBoxContainer();
 		projectSettingsContainer.AddChild(textureAnimationRow);
-		
-		var textureAnimationLabel = new Label();
-		textureAnimationLabel.Text = "Texture Animation Speed (FPS):";
-		textureAnimationRow.AddChild(textureAnimationLabel);
+
+        var textureAnimationLabel = new Label
+        {
+            Text = "Texture Animation Speed (FPS):"
+        };
+        textureAnimationRow.AddChild(textureAnimationLabel);
 		
 		var textureAnimationInputRow = new HBoxContainer();
 		textureAnimationInputRow.AddThemeConstantOverride("separation", 8);
 		textureAnimationRow.AddChild(textureAnimationInputRow);
-		
-		_textureAnimationFpsSpinBox = new SpinBox();
-		_textureAnimationFpsSpinBox.Name = "TextureAnimationFpsSpinBox";
-		_textureAnimationFpsSpinBox.MinValue = 1;
-		_textureAnimationFpsSpinBox.MaxValue = 120;
-		_textureAnimationFpsSpinBox.Value = 20; // Default to Minecraft's 20 ticks per second
-		_textureAnimationFpsSpinBox.Step = 1;
-		_textureAnimationFpsSpinBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		_textureAnimationFpsSpinBox.TooltipText = "Controls the base framerate for animated textures (Minecraft default: 20 fps)";
-		_textureAnimationFpsSpinBox.ValueChanged += OnTextureAnimationFpsChanged;
+
+        _textureAnimationFpsSpinBox = new SpinBox
+        {
+            Name = "TextureAnimationFpsSpinBox",
+            MinValue = 1,
+            MaxValue = 120,
+            Value = 20, // Default to Minecraft's 20 ticks per second
+            Step = 1,
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            TooltipText = "Controls the base framerate for animated textures (Minecraft default: 20 fps)"
+        };
+        _textureAnimationFpsSpinBox.ValueChanged += OnTextureAnimationFpsChanged;
 		textureAnimationInputRow.AddChild(_textureAnimationFpsSpinBox);
-		
-		// Add preset texture animation fps buttons
-		var presetsTextureAnimationLabel = new Label();
-		presetsTextureAnimationLabel.Text = "Presets:";
-		presetsTextureAnimationLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
+
+        // Add preset texture animation fps buttons
+        var presetsTextureAnimationLabel = new Label
+        {
+            Text = "Presets:"
+        };
+        presetsTextureAnimationLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
 		presetsTextureAnimationLabel.AddThemeFontSizeOverride("font_size", 11);
 		textureAnimationRow.AddChild(presetsTextureAnimationLabel);
 		
@@ -283,26 +313,32 @@ public partial class ProjectPropertiesPanel : Panel
 		
 		foreach (var fps in textureAnimationPresets)
 		{
-			var presetButton = new Button();
-			presetButton.Text = $"{fps}";
-			presetButton.CustomMinimumSize = new Vector2(50, 24);
-			presetButton.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-			
-			var capturedFps = fps;
+            var presetButton = new Button
+            {
+                Text = $"{fps}",
+                CustomMinimumSize = new Vector2(50, 24),
+                SizeFlagsHorizontal = SizeFlags.ExpandFill
+            };
+
+            var capturedFps = fps;
 			presetButton.Pressed += () => OnTextureAnimationFpsPresetPressed(capturedFps);
 			
 			presetsTextureAnimationRow.AddChild(presetButton);
 		}
-		
-		// Add spacing
-		var spacerTextureAnimation = new Control();
-		spacerTextureAnimation.CustomMinimumSize = new Vector2(0, 10);
-		vbox.AddChild(spacerTextureAnimation);
 
-		// Background section with collapsible dropdown
-		_backgroundSection = new CollapsibleSection("Background");
-		_backgroundSection.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		vbox.AddChild(_backgroundSection);
+        // Add spacing
+        var spacerTextureAnimation = new Control
+        {
+            CustomMinimumSize = new Vector2(0, 10)
+        };
+        vbox.AddChild(spacerTextureAnimation);
+
+        // Background section with collapsible dropdown
+        _backgroundSection = new CollapsibleSection("Background")
+        {
+            SizeFlagsHorizontal = SizeFlags.ExpandFill
+        };
+        vbox.AddChild(_backgroundSection);
 		
 		// Hide the reset button for project properties
 		_backgroundSection.GetResetButton().Visible = false;
@@ -312,25 +348,31 @@ public partial class ProjectPropertiesPanel : Panel
 		// Background Color
 		var colorRow = new HBoxContainer();
 		backgroundContainer.AddChild(colorRow);
-		
-		var colorLabel = new Label();
-		colorLabel.Text = "Color:";
-		colorLabel.CustomMinimumSize = new Vector2(60, 0);
-		colorRow.AddChild(colorLabel);
-		
-		_backgroundColorPicker = new ColorPickerButton();
-		_backgroundColorPicker.Name = "BackgroundColorPicker";
-		_backgroundColorPicker.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		_backgroundColorPicker.CustomMinimumSize = new Vector2(0, 32);
-		_backgroundColorPicker.EditAlpha = true;
-		_backgroundColorPicker.ColorChanged += OnBackgroundColorChanged;
+
+        var colorLabel = new Label
+        {
+            Text = "Color:",
+            CustomMinimumSize = new Vector2(60, 0)
+        };
+        colorRow.AddChild(colorLabel);
+
+        _backgroundColorPicker = new ColorPickerButton
+        {
+            Name = "BackgroundColorPicker",
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(0, 32),
+            EditAlpha = true
+        };
+        _backgroundColorPicker.ColorChanged += OnBackgroundColorChanged;
 		colorRow.AddChild(_backgroundColorPicker);
 
-		// Add color presets row
-		var presetsLabel = new Label();
-		presetsLabel.Text = "Presets:";
-		presetsLabel.CustomMinimumSize = new Vector2(60, 0);
-		presetsLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
+        // Add color presets row
+        var presetsLabel = new Label
+        {
+            Text = "Presets:",
+            CustomMinimumSize = new Vector2(60, 0)
+        };
+        presetsLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
 		presetsLabel.AddThemeFontSizeOverride("font_size", 11);
 		backgroundContainer.AddChild(presetsLabel);
 		
@@ -351,14 +393,18 @@ public partial class ProjectPropertiesPanel : Panel
 		
 		foreach (var preset in presets)
 		{
-			var presetButton = new Button();
-			presetButton.CustomMinimumSize = new Vector2(24, 24);
-			presetButton.TooltipText = preset.name;
-			
-			// Create colored stylebox for the button
-			var styleBox = new StyleBoxFlat();
-			styleBox.BgColor = preset.color;
-			styleBox.SetBorderWidthAll(1);
+            var presetButton = new Button
+            {
+                CustomMinimumSize = new Vector2(24, 24),
+                TooltipText = preset.name
+            };
+
+            // Create colored stylebox for the button
+            var styleBox = new StyleBoxFlat
+            {
+                BgColor = preset.color
+            };
+            styleBox.SetBorderWidthAll(1);
 			styleBox.BorderColor = new Color(0.5f, 0.5f, 0.5f);
 			
 			presetButton.AddThemeStyleboxOverride("normal", styleBox);
@@ -371,10 +417,12 @@ public partial class ProjectPropertiesPanel : Panel
 			presetsRow.AddChild(presetButton);
 		}
 
-		// Add spacing between color and image
-		var spacer2 = new Control();
-		spacer2.CustomMinimumSize = new Vector2(0, 8);
-		backgroundContainer.AddChild(spacer2);
+        // Add spacing between color and image
+        var spacer2 = new Control
+        {
+            CustomMinimumSize = new Vector2(0, 8)
+        };
+        backgroundContainer.AddChild(spacer2);
 
 		// Background Image
 		var imageRow = new VBoxContainer();
@@ -382,64 +430,82 @@ public partial class ProjectPropertiesPanel : Panel
 		
 		var imageHeaderRow = new HBoxContainer();
 		imageRow.AddChild(imageHeaderRow);
-		
-		var imageLabel = new Label();
-		imageLabel.Text = "Image:";
-		imageLabel.CustomMinimumSize = new Vector2(60, 0);
-		imageHeaderRow.AddChild(imageLabel);
-		
-		_backgroundImageButton = new Button();
-		_backgroundImageButton.Name = "BackgroundImageButton";
-		_backgroundImageButton.Text = "Select Image...";
-		_backgroundImageButton.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		_backgroundImageButton.Pressed += OnBackgroundImageButtonPressed;
+
+        var imageLabel = new Label
+        {
+            Text = "Image:",
+            CustomMinimumSize = new Vector2(60, 0)
+        };
+        imageHeaderRow.AddChild(imageLabel);
+
+        _backgroundImageButton = new Button
+        {
+            Name = "BackgroundImageButton",
+            Text = "Select Image...",
+            SizeFlagsHorizontal = SizeFlags.ExpandFill
+        };
+        _backgroundImageButton.Pressed += OnBackgroundImageButtonPressed;
 		imageHeaderRow.AddChild(_backgroundImageButton);
 
-		// Label to display current image path
-		_backgroundImageLabel = new Label();
-		_backgroundImageLabel.Name = "BackgroundImageLabel";
-		_backgroundImageLabel.Text = "No image selected";
-		_backgroundImageLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
+        // Label to display current image path
+        _backgroundImageLabel = new Label
+        {
+            Name = "BackgroundImageLabel",
+            Text = "No image selected"
+        };
+        _backgroundImageLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
 		_backgroundImageLabel.AddThemeFontSizeOverride("font_size", 10);
 		_backgroundImageLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
 		imageRow.AddChild(_backgroundImageLabel);
 
-		// Add spacing
-		var spacer3 = new Control();
-		spacer3.CustomMinimumSize = new Vector2(0, 4);
-		imageRow.AddChild(spacer3);
+        // Add spacing
+        var spacer3 = new Control
+        {
+            CustomMinimumSize = new Vector2(0, 4)
+        };
+        imageRow.AddChild(spacer3);
 
 		// Stretch to Fit checkbox
 		var stretchRow = new HBoxContainer();
 		imageRow.AddChild(stretchRow);
-		
-		_stretchToFitCheckbox = new CheckBox();
-		_stretchToFitCheckbox.Name = "StretchToFitCheckbox";
-		_stretchToFitCheckbox.Text = "Stretch to Fit";
-		_stretchToFitCheckbox.ButtonPressed = true;  // Checked by default
-		_stretchToFitCheckbox.Toggled += OnStretchToFitToggled;
+
+        _stretchToFitCheckbox = new CheckBox
+        {
+            Name = "StretchToFitCheckbox",
+            Text = "Stretch to Fit",
+            ButtonPressed = true  // Checked by default
+        };
+        _stretchToFitCheckbox.Toggled += OnStretchToFitToggled;
 		stretchRow.AddChild(_stretchToFitCheckbox);
 
-		// Add spacing
-		var spacer4 = new Control();
-		spacer4.CustomMinimumSize = new Vector2(0, 4);
-		imageRow.AddChild(spacer4);
+        // Add spacing
+        var spacer4 = new Control
+        {
+            CustomMinimumSize = new Vector2(0, 4)
+        };
+        imageRow.AddChild(spacer4);
 
-		// Add a "Clear Image" button
-		var clearImageButton = new Button();
-		clearImageButton.Text = "Clear Image";
-		clearImageButton.Pressed += OnClearImageButtonPressed;
+        // Add a "Clear Image" button
+        var clearImageButton = new Button
+        {
+            Text = "Clear Image"
+        };
+        clearImageButton.Pressed += OnClearImageButtonPressed;
 		imageRow.AddChild(clearImageButton);
-		
-		// Add spacing
-		var spacer5 = new Control();
-		spacer5.CustomMinimumSize = new Vector2(0, 10);
-		vbox.AddChild(spacer5);
-		
-		// Floor section with collapsible dropdown
-		_floorSection = new CollapsibleSection("Floor");
-		_floorSection.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		vbox.AddChild(_floorSection);
+
+        // Add spacing
+        var spacer5 = new Control
+        {
+            CustomMinimumSize = new Vector2(0, 10)
+        };
+        vbox.AddChild(spacer5);
+
+        // Floor section with collapsible dropdown
+        _floorSection = new CollapsibleSection("Floor")
+        {
+            SizeFlagsHorizontal = SizeFlags.ExpandFill
+        };
+        vbox.AddChild(_floorSection);
 		
 		// Hide the reset button for project properties
 		_floorSection.GetResetButton().Visible = false;
@@ -449,18 +515,22 @@ public partial class ProjectPropertiesPanel : Panel
 		// Floor Visibility checkbox
 		var visibilityRow = new HBoxContainer();
 		floorContainer.AddChild(visibilityRow);
-		
-		_floorVisibilityCheckbox = new CheckBox();
-		_floorVisibilityCheckbox.Name = "FloorVisibilityCheckbox";
-		_floorVisibilityCheckbox.Text = "Show Floor";
-		_floorVisibilityCheckbox.ButtonPressed = true;  // Visible by default
-		_floorVisibilityCheckbox.Toggled += OnFloorVisibilityToggled;
+
+        _floorVisibilityCheckbox = new CheckBox
+        {
+            Name = "FloorVisibilityCheckbox",
+            Text = "Show Floor",
+            ButtonPressed = true  // Visible by default
+        };
+        _floorVisibilityCheckbox.Toggled += OnFloorVisibilityToggled;
 		visibilityRow.AddChild(_floorVisibilityCheckbox);
-		
-		// Add spacing
-		var spacer6 = new Control();
-		spacer6.CustomMinimumSize = new Vector2(0, 8);
-		floorContainer.AddChild(spacer6);
+
+        // Add spacing
+        var spacer6 = new Control
+        {
+            CustomMinimumSize = new Vector2(0, 8)
+        };
+        floorContainer.AddChild(spacer6);
 		
 		// Floor Texture selection
 		var textureRow = new VBoxContainer();
@@ -468,23 +538,29 @@ public partial class ProjectPropertiesPanel : Panel
 		
 		var textureHeaderRow = new HBoxContainer();
 		textureRow.AddChild(textureHeaderRow);
-		
-		var textureLabel = new Label();
-		textureLabel.Text = "Texture:";
-		textureLabel.CustomMinimumSize = new Vector2(60, 0);
-		textureHeaderRow.AddChild(textureLabel);
-		
-		_floorTextureDropdown = new OptionButton();
-		_floorTextureDropdown.Name = "FloorTextureDropdown";
-		_floorTextureDropdown.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		_floorTextureDropdown.ItemSelected += OnFloorTextureSelected;
+
+        var textureLabel = new Label
+        {
+            Text = "Texture:",
+            CustomMinimumSize = new Vector2(60, 0)
+        };
+        textureHeaderRow.AddChild(textureLabel);
+
+        _floorTextureDropdown = new OptionButton
+        {
+            Name = "FloorTextureDropdown",
+            SizeFlagsHorizontal = SizeFlags.ExpandFill
+        };
+        _floorTextureDropdown.ItemSelected += OnFloorTextureSelected;
 		textureHeaderRow.AddChild(_floorTextureDropdown);
-		
-		// Label to display current texture
-		_floorTextureLabel = new Label();
-		_floorTextureLabel.Name = "FloorTextureLabel";
-		_floorTextureLabel.Text = "Loading textures...";
-		_floorTextureLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
+
+        // Label to display current texture
+        _floorTextureLabel = new Label
+        {
+            Name = "FloorTextureLabel",
+            Text = "Loading textures..."
+        };
+        _floorTextureLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
 		_floorTextureLabel.AddThemeFontSizeOverride("font_size", 10);
 		_floorTextureLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
 		textureRow.AddChild(_floorTextureLabel);
@@ -562,7 +638,6 @@ public partial class ProjectPropertiesPanel : Panel
 		if (_backgroundColorNode != null)
 		{
 			_backgroundColorNode.Color = color;
-			GD.Print($"Background color changed to: {color}");
 			
 			// Sync to preview viewport
 			Main.Instance?.SyncPreviewBackground();
@@ -620,8 +695,6 @@ public partial class ProjectPropertiesPanel : Panel
 			// Apply the current stretch mode setting
 			OnStretchToFitToggled(_stretchToFitCheckbox.ButtonPressed);
 			
-			GD.Print($"Background image changed to: {path}");
-			
 			// Sync to preview viewport
 			Main.Instance?.SyncPreviewBackground();
 		}
@@ -636,14 +709,12 @@ public partial class ProjectPropertiesPanel : Panel
 				// Stretch to fit: IgnoreSize + Scale
 				_backgroundImageNode.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 				_backgroundImageNode.StretchMode = TextureRect.StretchModeEnum.Scale;
-				GD.Print("Background image stretch mode: Stretch to Fit");
 			}
 			else
 			{
 				// Keep aspect: IgnoreSize + Keep
 				_backgroundImageNode.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 				_backgroundImageNode.StretchMode = TextureRect.StretchModeEnum.Keep;
-				GD.Print("Background image stretch mode: Keep Aspect");
 			}
 			
 			// Sync to preview viewport
@@ -658,7 +729,6 @@ public partial class ProjectPropertiesPanel : Panel
 			_backgroundImageNode.Texture = null;
 			_currentBackgroundImagePath = "";
 			_backgroundImageLabel.Text = "No image selected";
-			GD.Print("Background image cleared");
 			
 			// Sync to preview viewport
 			Main.Instance?.SyncPreviewBackground();
@@ -736,7 +806,6 @@ public partial class ProjectPropertiesPanel : Panel
 		}
 		
 		_floorTextureLabel.Text = $"{_blockTexturePaths.Count} block textures available";
-		GD.Print($"Loaded {_blockTexturePaths.Count} block textures for floor selection");
 	}
 	
 	private void LoadCurrentFloorSettings()
@@ -757,14 +826,12 @@ public partial class ProjectPropertiesPanel : Panel
 			{
 				_floorTextureDropdown.Selected = grassIndex;
 				OnFloorTextureSelected(grassIndex);
-				GD.Print("Set default floor texture to grass_block_top");
 			}
 			else
 			{
 				// Fallback to first texture if grass_block_top not found
 				_floorTextureDropdown.Selected = 0;
 				OnFloorTextureSelected(0);
-				GD.Print("grass_block_top not found, using first available texture");
 			}
 		}
 	}
@@ -774,7 +841,6 @@ public partial class ProjectPropertiesPanel : Panel
 		if (_floorNode != null)
 		{
 			_floorNode.Visible = visible;
-			GD.Print($"Floor visibility set to: {visible}");
 		}
 	}
 	
@@ -804,14 +870,16 @@ public partial class ProjectPropertiesPanel : Panel
 		}
 		else
 		{
-			material = new StandardMaterial3D();
-			material.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
-			material.AlphaScissorThreshold = 0.5f;
-			material.AlphaAntialiasingMode = BaseMaterial3D.AlphaAntiAliasing.Off;
-			material.MetallicSpecular = 0.0f;
-			material.Uv1Scale = new Vector3(64, 64, 64);
-			material.TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest;
-			_floorMeshInstance.MaterialOverride = material;
+            material = new StandardMaterial3D
+            {
+                Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor,
+                AlphaScissorThreshold = 0.5f,
+                AlphaAntialiasingMode = BaseMaterial3D.AlphaAntiAliasing.Off,
+                MetallicSpecular = 0.0f,
+                Uv1Scale = new Vector3(64, 64, 64),
+                TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest
+            };
+            _floorMeshInstance.MaterialOverride = material;
 		}
 		
 		// Set the texture
@@ -826,14 +894,12 @@ public partial class ProjectPropertiesPanel : Panel
 			// Minecraft grass green tint: #91BD59 (approximately RGB: 145, 189, 89)
 			material.AlbedoColor = new Color(145f / 255f, 189f / 255f, 89f / 255f, 1.0f);
 			_floorTextureLabel.Text = $"Selected: {blockName} (with tint)";
-			GD.Print($"Floor texture changed to: {selectedPath} with green tint");
 		}
 		else
 		{
 			// Reset to white (no tint)
 			material.AlbedoColor = new Color(1, 1, 1, 1);
 			_floorTextureLabel.Text = $"Selected: {blockName}";
-			GD.Print($"Floor texture changed to: {selectedPath}");
 		}
 	}
 	
@@ -872,7 +938,6 @@ public partial class ProjectPropertiesPanel : Panel
 	
 	private void OnProjectNameChanged(string newName)
 	{
-		GD.Print($"Project name changed to: {newName}");
 		// TODO: Save to project file or settings
 	}
 	
@@ -880,7 +945,6 @@ public partial class ProjectPropertiesPanel : Panel
 	{
 		var width = (int)_resolutionWidthSpinBox.Value;
 		var height = (int)_resolutionHeightSpinBox.Value;
-		GD.Print($"Resolution changed to: {width}x{height}");
 		// TODO: Apply resolution to render viewport
 	}
 	
@@ -888,21 +952,18 @@ public partial class ProjectPropertiesPanel : Panel
 	{
 		_resolutionWidthSpinBox.Value = width;
 		_resolutionHeightSpinBox.Value = height;
-		GD.Print($"Resolution preset applied: {width}x{height}");
 		// OnResolutionChanged will be called automatically via ValueChanged signal
 	}
 	
 	private void OnFramerateChanged(double value)
 	{
 		var fps = (int)value;
-		GD.Print($"Framerate changed to: {fps} FPS");
 		// TODO: Apply framerate to animation timeline
 	}
 	
 	private void OnFrameratePresetPressed(int fps)
 	{
 		_framerateSpinBox.Value = fps;
-		GD.Print($"Framerate preset applied: {fps} FPS");
 		// OnFramerateChanged will be called automatically via ValueChanged signal
 	}
 	
@@ -915,14 +976,11 @@ public partial class ProjectPropertiesPanel : Panel
 		{
 			AnimatedTextureManager.Instance.SetTextureAnimationFps(fps);
 		}
-		
-		GD.Print($"Texture animation speed changed to: {fps} FPS");
 	}
 	
 	private void OnTextureAnimationFpsPresetPressed(int fps)
 	{
 		_textureAnimationFpsSpinBox.Value = fps;
-		GD.Print($"Texture animation speed preset applied: {fps} FPS");
 		// OnTextureAnimationFpsChanged will be called automatically via ValueChanged signal
 	}
 	

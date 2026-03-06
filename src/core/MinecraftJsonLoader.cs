@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -36,8 +36,6 @@ public class MinecraftJsonLoader
 		_assetsPath = Path.Combine(_dataPath, "SimplyRemadeAssetsV1");
 		_loadedModels = new Dictionary<string, MinecraftModel>();
 		_loadedBlockStates = new Dictionary<string, BlockState>();
-		
-		GD.Print($"MinecraftJsonLoader initialized with assets path: {_assetsPath}");
 	}
 	
 	/// <summary>
@@ -48,12 +46,9 @@ public class MinecraftJsonLoader
 	{
 		if (_isLoaded)
 		{
-			GD.Print("Minecraft JSON files already loaded.");
 			return true;
 		}
-		
-		GD.Print($"Starting to load Minecraft JSON files from: {_assetsPath}");
-		
+				
 		if (!Directory.Exists(_assetsPath))
 		{
 			GD.PrintErr($"Assets path does not exist: {_assetsPath}");
@@ -70,7 +65,6 @@ public class MinecraftJsonLoader
 			
 			// Find all asset folders in the data directory
 			var assetFolders = GetAssetFolders();
-			GD.Print($"Found {assetFolders.Count} asset folder(s) to load from: {string.Join(", ", assetFolders.Select(Path.GetFileName))}");
 			
 			// Load all JSON files recursively from all asset folders
 			var jsonFiles = new List<string>();
@@ -80,12 +74,9 @@ public class MinecraftJsonLoader
 				{
 					var folderFiles = Directory.GetFiles(assetFolder, "*.json", SearchOption.AllDirectories);
 					jsonFiles.AddRange(folderFiles);
-					GD.Print($"Found {folderFiles.Length} JSON files in {Path.GetFileName(assetFolder)}");
 				}
 			}
-			
-			GD.Print($"Found {jsonFiles.Count} JSON files total to load.");
-			
+						
 			progressCallback?.Invoke($"Found {jsonFiles.Count} files to load", 10);
 			
 			int processed = 0;
@@ -99,7 +90,6 @@ public class MinecraftJsonLoader
 					var progress = 10 + (int)((processed / (float)jsonFiles.Count) * 85);
 					var message = $"Loading JSON files: {processed}/{jsonFiles.Count}";
 					progressCallback?.Invoke(message, progress);
-					GD.Print($"Processing file {processed}/{jsonFiles.Count}...");
 					// Allow other operations to run
 					await Task.Delay(1);
 				}
@@ -108,11 +98,6 @@ public class MinecraftJsonLoader
 			}
 			
 			_isLoaded = true;
-			GD.Print($"Finished loading Minecraft JSON files. Loaded: {_totalFilesLoaded}, Failed: {_totalFilesFailedToLoad}");
-			
-			// Print summary
-			GD.Print($"Total models loaded: {_loadedModels.Count}");
-			GD.Print($"Total blockstates loaded: {_loadedBlockStates.Count}");
 			
 			progressCallback?.Invoke($"Completed: {_totalFilesLoaded} files loaded", 100);
 			
@@ -283,7 +268,6 @@ public class MinecraftJsonLoader
 				     folderName.Contains("Assets", StringComparison.OrdinalIgnoreCase)))
 				{
 					assetFolders.Add(folder);
-					GD.Print($"Found additional asset folder: {folderName}");
 				}
 			}
 		}

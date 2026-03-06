@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 
 namespace simplyRemadeNuxi.core;
@@ -616,7 +616,6 @@ public partial class ObjectPropertiesPanel : Panel
 			{
 				// This bone is part of a skinned mesh or controls multiple meshes
 				// Alpha should be controlled by the material editor, not here
-				GD.Print("This bone is part of a skinned mesh. Alpha should be controlled via the material editor.");
 				// Reset the slider to show that it's not applicable
 				_materialAlphaSlider.SetValueNoSignal(1.0);
 				_materialAlphaLabel.Text = "N/A";
@@ -706,28 +705,34 @@ public partial class CollapsibleSection : VBoxContainer
 		var header = new HBoxContainer();
 		AddChild(header);
 
-		// Toggle arrow button
-		_toggleButton = new Button();
-		_toggleButton.Text = "▼";
-		_toggleButton.CustomMinimumSize = new Vector2(24, 0);
-		_toggleButton.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
-		_toggleButton.Pressed += OnTogglePressed;
+        // Toggle arrow button
+        _toggleButton = new Button
+        {
+            Text = "▼",
+            CustomMinimumSize = new Vector2(24, 0),
+            SizeFlagsHorizontal = SizeFlags.ShrinkBegin
+        };
+        _toggleButton.Pressed += OnTogglePressed;
 		header.AddChild(_toggleButton);
 
-		var label = new Label();
-		label.Text = title;
-		label.AddThemeFontSizeOverride("font_size", 14);
+        var label = new Label
+        {
+            Text = title
+        };
+        label.AddThemeFontSizeOverride("font_size", 14);
 		label.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
 		label.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		header.AddChild(label);
 
-		// Reset button
-		_resetButton = new Button();
-		_resetButton.Text = "↺";
-		_resetButton.TooltipText = "Reset to original value";
-		_resetButton.CustomMinimumSize = new Vector2(24, 0);
-		_resetButton.SizeFlagsHorizontal = SizeFlags.ShrinkEnd;
-		header.AddChild(_resetButton);
+        // Reset button
+        _resetButton = new Button
+        {
+            Text = "↺",
+            TooltipText = "Reset to original value",
+            CustomMinimumSize = new Vector2(24, 0),
+            SizeFlagsHorizontal = SizeFlags.ShrinkEnd
+        };
+        header.AddChild(_resetButton);
 
 		// Content container for the spinbox rows
 		_contentContainer = new VBoxContainer();

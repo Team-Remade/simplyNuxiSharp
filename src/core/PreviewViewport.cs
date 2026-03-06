@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 using System.Collections.Generic;
 using FFMpegCore;
@@ -661,7 +661,6 @@ public partial class PreviewViewport : Control
 			
 		_sceneCameras.Add(camera);
 		RefreshCameraDropdown();
-		GD.Print($"Camera '{camera.Name}' added to preview viewport");
 	}
 	
 	public void OnCameraRemoved(CameraSceneObject camera)
@@ -679,7 +678,6 @@ public partial class PreviewViewport : Control
 		}
 		
 		RefreshCameraDropdown();
-		GD.Print($"Camera '{camera.Name}' removed from preview viewport");
 	}
 	
 	private void RefreshCameraDropdown()
@@ -724,7 +722,6 @@ public partial class PreviewViewport : Control
 			// Switch to work camera
 			_useWorkCamera = true;
 			_activeSceneCamera = null;
-			GD.Print("Switched to Work Camera");
 		}
 		else
 		{
@@ -734,7 +731,6 @@ public partial class PreviewViewport : Control
 			{
 				_useWorkCamera = false;
 				_activeSceneCamera = _sceneCameras[cameraIndex];
-				GD.Print($"Switched to camera: {_activeSceneCamera.Name}");
 			}
 		}
 	}
@@ -839,11 +835,7 @@ public partial class PreviewViewport : Control
 			obj.ApplySelectionMaterial(true);
 		}
 		
-		if (saveResult == Error.Ok)
-		{
-			GD.Print($"Image rendered successfully to: {filePath}");
-		}
-		else
+		if (saveResult != Error.Ok)
 		{
 			GD.PrintErr($"Failed to save image to: {filePath}");
 		}
@@ -884,8 +876,6 @@ public partial class PreviewViewport : Control
 		// Set render resolution - only change viewport size, keep container as-is
 		PreviewSubViewport.Size = new Vector2I(width, height);
 		
-		GD.Print($"Starting animation render: {lastFrame} frames at {framerate} FPS");
-		
 		if (isPngSequence)
 		{
 			// Render PNG sequence
@@ -907,8 +897,6 @@ public partial class PreviewViewport : Control
 		{
 			obj.ApplySelectionMaterial(true);
 		}
-		
-		GD.Print("Animation render complete");
 	}
 	
 	private async System.Threading.Tasks.Task RenderPngSequence(string outputDirectory, int lastFrame, float framerate)
@@ -942,15 +930,7 @@ public partial class PreviewViewport : Control
 			{
 				GD.PrintErr($"Failed to save frame {frame} to: {framePath}");
 			}
-			
-			// Progress feedback
-			if (frame % 10 == 0)
-			{
-				GD.Print($"Rendered frame {frame}/{lastFrame}");
-			}
 		}
-		
-		GD.Print($"PNG sequence saved to: {outputDirectory}");
 	}
 	
 	private async System.Threading.Tasks.Task RenderVideoFile(string outputPath, string format, int bitrateMbps, int lastFrame, float framerate)
@@ -965,8 +945,6 @@ public partial class PreviewViewport : Control
 		// Create temporary directory for frames
 		var tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"render_{System.Guid.NewGuid()}");
 		DirAccess.MakeDirRecursiveAbsolute(tempDir);
-		
-		GD.Print($"Rendering frames to temporary directory: {tempDir}");
 		
 		// Render all frames to temp directory
 		for (int frame = 0; frame <= lastFrame; frame++)
@@ -988,16 +966,7 @@ public partial class PreviewViewport : Control
 			{
 				GD.PrintErr($"Failed to save frame {frame} to: {framePath}");
 			}
-			
-			// Progress feedback
-			if (frame % 10 == 0)
-			{
-				GD.Print($"Rendered frame {frame}/{lastFrame}");
-			}
 		}
-		
-		// Use FFMpegCore to encode video
-		GD.Print("Encoding video with FFMpegCore...");
 		
 		try
 		{
@@ -1020,16 +989,12 @@ public partial class PreviewViewport : Control
 					.WithFastStart())
 				.ProcessSynchronously();
 			
-			if (success)
-			{
-				GD.Print($"Video encoded successfully to: {outputPath}");
-			}
-			else
+			if (!success)
 			{
 				GD.PrintErr("FFMpeg encoding failed");
 			}
 		}
-		catch (System.Exception ex)
+		catch (Exception ex)
 		{
 			GD.PrintErr($"Error encoding video: {ex.Message}");
 			GD.PrintErr($"Stack trace: {ex.StackTrace}");
@@ -1039,9 +1004,8 @@ public partial class PreviewViewport : Control
 		try
 		{
 			System.IO.Directory.Delete(tempDir, true);
-			GD.Print("Temporary files cleaned up");
 		}
-		catch (System.Exception ex)
+		catch (Exception ex)
 		{
 			GD.PrintErr($"Failed to clean up temporary directory: {ex.Message}");
 		}

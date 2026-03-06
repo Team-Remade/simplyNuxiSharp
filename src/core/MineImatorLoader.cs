@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -57,7 +57,6 @@ public class MineImatorLoader
 			model.FullPath = modelPath;
 			
 			_modelCache[modelPath] = model;
-			GD.Print($"Loaded Mine Imator model: {model.Name}");
 			
 			return model;
 		}
@@ -146,8 +145,6 @@ public class MineImatorLoader
 				}
 			}
 		}
-		
-		GD.Print($"Created Mine Imator character: {model.Name} with {skeleton.GetBoneCount()} bones");
 		
 		return character;
 	}
@@ -254,11 +251,13 @@ public class MineImatorLoader
 		for (int i = 0; i < boneCount; i++)
 		{
 			var boneName = skeleton.GetBoneName(i);
-			var boneObject = new BoneSceneObject(skeleton, i);
-			boneObject.Name = boneName;
-			boneObject.ObjectType = "Bone";
-			
-			character.BoneObjects[boneName] = boneObject;
+            var boneObject = new BoneSceneObject(skeleton, i)
+            {
+                Name = boneName,
+                ObjectType = "Bone"
+            };
+
+            character.BoneObjects[boneName] = boneObject;
 		}
 		
 		// Second pass: Build hierarchy
@@ -379,15 +378,17 @@ public class MineImatorLoader
 		// Apply material with texture
 		if (meshInstance != null && texture != null)
 		{
-			var material = new StandardMaterial3D();
-			material.AlbedoTexture = texture;
-			material.TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest;
-			// Use backface culling by default, frontface culling when inverted
-			material.CullMode = BaseMaterial3D.CullModeEnum.Back;
-			material.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
-			material.AlphaScissorThreshold = 0.5f;
-			
-			if (meshInstance.Mesh is ArrayMesh arrayMesh && arrayMesh.GetSurfaceCount() > 0)
+            var material = new StandardMaterial3D
+            {
+                AlbedoTexture = texture,
+                TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest,
+                // Use backface culling by default, frontface culling when inverted
+                CullMode = BaseMaterial3D.CullModeEnum.Back,
+                Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor,
+                AlphaScissorThreshold = 0.5f
+            };
+
+            if (meshInstance.Mesh is ArrayMesh arrayMesh && arrayMesh.GetSurfaceCount() > 0)
 			{
 				arrayMesh.SurfaceSetMaterial(0, material);
 			}
@@ -496,14 +497,6 @@ public class MineImatorLoader
 		var texDown2 = new Vector2(texU + texSizeX + texSizeFixX, texV - texUpHeightFix + texUpHeightFix);
 		var texDown1 = new Vector2(texU + texSizeX, texV - texUpHeightFix + texUpHeightFix);
 		
-		// Debug: Print UV pixel coordinates for each face
-		GD.Print($"Shape UV Debug - Part: {partName}, ShapeIndex: {shapeIndex}, From: ({from.X * 16},{from.Y * 16},{from.Z * 16}), To: ({to.X * 16},{to.Y * 16},{to.Z * 16}), Size: {sizeX}x{sizeY}x{sizeZ}, Texture: {texWidth}x{texHeight}");
-		GD.Print($"  South: {texSouth1.X * texWidth},{texSouth1.Y * texHeight} -> {texSouth2.X * texWidth},{texSouth2.Y * texHeight} -> {texSouth3.X * texWidth},{texSouth3.Y * texHeight} -> {texSouth4.X * texWidth},{texSouth4.Y * texHeight}");
-		GD.Print($"  East:  {texEast1.X * texWidth},{texEast1.Y * texHeight} -> {texEast2.X * texWidth},{texEast2.Y * texHeight} -> {texEast3.X * texWidth},{texEast3.Y * texHeight} -> {texEast4.X * texWidth},{texEast4.Y * texHeight}");
-		GD.Print($"  West:  {texWest1.X * texWidth},{texWest1.Y * texHeight} -> {texWest2.X * texWidth},{texWest2.Y * texHeight} -> {texWest3.X * texWidth},{texWest3.Y * texHeight} -> {texWest4.X * texWidth},{texWest4.Y * texHeight}");
-		GD.Print($"  North: {texNorth1.X * texWidth},{texNorth1.Y * texHeight} -> {texNorth2.X * texWidth},{texNorth2.Y * texHeight} -> {texNorth3.X * texWidth},{texNorth3.Y * texHeight} -> {texNorth4.X * texWidth},{texNorth4.Y * texHeight}");
-		GD.Print($"  Up:    {texUp1.X * texWidth},{texUp1.Y * texHeight} -> {texUp2.X * texWidth},{texUp2.Y * texHeight} -> {texUp3.X * texWidth},{texUp3.Y * texHeight} -> {texUp4.X * texWidth},{texUp4.Y * texHeight}");
-		GD.Print($"  Down:  {texDown1.X * texWidth},{texDown1.Y * texHeight} -> {texDown2.X * texWidth},{texDown2.Y * texHeight} -> {texDown3.X * texWidth},{texDown3.Y * texHeight} -> {texDown4.X * texWidth},{texDown4.Y * texHeight}");
 		
 		// Apply texture mirror on X if needed
 		if (textureMirror)
@@ -599,11 +592,13 @@ public class MineImatorLoader
 		
 		var arrayMesh = new ArrayMesh();
 		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-		
-		var meshInstance = new MeshInstance3D();
-		meshInstance.Mesh = arrayMesh;
-		
-		return meshInstance;
+
+        var meshInstance = new MeshInstance3D
+        {
+            Mesh = arrayMesh
+        };
+
+        return meshInstance;
 	}
 	
 	/// <summary>
@@ -750,11 +745,13 @@ public class MineImatorLoader
 		
 		var arrayMesh = new ArrayMesh();
 		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-		
-		var meshInstance = new MeshInstance3D();
-		meshInstance.Mesh = arrayMesh;
-		
-		return meshInstance;
+
+        var meshInstance = new MeshInstance3D
+        {
+            Mesh = arrayMesh
+        };
+
+        return meshInstance;
 	}
 	
 	/// <summary>
@@ -966,11 +963,13 @@ public class MineImatorLoader
 		
 		var arrayMesh = new ArrayMesh();
 		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-		
-		var meshInstance = new MeshInstance3D();
-		meshInstance.Mesh = arrayMesh;
-		
-		return meshInstance;
+
+        var meshInstance = new MeshInstance3D
+        {
+            Mesh = arrayMesh
+        };
+
+        return meshInstance;
 	}
 	
 	/// <summary>
@@ -1129,8 +1128,6 @@ public class MineImatorLoader
 		
 		var texturePath = Path.Combine(model.DirectoryPath, model.Texture);
 		
-		GD.Print($"Attempting to load Mine Imator texture from: {texturePath}");
-		
 		if (!File.Exists(texturePath))
 		{
 			GD.PrintErr($"Mine Imator texture not found: {texturePath}");
@@ -1142,15 +1139,11 @@ public class MineImatorLoader
 			// Read file bytes using System.IO (works for external paths)
 			byte[] fileBytes = File.ReadAllBytes(texturePath);
 			
-			GD.Print($"Read {fileBytes.Length} bytes from texture file");
-			
 			// Check for PNG header
 			if (fileBytes.Length >= 8)
 			{
 				bool isPng = fileBytes[0] == 0x89 && fileBytes[1] == 0x50 && 
 				             fileBytes[2] == 0x4E && fileBytes[3] == 0x47;
-				GD.Print($"PNG header check: {(isPng ? "Valid PNG header" : "Not a standard PNG header")}");
-				GD.Print($"First 16 bytes: {BitConverter.ToString(fileBytes, 0, Math.Min(16, fileBytes.Length))}");
 			}
 			
 			var image = new Image();
@@ -1198,34 +1191,6 @@ public class MineImatorLoader
 					break;
 			}
 			
-			if (error != Error.Ok)
-			{
-				GD.PrintErr($"Failed to load Mine Imator texture: {texturePath} (Error: {error}, Format: {extension})");
-				
-				// Try loading with Godot's built-in image loader as fallback
-				GD.Print("Attempting fallback: copying to temp file and using Image.Load()");
-				string tempPath = Path.Combine(Path.GetTempPath(), $"mi_texture_{Guid.NewGuid()}{extension}");
-				try
-				{
-					File.Copy(texturePath, tempPath, true);
-					var fallbackImage = new Image();
-					var fallbackError = fallbackImage.Load(tempPath);
-					File.Delete(tempPath);
-					
-					if (fallbackError == Error.Ok && !fallbackImage.IsEmpty())
-					{
-						GD.Print($"Fallback succeeded! Loaded texture: {model.Texture} ({fallbackImage.GetWidth()}x{fallbackImage.GetHeight()})");
-						return ImageTexture.CreateFromImage(fallbackImage);
-					}
-				}
-				catch (Exception fallbackEx)
-				{
-					GD.PrintErr($"Fallback also failed: {fallbackEx.Message}");
-				}
-				
-				return null;
-			}
-			
 			if (image.IsEmpty())
 			{
 				GD.PrintErr($"Mine Imator texture loaded but image is empty: {texturePath}");
@@ -1233,7 +1198,6 @@ public class MineImatorLoader
 			}
 			
 			var texture = ImageTexture.CreateFromImage(image);
-			GD.Print($"Loaded Mine Imator texture: {model.Texture} ({image.GetWidth()}x{image.GetHeight()})");
 			
 			return texture;
 		}

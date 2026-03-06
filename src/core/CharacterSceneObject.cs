@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System.Collections.Generic;
 
 namespace simplyRemadeNuxi.core;
@@ -47,19 +47,8 @@ public partial class CharacterSceneObject : SceneObject
 			return;
 		}
 		
-		GD.Print($"Found skeleton with {Skeleton.GetBoneCount()} bones");
-		
 		// Try to find a skinned mesh (some models like Steve have individual meshes per bone instead)
 		SkinnedMesh = FindSkinnedMesh(glbRoot);
-		
-		if (SkinnedMesh == null)
-		{
-			GD.Print("No skinned mesh found - character likely uses separate meshes per bone");
-		}
-		else
-		{
-			GD.Print($"Found skinned mesh: {SkinnedMesh.Name}");
-		}
 		
 		// Add the entire GLB hierarchy to our Visual node
 		// Use AddChild instead of Reparent since the glbRoot may not be in the scene tree yet
@@ -67,8 +56,6 @@ public partial class CharacterSceneObject : SceneObject
 		
 		// Create BoneSceneObjects for each bone
 		CreateBoneHierarchy();
-		
-		GD.Print($"Character setup complete with {BoneObjects.Count} bone objects");
 	}
 	
 	/// <summary>
@@ -125,11 +112,13 @@ public partial class CharacterSceneObject : SceneObject
 		for (int i = 0; i < boneCount; i++)
 		{
 			var boneName = Skeleton.GetBoneName(i);
-			var boneObject = new BoneSceneObject(Skeleton, i);
-			boneObject.Name = boneName;
-			boneObject.ObjectType = "Bone";
-			
-			BoneObjects[boneName] = boneObject;
+            var boneObject = new BoneSceneObject(Skeleton, i)
+            {
+                Name = boneName,
+                ObjectType = "Bone"
+            };
+
+            BoneObjects[boneName] = boneObject;
 		}
 		
 		// Second pass: Build hierarchy based on bone parents
@@ -295,23 +284,27 @@ public partial class BoneSceneObject : SceneObject
 	{
 		// Create a small sphere mesh for picking
 		var meshInstance = new MeshInstance3D();
-		var sphereMesh = new SphereMesh();
-		sphereMesh.RadialSegments = 8;
-		sphereMesh.Rings = 4;
-		sphereMesh.Radius = 0.05f; // Small 5cm radius sphere
-		sphereMesh.Height = 0.1f;
-		
-		// Create a simple material
-		var material = new StandardMaterial3D();
-		material.AlbedoColor = new Color(0.5f, 0.5f, 1.0f, 0.3f); // Light blue semi-transparent
-		material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-		// Use render priority to ensure bones render in front of characters
-		// This works with depth pre-pass: higher priority renders after (on top)
-		material.RenderPriority = (int)Material.RenderPriorityMax;
-		material.NoDepthTest = true; // Also disable depth test for extra visibility
-		
-		// Set material on the mesh surface
-		sphereMesh.Material = material;
+        var sphereMesh = new SphereMesh
+        {
+            RadialSegments = 8,
+            Rings = 4,
+            Radius = 0.05f, // Small 5cm radius sphere
+            Height = 0.1f
+        };
+
+        // Create a simple material
+        var material = new StandardMaterial3D
+        {
+            AlbedoColor = new Color(0.5f, 0.5f, 1.0f, 0.3f), // Light blue semi-transparent
+            Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+            // Use render priority to ensure bones render in front of characters
+            // This works with depth pre-pass: higher priority renders after (on top)
+            RenderPriority = (int)Material.RenderPriorityMax,
+            NoDepthTest = true // Also disable depth test for extra visibility
+        };
+
+        // Set material on the mesh surface
+        sphereMesh.Material = material;
 		meshInstance.Mesh = sphereMesh;
 		
 		// Set cull layer to 2 (picking layer)
@@ -341,7 +334,7 @@ public partial class BoneSceneObject : SceneObject
 		_internalRotation = _basePoseRotation;
 		base.Position = _internalPosition;
 		base.Rotation = _internalRotation;
-		base.Scale = boneRest.Basis.Scale;
+        Scale = boneRest.Basis.Scale;
 		
 		// Initialize target position and rotation to zero (relative to base pose)
 		_targetPosition = Vector3.Zero;

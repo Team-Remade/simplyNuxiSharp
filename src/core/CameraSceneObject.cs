@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 
 namespace simplyRemadeNuxi.core;
 
@@ -57,7 +57,6 @@ public partial class CameraSceneObject : SceneObject
 		SetCullLayerToLayer2Only(cameraNode3D);
 		
 		AddVisualInstance(cameraNode3D);
-		GD.Print("Camera visual loaded from Camera.glb");
 	}
 	
 	private void SetCullLayerToLayer2Only(Node node)

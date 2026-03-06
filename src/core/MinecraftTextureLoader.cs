@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -38,8 +38,6 @@ public class MinecraftTextureLoader
 		_projectAssetsPath = Path.Combine(_dataPath, "SimplyRemadeAssetsV1");
 		_loadedTextures = new Dictionary<string, ImageTexture>();
 		_textureMetadata = new Dictionary<string, MinecraftTextureMetadata>();
-		
-		GD.Print($"MinecraftTextureLoader initialized with assets path: {_projectAssetsPath}");
 	}
 	
 	/// <summary>
@@ -50,11 +48,8 @@ public class MinecraftTextureLoader
 	{
 		if (_isLoaded)
 		{
-			GD.Print("Minecraft textures already loaded.");
 			return true;
 		}
-		
-		GD.Print($"Starting to load Minecraft textures from: {_projectAssetsPath}");
 		
 		try
 		{
@@ -66,7 +61,6 @@ public class MinecraftTextureLoader
 			
 			// Find all asset folders in the data directory
 			var assetFolders = GetAssetFolders();
-			GD.Print($"Found {assetFolders.Count} asset folder(s) to load textures from: {string.Join(", ", assetFolders.Select(Path.GetFileName))}");
 			
 			// Keep track of texture files with their base paths and namespace
 			var textureFilesWithBasePath = new List<(string filePath, string basePath, string namespaceName)>();
@@ -78,7 +72,6 @@ public class MinecraftTextureLoader
 				
 				if (!Directory.Exists(assetsRootPath))
 				{
-					GD.PrintRich($"[color=yellow]Assets path does not exist in {Path.GetFileName(assetFolder)}: {assetsRootPath}[/color]");
 					continue;
 				}
 				
@@ -121,15 +114,9 @@ public class MinecraftTextureLoader
 						}
 						itemCount = itemFiles.Length;
 					}
-					
-					if (blockCount > 0 || itemCount > 0)
-					{
-						GD.Print($"Found {blockCount} block and {itemCount} item textures in {namespaceName} namespace ({Path.GetFileName(assetFolder)})");
-					}
 				}
 			}
 			
-			GD.Print($"Found {textureFilesWithBasePath.Count} texture files total to load.");
 			progressCallback?.Invoke($"Found {textureFilesWithBasePath.Count} texture files to load", 10);
 			
 			int processed = 0;
@@ -143,7 +130,6 @@ public class MinecraftTextureLoader
 					var progress = 10 + (int)((processed / (float)textureFilesWithBasePath.Count) * 85);
 					var message = $"Loading textures: {processed}/{textureFilesWithBasePath.Count}";
 					progressCallback?.Invoke(message, progress);
-					GD.Print($"Processing texture {processed}/{textureFilesWithBasePath.Count}...");
 					// Allow other operations to run
 					await Task.Delay(1);
 				}
@@ -152,7 +138,6 @@ public class MinecraftTextureLoader
 			}
 			
 			_isLoaded = true;
-			GD.Print($"Finished loading Minecraft textures. Loaded: {_totalTexturesLoaded}, Failed: {_totalTexturesFailedToLoad}, Mcmeta files: {_totalMcmetaLoaded}");
 			
 			progressCallback?.Invoke($"Completed: {_totalTexturesLoaded} textures loaded ({_totalMcmetaLoaded} with animation)", 100);
 			
@@ -194,7 +179,6 @@ public class MinecraftTextureLoader
 				     folderName.Contains("Assets", StringComparison.OrdinalIgnoreCase)))
 				{
 					assetFolders.Add(folder);
-					GD.Print($"Found additional asset folder: {folderName}");
 				}
 			}
 		}
@@ -267,12 +251,6 @@ public class MinecraftTextureLoader
 			{
 				_textureMetadata[textureKey] = metadata;
 				_totalMcmetaLoaded++;
-				
-				// Log animation info if present
-				if (metadata.Animation != null)
-				{
-					GD.Print($"Loaded animation metadata for {textureKey}: frametime={metadata.Animation.Frametime}, interpolate={metadata.Animation.Interpolate}");
-				}
 			}
 		}
 		catch (Exception ex)

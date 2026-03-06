@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 using System.IO;
 using System.IO.Compression;
@@ -170,9 +170,8 @@ public partial class AssetDownloaderWindow : Window
 			request.QueueFree();
 			return hasConnection;
 		}
-		catch (Exception ex)
+		catch (Exception)
 		{
-			GD.Print($"Internet connectivity check failed: {ex.Message}");
 			return false;
 		}
 	}
@@ -457,7 +456,6 @@ public partial class AssetDownloaderWindow : Window
 		if (ProgressBar != null)
 			ProgressBar.Value = progress;
 		
-		GD.Print($"Asset Downloader: {message} ({progress}%)");
 	}
 	
 	private void ResetButtons()
@@ -485,7 +483,6 @@ public partial class AssetDownloaderWindow : Window
 			if (textureSuccess)
 			{
 				UpdateStatus($"Loaded {textureLoader.TotalTexturesLoaded} Minecraft textures successfully!", 33);
-				GD.Print($"Minecraft texture loading complete. Block textures: {textureLoader.GetAllBlockTexturePaths().Count()}, Item textures: {textureLoader.GetAllItemTexturePaths().Count()}");
 			}
 			else
 			{
@@ -507,7 +504,6 @@ public partial class AssetDownloaderWindow : Window
 			if (success)
 			{
 				UpdateStatus($"Loaded {loader.TotalFilesLoaded} Minecraft JSON files successfully!", 66);
-				GD.Print($"Minecraft JSON loading complete. Models: {loader.GetAllModelPaths().Count()}, BlockStates: {loader.GetAllBlockStatePaths().Count()}");
 			}
 			else
 			{
@@ -529,7 +525,6 @@ public partial class AssetDownloaderWindow : Window
 			if (charSuccess)
 			{
 				UpdateStatus($"Found {characterLoader.TotalCharactersFound} character files!", 100);
-				GD.Print($"Character scanning complete. Characters found: {characterLoader.TotalCharactersFound}");
 			}
 			else
 			{
@@ -537,12 +532,6 @@ public partial class AssetDownloaderWindow : Window
 			}
 			
 			await Task.Delay(250);
-			
-			// Print summary
-			GD.Print($"=== Asset Loading Complete ===");
-			GD.Print($"Textures Loaded: {textureLoader.TotalTexturesLoaded} (Failed: {textureLoader.TotalTexturesFailed})");
-			GD.Print($"JSON Files Loaded: {loader.TotalFilesLoaded} (Failed: {loader.TotalFilesFailed})");
-			GD.Print($"Characters Found: {characterLoader.TotalCharactersFound}");
 		}
 		catch (Exception ex)
 		{
