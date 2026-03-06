@@ -25,6 +25,7 @@ config/windows_native_icon="res://assets/img/appIcon01.ico"
 [autoload]
 
 SelectionManager="*uid://cagt7pjdbi66f"
+VoxelSettings="*uid://p50e41mp6pj5"
 
 [debug]
 

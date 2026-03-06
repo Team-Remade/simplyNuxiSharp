@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://p50e41mp6pj5"]
+
+[ext_resource type="Script" uid="uid://cy7hocj1ol61b" path="res://src/core/VoxelSettings.cs" id="1_8k2j3"]
+
+[node name="VoxelSettings" type="Node" unique_id=259165168]
+script = ExtResource("1_8k2j3")

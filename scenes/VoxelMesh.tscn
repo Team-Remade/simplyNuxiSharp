@@ -1,11 +1,6 @@
 [gd_scene format=3 uid="uid://e0q35r3l0fqs"]
 
-[sub_resource type="VoxelBlockyTypeLibrary" id="VoxelBlockyTypeLibrary_djh6l"]
+[ext_resource type="Script" uid="uid://djt3bvxytprw7" path="res://src/core/Terrain.cs" id="1_j3e0v"]
 
-[sub_resource type="VoxelMesherBlocky" id="VoxelMesherBlocky_j3e0v"]
-library = SubResource("VoxelBlockyTypeLibrary_djh6l")
-
-[node name="VoxelMesh" type="Node3D" unique_id=335286342]
-
-[node name="VoxelTerrain" type="VoxelTerrain" parent="." unique_id=1005036981]
-mesher = SubResource("VoxelMesherBlocky_j3e0v")
+[node name="VoxelMeshTerrain" type="Node3D" unique_id=335286342]
+script = ExtResource("1_j3e0v")
