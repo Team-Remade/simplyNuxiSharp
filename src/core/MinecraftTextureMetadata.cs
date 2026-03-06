@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace simplyRemadeNuxi.core;
@@ -49,7 +51,62 @@ public class AnimationData
     /// If not specified, frames play in order from top to bottom
     /// </summary>
     [JsonPropertyName("frames")]
+    [JsonConverter(typeof(FramesConverter))]
     public List<FrameData> Frames { get; set; }
+}
+
+/// <summary>
+/// Custom converter to handle both formats for animation frames:
+/// - List of integers (frame indices)
+/// - List of FrameData objects (with index and optional time)
+/// </summary>
+public class FramesConverter : JsonConverter<List<FrameData>>
+{
+    public override List<FrameData> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+        {
+            return null;
+        }
+        
+        if (reader.TokenType != JsonTokenType.StartArray)
+        {
+            throw new JsonException("Frames must be an array");
+        }
+        
+        var frames = new List<FrameData>();
+        reader.Read();
+        
+        while (reader.TokenType != JsonTokenType.EndArray)
+        {
+            if (reader.TokenType == JsonTokenType.Number)
+            {
+                // Frame is a direct integer index
+                var index = reader.GetInt32();
+                frames.Add(new FrameData { Index = index });
+            }
+            else if (reader.TokenType == JsonTokenType.StartObject)
+            {
+                // Frame is an object with index and optional time
+                var frameData = JsonSerializer.Deserialize<FrameData>(ref reader, options);
+                frames.Add(frameData);
+            }
+            else
+            {
+                throw new JsonException("Invalid frame format: must be number or object");
+            }
+            
+            reader.Read();
+        }
+        
+        return frames;
+    }
+    
+    public override void Write(Utf8JsonWriter writer, List<FrameData> value, JsonSerializerOptions options)
+    {
+        // Write as array of FrameData objects
+        JsonSerializer.Serialize(writer, value, options);
+    }
 }
 
 /// <summary>

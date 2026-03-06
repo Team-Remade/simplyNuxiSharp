@@ -984,11 +984,9 @@ public static class MinecraftModelHelper
 				continue;
 			}
 			
-			// For basic support: apply all parts without conditions (When == null)
-			// For parts with conditions, only apply if it's the first part (index 0) or has no conditions
-			bool shouldApply = part.When == null || part.When.Count == 0;
+			// Apply all parts regardless of conditions for now to ensure fire block loads correctly
+			bool shouldApply = true;
 			
-			// If the part has no conditions, always apply it (like fence_post)
 			if (shouldApply)
 			{
 				var modelPath = NormalizeModelPath(variantData.Model);
