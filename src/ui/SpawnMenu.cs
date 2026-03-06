@@ -1153,7 +1153,7 @@ public partial class SpawnMenu : PopupPanel
 	private void OpenCustomModelFileDialog()
 	{
 		NativeFileDialog.ShowOpenFile(
-			"Select 3D Model (GLB/GLTF/Mine Imator)",
+			"Select 3D Model (GLB/GLTF/Mine Imator/.blend)",
 			NativeFileDialog.Filters.All3DModels,
 			(success, filePath) =>
 			{
@@ -1197,6 +1197,46 @@ public partial class SpawnMenu : PopupPanel
 				customModelObject = character;
 			}
 		}
+		else if (extension == ".blend")
+		{
+			// Load Blender .blend file - export to GLB via Blender CLI, then load
+			var modelRoot = LoadBlendModel(modelPath);
+			if (modelRoot == null)
+			{
+				GD.PrintErr($"Failed to load .blend file: {modelPath}");
+				return;
+			}
+			
+			// Check if the model has a skeleton
+			bool hasSkeleton = HasSkeleton(modelRoot);
+			
+			if (hasSkeleton)
+			{
+				var characterObject = new CharacterSceneObject
+				{
+					Name = fullObjectName,
+					ObjectType = displayName
+				};
+				Viewport.AddChild(characterObject);
+				characterObject.SetupFromGlb(modelRoot);
+				// Convert materials after node is in the scene tree so textures are resolved
+				BlendFileLoader.Instance.ConvertMaterialsInHierarchy(characterObject);
+				customModelObject = characterObject;
+			}
+			else
+			{
+				customModelObject = new SceneObject
+				{
+					Name = fullObjectName,
+					ObjectType = displayName,
+					PivotOffset = Vector3.Zero
+				};
+				Viewport.AddChild(customModelObject);
+				customModelObject.AddVisualInstance(modelRoot);
+				// Convert materials after node is in the scene tree so textures are resolved
+				BlendFileLoader.Instance.ConvertMaterialsInHierarchy(customModelObject);
+			}
+		}
 		else
 		{
 			// Load as GLB/GLTF
@@ -1212,15 +1252,15 @@ public partial class SpawnMenu : PopupPanel
 			
 			if (hasSkeleton)
 			{
-                // Create a CharacterSceneObject for rigged models
-                var characterObject = new CharacterSceneObject
-                {
-                    Name = fullObjectName,
-                    ObjectType = displayName
-                };
+		              // Create a CharacterSceneObject for rigged models
+		              var characterObject = new CharacterSceneObject
+		              {
+		                  Name = fullObjectName,
+		                  ObjectType = displayName
+		              };
 
-                // Add to viewport first
-                Viewport.AddChild(characterObject);
+		              // Add to viewport first
+		              Viewport.AddChild(characterObject);
 				
 				// Setup the character from the GLB data
 				characterObject.SetupFromGlb(modelRoot);
@@ -1229,16 +1269,16 @@ public partial class SpawnMenu : PopupPanel
 			}
 			else
 			{
-                // Create a regular SceneObject for static models
-                customModelObject = new SceneObject
-                {
-                    Name = fullObjectName,
-                    ObjectType = displayName,
-                    PivotOffset = Vector3.Zero
-                };
+		              // Create a regular SceneObject for static models
+		              customModelObject = new SceneObject
+		              {
+		                  Name = fullObjectName,
+		                  ObjectType = displayName,
+		                  PivotOffset = Vector3.Zero
+		              };
 
-                // Add to viewport first
-                Viewport.AddChild(customModelObject);
+		              // Add to viewport first
+		              Viewport.AddChild(customModelObject);
 				
 				// Add the model root directly to the visual node
 				customModelObject.AddVisualInstance(modelRoot);
@@ -1302,6 +1342,15 @@ public partial class SpawnMenu : PopupPanel
 		}
 		
 		return glbRoot3D;
+	}
+	
+	/// <summary>
+	/// Loads a Blender .blend file by exporting it to GLB via Blender CLI,
+	/// then loading the GLB and converting materials to ShaderMaterial.
+	/// </summary>
+	private Node3D LoadBlendModel(string blendPath)
+	{
+		return BlendFileLoader.Instance.LoadBlendFile(blendPath);
 	}
 	
 	/// <summary>
