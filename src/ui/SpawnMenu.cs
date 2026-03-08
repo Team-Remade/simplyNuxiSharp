@@ -27,6 +27,9 @@ public partial class SpawnMenu : PopupPanel
 	private List<string> _customModelHistory = new List<string>();
 	private Dictionary<string, string> _customModelPaths = new Dictionary<string, string>(); // Display name -> full path
 	
+	// Model loading progress window
+	private ModelLoadingProgressWindow _modelLoadingWindow;
+	
 	public SubViewport Viewport { get; set; }
 
 	public override void _Ready()
@@ -160,6 +163,43 @@ public partial class SpawnMenu : PopupPanel
 		InitializeCategories();
 		PopulateCategoryList();
 		UpdateObjectList(_selectedCategory);
+		
+		// Initialize model loading progress window
+		InitializeModelLoadingWindow();
+	}
+
+	private void InitializeModelLoadingWindow()
+	{
+        _modelLoadingWindow = new ModelLoadingProgressWindow
+        {
+            Visible = false
+        };
+        GetTree().Root.AddChild(_modelLoadingWindow);
+		
+		// Subscribe to progress updates from AsyncModelLoader
+		AsyncModelLoader.Instance.OnProgressUpdate += OnModelLoadingProgress;
+		
+		// Handle cancel button
+		_modelLoadingWindow.OnCancel += OnModelLoadingCancelled;
+	}
+
+	private void OnModelLoadingProgress(float progress, string message)
+	{
+		// Call from main thread to update UI
+		CallDeferred(nameof(UpdateModelLoadingProgress), progress, message);
+	}
+
+	private void UpdateModelLoadingProgress(float progress, string message)
+	{
+		if (_modelLoadingWindow != null && _modelLoadingWindow.Visible)
+		{
+			_modelLoadingWindow.UpdateProgress(progress, message);
+		}
+	}
+
+	private void OnModelLoadingCancelled()
+	{
+		AsyncModelLoader.Instance.CancelLoading();
 	}
 
 	private void InitializeCategories()
@@ -1096,32 +1136,19 @@ public partial class SpawnMenu : PopupPanel
 			return;
 		}
 		
-		// Load the GLB file using Godot's gltf_document and gltf_state
-		var gltfDocument = new GltfDocument();
-		var gltfState = new GltfState();
+		// Show progress window for model loading
+		_modelLoadingWindow.SetModelName(System.IO.Path.GetFileNameWithoutExtension(glbPath));
+		_modelLoadingWindow.ShowWindow();
 		
-		var error = gltfDocument.AppendFromFile(glbPath, gltfState);
+		// Use async model loader to properly handle texture preloading and shader compilation
+		var glbRoot3D = await AsyncModelLoader.Instance.LoadGlbAsync(glbPath);
 		
-		if (error != Error.Ok)
+		// Hide progress window
+		_modelLoadingWindow.HideWindow();
+		
+		if (glbRoot3D == null)
 		{
-			GD.PrintErr($"Failed to load GLB file: {error}");
-			return;
-		}
-		
-		// Generate the scene from GLTF
-		var glbRoot = gltfDocument.GenerateScene(gltfState);
-		
-		if (glbRoot == null)
-		{
-			GD.PrintErr("Failed to generate scene from GLB");
-			return;
-		}
-		
-		// Cast to Node3D - GLB files typically contain 3D content
-		if (glbRoot is not Node3D glbRoot3D)
-		{
-			GD.PrintErr($"GLB root is not a Node3D, it's a {glbRoot.GetType().Name}");
-			glbRoot.QueueFree();
+			GD.PrintErr("Failed to load GLB file asynchronously");
 			return;
 		}
 
@@ -1132,23 +1159,13 @@ public partial class SpawnMenu : PopupPanel
 	           ObjectType = characterName
 	       };
 
-		// Hide while shaders compile to prevent a first-frame crash caused by
-		// synchronous shader variant compilation during rendering.
-		characterObject.Visible = false;
-
 	       // Add to viewport first
 	       Viewport.AddChild(characterObject);
 		
 		// Setup the character from the GLB data
 		characterObject.SetupFromGlb(glbRoot3D);
-
-		// Wait one frame so Godot's shader compilation pipeline can process the
-		// new materials before they are rendered for the first time.
-		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
-
-		// Now safe to show
-		characterObject.Visible = true;
 		
+		// Model is now fully loaded with textures preloaded and shaders compiled
 		// Position at world origin
 		characterObject.GlobalPosition = Vector3.Zero;
 		
@@ -1253,8 +1270,18 @@ public partial class SpawnMenu : PopupPanel
 		}
 		else
 		{
-			// Load as GLB/GLTF
-			var modelRoot = LoadGlbModel(modelPath);
+			// Load as GLB/GLTF using async loader for proper texture preloading
+			// and shader compilation waiting
+			
+			// Show progress window for model loading
+			_modelLoadingWindow.SetModelName(displayName);
+			_modelLoadingWindow.ShowWindow();
+			
+			var modelRoot = await AsyncModelLoader.Instance.LoadGlbAsync(modelPath);
+			
+			// Hide progress window
+			_modelLoadingWindow.HideWindow();
+			
 			if (modelRoot == null)
 			{
 				GD.PrintErr($"Failed to load model: {modelPath}");
@@ -1272,9 +1299,6 @@ public partial class SpawnMenu : PopupPanel
 					Name = fullObjectName,
 					ObjectType = displayName
 				};
-
-				// Hide while shaders compile to prevent a first-frame crash.
-				characterObject.Visible = false;
 
 				// Add to viewport first
 				Viewport.AddChild(characterObject);
@@ -1294,9 +1318,6 @@ public partial class SpawnMenu : PopupPanel
 					PivotOffset = Vector3.Zero
 				};
 
-				// Hide while shaders compile to prevent a first-frame crash.
-				customModelObject.Visible = false;
-
 				// Add to viewport first
 				Viewport.AddChild(customModelObject);
 				
@@ -1311,14 +1332,7 @@ public partial class SpawnMenu : PopupPanel
 			return;
 		}
 
-		// Wait one frame so Godot's shader compilation pipeline can process all
-		// new materials before they are rendered for the first time.  Without this
-		// the first load crashes because shader variant compilation happens
-		// synchronously on the first rendered frame.
-		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
-
-		// Now safe to show
-		customModelObject.Visible = true;
+		// Model is now fully loaded with textures preloaded and shaders compiled
 		
 		// Position at world origin
 		customModelObject.GlobalPosition = Vector3.Zero;
