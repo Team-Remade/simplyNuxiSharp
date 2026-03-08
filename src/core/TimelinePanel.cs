@@ -1991,6 +1991,11 @@ public partial class TimelinePanel : Panel
 					// Use exact keyframe value
 					value = Convert.ToSingle(prevKeyframe.Value);
 				}
+				else if (nextKeyframe != null)
+				{
+					// Current frame is before the first keyframe - use the next keyframe's value
+					value = Convert.ToSingle(nextKeyframe.Value);
+				}
 			}
 			
 			// Apply value to object
