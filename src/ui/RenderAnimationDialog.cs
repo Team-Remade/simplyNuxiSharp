@@ -37,7 +37,7 @@ public partial class RenderAnimationDialog : Window
 		Title = "Render Animation";
 		MinSize = new Vector2I(450, 500);
 		Borderless = false;
-		Unresizable = true;
+		Unresizable = false;
 		Transient = true;
 		Exclusive = true;
 		

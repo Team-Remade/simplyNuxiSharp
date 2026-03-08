@@ -26,7 +26,7 @@ public partial class RenderImageDialog : Window
 		Title = "Render Image";
 		MinSize = new Vector2I(400, 200);
 		Borderless = false;
-		Unresizable = true;
+		Unresizable = false;
 		Transient = true;
 		Exclusive = true;
 		
