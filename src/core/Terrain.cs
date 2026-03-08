@@ -16,6 +16,6 @@ public partial class Terrain : Node3D
 
 	public VoxelBlockyTypeLibrary GetLibrary()
 	{
-		return (VoxelBlockyTypeLibrary)((VoxelMesherBlocky)terrain.Mesher).Library;
+		return VoxelSettings.Instance?.Library;
 	}
 }

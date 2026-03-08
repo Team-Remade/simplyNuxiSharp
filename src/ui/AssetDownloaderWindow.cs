@@ -556,6 +556,22 @@ public partial class AssetDownloaderWindow : Window
 			}
 			
 			await Task.Delay(250);
+			
+			// Build the voxel library from the loaded block models
+			UpdateStatus("Building voxel block library...", 100);
+			var voxelSettings = simplyRemadeNuxi.core.VoxelSettings.Instance;
+			if (voxelSettings != null)
+			{
+				voxelSettings.BuildLibraryFromLoadedModels((message, progress) =>
+				{
+					// Map the 0-100 progress from BuildLibraryFromLoadedModels to the progress bar
+					UpdateStatus(message, progress);
+				});
+			}
+			else
+			{
+				GD.PrintErr("VoxelSettings autoload not found - voxel library will not be built");
+			}
 		}
 		catch (Exception ex)
 		{

@@ -4,6 +4,7 @@ using simplyRemadeNuxi.core;
 using simplyRemadeNuxi.ui;
 using System.Linq;
 using SceneTree = simplyRemadeNuxi.core.SceneTree;
+using GDExtensionBindgen;
 
 namespace simplyRemadeNuxi;
 
@@ -87,6 +88,40 @@ public partial class Main : Control
 		// GLB is loaded.  Without this, the first load triggers synchronous shader
 		// compilation during rendering which can crash the application.
 		BlendFileLoader.PreWarmShader();
+		
+		// TEST: Create a BlockArrayGenerator with a few blocks
+		//SetupTestBlockArrayGenerator();
+	}
+	
+	/// <summary>
+	/// TEMPORARY TEST: Creates a BlockArrayGenerator with a few blocks to verify the voxel pipeline.
+	/// Remove when testing is complete.
+	/// </summary>
+	private void SetupTestBlockArrayGenerator()
+	{
+		if (VoxelSettings.Instance?.Mesher == null)
+		{
+			GD.PrintErr("SetupTestBlockArrayGenerator: VoxelSettings not ready");
+			return;
+		}
+		
+		var gen = new BlockArrayGenerator();
+		gen.Name = "TestBlockArrayGenerator";
+		Viewport.AddChild(gen);
+		
+		gen.SetBlocks(new[]
+		{
+			new BlockPlacement { Position = new Vector3I(0, 0, 0), BlockName = "stone" },
+			new BlockPlacement { Position = new Vector3I(1, 0, 0), BlockName = "grass_block" },
+			new BlockPlacement { Position = new Vector3I(2, 0, 0), BlockName = "dirt" },
+			new BlockPlacement { Position = new Vector3I(3, 0, 0), BlockName = "oak_planks" },
+			new BlockPlacement { Position = new Vector3I(4, 0, 0), BlockName = "cobblestone" },
+		});
+		
+		gen.Initialize(
+			bounds: new Aabb(new Vector3(-16, -16, -16), new Vector3(32, 32, 32)),
+			viewDistance: 64
+		);
 	}
 
 	private void IconEasterEgg()
