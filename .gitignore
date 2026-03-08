@@ -4,6 +4,10 @@
 
 
 .idea/
+.vscode/
+
+addons/zylann.voxel/bin/~libvoxel.windows.editor.x86_64.dll
+
 SimplyRemadeAssetsV1
 FarmersDelightAssets
 MineImator

@@ -17,6 +17,8 @@ public partial class PreviewViewport : Control
 	[Export] public Panel MainPanel;
 	[Export] public Control ResizeBorder;
 	[Export] public Label FpsLabel;
+	[Export] public CheckButton AspectRatioButton;
+	[Export] public AspectRatioContainer AspectRatioContainerNode;
 	
 	private Window _dedicatedWindow;
 	private bool _isInDedicatedWindow = false;
@@ -64,6 +66,9 @@ public partial class PreviewViewport : Control
 	private SubViewport _mainViewport;
 	private Camera3D _mainCamera;
 	
+	// Aspect ratio lock
+	private bool _aspectRatioLocked = false;
+	
 	// Camera tracking
 	private List<CameraSceneObject> _sceneCameras = new List<CameraSceneObject>();
 	private CameraSceneObject _activeSceneCamera = null;
@@ -108,6 +113,16 @@ public partial class PreviewViewport : Control
 			RefreshCameraDropdown();
 		}
 		
+		// Setup aspect ratio toggle button
+		if (AspectRatioButton != null)
+		{
+			AspectRatioButton.Toggled += OnAspectRatioToggled;
+		}
+		
+		// Initialize aspect ratio container in free-stretch mode (no lock)
+		// The ratio will be synced to the container's actual size in _Process
+		ApplyAspectRatioLock(false);
+		
 		// Setup dragging on header bar
 		if (HeaderBar != null)
 		{
@@ -138,6 +153,59 @@ public partial class PreviewViewport : Control
 	private void OnVisibilityChanged()
 	{
 		UpdateRenderMode();
+	}
+	
+	private void OnAspectRatioToggled(bool pressed)
+	{
+		_aspectRatioLocked = pressed;
+		ApplyAspectRatioLock(_aspectRatioLocked);
+	}
+	
+	/// <summary>
+	/// Applies or removes the project aspect ratio constraint on the preview viewport.
+	/// When locked, the AspectRatioContainer enforces the project's render width/height ratio.
+	/// When unlocked, the viewport stretches freely to fill the available space.
+	/// </summary>
+	private void ApplyAspectRatioLock(bool locked)
+	{
+		if (AspectRatioContainerNode == null)
+			return;
+		
+		if (locked)
+		{
+			// Get project render dimensions
+			int renderWidth = 1920;
+			int renderHeight = 1080;
+			
+			if (Main.Instance?.ProjectPropertyPanel != null)
+			{
+				renderWidth = Main.Instance.ProjectPropertyPanel.GetRenderWidth();
+				renderHeight = Main.Instance.ProjectPropertyPanel.GetRenderHeight();
+			}
+			
+			// Guard against zero dimensions
+			if (renderWidth <= 0) renderWidth = 1920;
+			if (renderHeight <= 0) renderHeight = 1080;
+			
+			float ratio = (float)renderWidth / renderHeight;
+			AspectRatioContainerNode.Ratio = ratio;
+			// Fit mode: the child fits within the container while maintaining the aspect ratio
+			// (letterboxed/pillarboxed). This is the correct mode for previewing render output.
+			AspectRatioContainerNode.StretchMode = AspectRatioContainer.StretchModeEnum.Fit;
+			AspectRatioContainerNode.AlignmentHorizontal = AspectRatioContainer.AlignmentMode.Center;
+			AspectRatioContainerNode.AlignmentVertical = AspectRatioContainer.AlignmentMode.Center;
+		}
+		else
+		{
+			// When unlocked, use Fit mode and dynamically match the ratio to the
+			// container's actual size so no visual constraint is applied.
+			// The ratio will be kept in sync in _Process.
+			AspectRatioContainerNode.StretchMode = AspectRatioContainer.StretchModeEnum.Fit;
+			if (AspectRatioContainerNode.Size.Y > 0)
+			{
+				AspectRatioContainerNode.Ratio = AspectRatioContainerNode.Size.X / AspectRatioContainerNode.Size.Y;
+			}
+		}
 	}
 	
 	private void UpdateRenderMode()
@@ -617,6 +685,17 @@ public partial class PreviewViewport : Control
 				// Use scene camera - teleport to its position
 				PreviewCamera.GlobalTransform = _activeSceneCamera.GlobalTransform;
 				PreviewCamera.Fov = _activeSceneCamera.Fov;
+			}
+		}
+		
+		// When aspect ratio is unlocked, keep the AspectRatioContainer's ratio in sync
+		// with the container's actual size so it doesn't visually constrain the viewport.
+		if (!_aspectRatioLocked && AspectRatioContainerNode != null && AspectRatioContainerNode.Size.Y > 0)
+		{
+			float currentRatio = AspectRatioContainerNode.Size.X / AspectRatioContainerNode.Size.Y;
+			if (Mathf.Abs(AspectRatioContainerNode.Ratio - currentRatio) > 0.001f)
+			{
+				AspectRatioContainerNode.Ratio = currentRatio;
 			}
 		}
 		

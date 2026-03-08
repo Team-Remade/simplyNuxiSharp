@@ -27,7 +27,7 @@ metadata/_custom_type_script = "uid://qbhpr5tlanct"
 [sub_resource type="Resource" id="Resource_lgr22"]
 resource_name = "Tabs"
 script = ExtResource("3_fos0i")
-names = PackedStringArray("Timeline")
+names = PackedStringArray("Timeline", "Content Drawer")
 metadata/_custom_type_script = "uid://qbhpr5tlanct"
 
 [sub_resource type="Resource" id="Resource_03owx"]
@@ -311,6 +311,22 @@ grow_vertical = 0
 [node name="Timeline" type="Panel" parent="Content/MainContent" unique_id=1397746994]
 layout_mode = 2
 script = ExtResource("8_wkp8b")
+
+[node name="Content Drawer" type="Panel" parent="Content/MainContent" unique_id=211008585]
+visible = false
+layout_mode = 2
+
+[node name="CenterContainer" type="CenterContainer" parent="Content/MainContent/Content Drawer" unique_id=2052314246]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Label" type="Label" parent="Content/MainContent/Content Drawer/CenterContainer" unique_id=1873249035]
+layout_mode = 2
+text = "WIP"
 
 [node name="Scene Tree" type="Panel" parent="Content/MainContent" unique_id=480008741]
 layout_mode = 2
