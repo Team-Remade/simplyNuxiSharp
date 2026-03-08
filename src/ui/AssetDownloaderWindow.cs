@@ -555,8 +555,6 @@ public partial class AssetDownloaderWindow : Window
 				UpdateStatus("Failed to scan for character files. Check the console for details.", 100);
 			}
 			
-			await Task.Delay(250);
-			
 			// Build the voxel library from the loaded block models
 			UpdateStatus("Building voxel block library...", 100);
 			var voxelSettings = simplyRemadeNuxi.core.VoxelSettings.Instance;
@@ -572,6 +570,8 @@ public partial class AssetDownloaderWindow : Window
 			{
 				GD.PrintErr("VoxelSettings autoload not found - voxel library will not be built");
 			}
+
+			await Task.Delay(250);
 		}
 		catch (Exception ex)
 		{
