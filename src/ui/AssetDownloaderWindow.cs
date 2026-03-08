@@ -543,7 +543,7 @@ public partial class AssetDownloaderWindow : Window
 			var characterLoader = CharacterLoader.Instance;
 			var charSuccess = await characterLoader.LoadCharacterList((message, progress) =>
 			{
-				UpdateStatus(message, 66 + (int)(progress * 0.34f)); // Last third of progress
+				UpdateStatus(message, 66 + (int)(progress * 0.01f));
 			});
 			
 			if (charSuccess)
@@ -554,16 +554,18 @@ public partial class AssetDownloaderWindow : Window
 			{
 				UpdateStatus("Failed to scan for character files. Check the console for details.", 100);
 			}
+
+			await Task.Delay(250);
 			
 			// Build the voxel library from the loaded block models
-			UpdateStatus("Building voxel block library...", 100);
+			UpdateStatus("Building voxel block library...", 75);
 			var voxelSettings = simplyRemadeNuxi.core.VoxelSettings.Instance;
 			if (voxelSettings != null)
 			{
-				voxelSettings.BuildLibraryFromLoadedModels((message, progress) =>
+				var voxSuccess = await voxelSettings.BuildLibraryFromLoadedModels((message, progress) =>
 				{
 					// Map the 0-100 progress from BuildLibraryFromLoadedModels to the progress bar
-					UpdateStatus(message, progress);
+					UpdateStatus(message, 75 + (int)(progress * 0.25f));
 				});
 			}
 			else

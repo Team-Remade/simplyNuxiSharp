@@ -6,6 +6,7 @@ const SplitHandle := preload("split_handle.gd")
 const DockablePanel := preload("dockable_panel.gd")
 const DragNDropPanel := preload("drag_n_drop_panel.gd")
 const DockableLayout := preload("layout.gd")
+const DockableLayoutNode := preload("layout_node.gd")
 
 @export var tab_alignment := TabBar.ALIGNMENT_CENTER:
 	get:

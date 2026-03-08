@@ -3,6 +3,7 @@ using Godot;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace simplyRemadeNuxi.core;
 
@@ -30,18 +31,19 @@ public partial class VoxelSettings : Node
 	/// Call this after the asset load has completed (i.e., after LoadMinecraftJsonFiles finishes).
 	/// </summary>
 	/// <param name="progressCallback">Optional callback to report progress (message, percentage 0-100).</param>
-	public void BuildLibraryFromLoadedModels(System.Action<string, int> progressCallback = null)
+	public async Task<bool> BuildLibraryFromLoadedModels(System.Action<string, int> progressCallback = null)
 	{
 		var loader = MinecraftJsonLoader.Instance;
 		
 		if (!loader.IsLoaded)
 		{
 			GD.PrintErr("VoxelSettings: Cannot build library - Minecraft JSON files are not loaded yet!");
-			return;
+			return false;
 		}
 		
 		GD.Print("VoxelSettings: Building voxel library from loaded block models...");
 		progressCallback?.Invoke("Scanning block models...", 0);
+		await Task.Delay(1); // Allow other operations to run
 		
 		// Get all block model paths (filter to only block models, not item models)
 		var blockModelPaths = loader.GetAllModelPaths()
@@ -50,6 +52,7 @@ public partial class VoxelSettings : Node
 		
 		GD.Print($"VoxelSettings: Found {blockModelPaths.Count} block model paths");
 		progressCallback?.Invoke($"Found {blockModelPaths.Count} block models", 5);
+		await Task.Delay(1); // Allow other operations to run
 		
 		var voxelTypes = new List<VoxelBlockyType>();
 		
@@ -74,6 +77,7 @@ public partial class VoxelSettings : Node
 			{
 				int pct = 5 + (int)((processed / (float)total) * 90);
 				progressCallback?.Invoke($"Building voxel models: {processed}/{total}", pct);
+				await Task.Delay(1); // Allow other operations to run
 			}
 			
 			try
@@ -139,6 +143,8 @@ public partial class VoxelSettings : Node
 		CreateLibrary(voxelTypes.ToArray());
 		
 		progressCallback?.Invoke($"Voxel library ready: {voxelTypes.Count} types", 100);
+
+		return true;
 	}
 	
 	/// <summary>

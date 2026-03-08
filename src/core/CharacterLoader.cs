@@ -68,7 +68,6 @@ public class CharacterLoader
 				
 				// Store the full path
 				_characterPaths[displayName] = filePath;
-				
 			}
 			
 			_isLoaded = true;
