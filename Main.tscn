@@ -170,7 +170,7 @@ oversampling_override = 1.0
 layout_mode = 2
 size_flags_vertical = 3
 script = ExtResource("2_cm0pq")
-tab_alignment = 3
+tab_alignment = 2
 layout = SubResource("Resource_trn2v")
 metadata/_custom_type_script = "uid://d3sbpgo0rl5pc"
 
