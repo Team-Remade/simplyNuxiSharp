@@ -9,6 +9,7 @@ public partial class LightSceneObject : SceneObject
 	
 	private Color _lightColor = Colors.White;
 	private bool _renderModeEnabled = false;
+
 	public Color LightColor
 	{
 		get => _lightColor;
@@ -25,7 +26,72 @@ public partial class LightSceneObject : SceneObject
 			}
 		}
 	}
-	
+
+	/// <summary>
+	/// Light energy (intensity/brightness). Default is 1.0.
+	/// </summary>
+	public float LightEnergy
+	{
+		get => Light?.LightEnergy ?? 1.0f;
+		set
+		{
+			if (Light != null)
+				Light.LightEnergy = value;
+		}
+	}
+
+	/// <summary>
+	/// Omni light range (radius). Default is 5.0.
+	/// </summary>
+	public float LightRange
+	{
+		get => Light?.OmniRange ?? 5.0f;
+		set
+		{
+			if (Light != null)
+				Light.OmniRange = value;
+		}
+	}
+
+	/// <summary>
+	/// Whether the light casts shadows.
+	/// </summary>
+	public bool LightShadowEnabled
+	{
+		get => Light?.ShadowEnabled ?? true;
+		set
+		{
+			if (Light != null)
+				Light.ShadowEnabled = value;
+		}
+	}
+
+	/// <summary>
+	/// Light indirect energy multiplier (affects global illumination contribution).
+	/// </summary>
+	public float LightIndirectEnergy
+	{
+		get => Light?.LightIndirectEnergy ?? 1.0f;
+		set
+		{
+			if (Light != null)
+				Light.LightIndirectEnergy = value;
+		}
+	}
+
+	/// <summary>
+	/// Light specular contribution (0 = no specular, 1 = full specular).
+	/// </summary>
+	public float LightSpecular
+	{
+		get => Light?.LightSpecular ?? 0.5f;
+		set
+		{
+			if (Light != null)
+				Light.LightSpecular = value;
+		}
+	}
+
 	public LightSceneObject()
 	{
 		ObjectType = "Point Light";
@@ -33,9 +99,12 @@ public partial class LightSceneObject : SceneObject
 		// Create the OmniLight3D
 		Light = new OmniLight3D();
 		Light.Name = "OmniLight";
-		Light.ShadowEnabled = false; // Shadows disabled for now
+		Light.ShadowEnabled = true;
 		Light.LightColor = _lightColor;
 		Light.OmniRange = 5.0f; // Default range
+		Light.LightEnergy = 1.0f; // Default energy
+		Light.LightIndirectEnergy = 1.0f;
+		Light.LightSpecular = 0.5f;
 		// Visibility will be set based on current render mode state
 		AddVisualInstance(Light);
 		
@@ -74,6 +143,8 @@ public partial class LightSceneObject : SceneObject
 			// Default to disabled if Main instance not yet available
 			SetRenderMode(false);
 		}
+
+		Sprite.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
 	}
 	
 	public void SetRenderMode(bool enabled)
@@ -82,6 +153,10 @@ public partial class LightSceneObject : SceneObject
 		if (Light != null)
 		{
 			Light.Visible = enabled;
+		}
+		if (Sprite != null)
+		{
+			Sprite.Visible = !enabled;
 		}
 	}
 }

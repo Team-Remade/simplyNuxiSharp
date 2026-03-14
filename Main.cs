@@ -269,44 +269,6 @@ public partial class Main : Control
 				// Sync the preview camera with the main camera
 				PreviewViewportControl.SyncWithMainCamera(mainCamera);
 			}
-			
-			// Sync background from main viewport
-			SyncPreviewBackground();
-		}
-	}
-
-	public void SyncPreviewBackground()
-	{
-		if (PreviewViewportControl?.PreviewSubViewport == null || Viewport == null)
-			return;
-			
-		// Get background elements from main viewport
-		var mainCanvasLayer = Viewport.GetNodeOrNull<CanvasLayer>("CanvasLayer");
-		var previewCanvasLayer = PreviewViewportControl.PreviewSubViewport.GetNodeOrNull<CanvasLayer>("CanvasLayer");
-		
-		if (mainCanvasLayer == null || previewCanvasLayer == null)
-			return;
-			
-		// Sync background color
-		var mainBgColor = mainCanvasLayer.GetNodeOrNull<ColorRect>("BackgroundColor");
-		var previewBgColor = previewCanvasLayer.GetNodeOrNull<ColorRect>("BackgroundColor");
-		
-		if (mainBgColor != null && previewBgColor != null)
-		{
-			previewBgColor.Color = mainBgColor.Color;
-		}
-		
-		// Sync background image
-		var mainBgImage = mainCanvasLayer.GetNodeOrNull<TextureRect>("BackgroundImage");
-		var previewBgImage = previewCanvasLayer.GetNodeOrNull<TextureRect>("BackgroundImage");
-		
-		if (mainBgImage != null && previewBgImage != null)
-		{
-			previewBgImage.Texture = mainBgImage.Texture;
-			
-			// Sync stretch mode settings
-			previewBgImage.ExpandMode = mainBgImage.ExpandMode;
-			previewBgImage.StretchMode = mainBgImage.StretchMode;
 		}
 	}
 

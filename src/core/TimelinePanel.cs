@@ -901,31 +901,21 @@ public partial class TimelinePanel : Panel
 			var keyframes = kvp.Value;
 			
 			// Parse the full path to get object and property
-			var pathParts = fullPath.Split('.');
-			if (pathParts.Length < 2) continue;
+			var dotIdx = fullPath.IndexOf('.');
+			if (dotIdx < 0) continue;
 			
-			var objectIdStr = pathParts[0];
+			var objectIdStr = fullPath.Substring(0, dotIdx);
 			if (!ulong.TryParse(objectIdStr, out ulong objectId)) continue;
 			
 			// Find the object
 			SceneObject targetObject = null;
-			string propertyPath = null;
+			string propertyPath = fullPath.Substring(dotIdx + 1); // Everything after first dot
 			
 			foreach (var prop in _properties)
 			{
 				if (prop.Object.GetInstanceId() == objectId)
 				{
 					targetObject = prop.Object;
-					
-					// Reconstruct property path
-					if (pathParts.Length == 2)
-					{
-						propertyPath = pathParts[1];
-					}
-					else if (pathParts.Length >= 3)
-					{
-						propertyPath = $"{pathParts[1]}.{pathParts[2]}";
-					}
 					break;
 				}
 			}
@@ -1253,6 +1243,16 @@ public partial class TimelinePanel : Panel
 
 		// Scale properties
 		AddCollapsiblePropertyGroup(obj, "Scale", new string[] { "scale.x", "scale.y", "scale.z" });
+
+		// Light-specific properties (only for LightSceneObject)
+		if (obj is LightSceneObject)
+		{
+			AddSingleProperty(obj, "Light Energy", "light.energy");
+			AddSingleProperty(obj, "Light Range", "light.range");
+			AddSingleProperty(obj, "Indirect Energy", "light.indirect_energy");
+			AddSingleProperty(obj, "Specular", "light.specular");
+			AddCollapsiblePropertyGroup(obj, "Light Color", new string[] { "light.color.r", "light.color.g", "light.color.b" });
+		}
 	}
 
 	private void AddSingleProperty(SceneObject obj, string propertyName, string propertyPath)
@@ -1829,6 +1829,37 @@ public partial class TimelinePanel : Panel
 						return 1f; // Default to fully opaque
 					}
 					break;
+				case "light":
+					if (obj is LightSceneObject lightObj)
+					{
+						return component switch
+						{
+							"energy" => lightObj.LightEnergy,
+							"range" => lightObj.LightRange,
+							"indirect_energy" => lightObj.LightIndirectEnergy,
+							"specular" => lightObj.LightSpecular,
+							_ => 0f
+						};
+					}
+					break;
+			}
+		}
+		else if (parts.Length == 3)
+		{
+			// Handle 3-part paths like "light.color.r"
+			var propName = parts[0];
+			var subProp = parts[1];
+			var component = parts[2];
+			
+			if (propName == "light" && subProp == "color" && obj is LightSceneObject lightColorObj)
+			{
+				return component switch
+				{
+					"r" => lightColorObj.LightColor.R,
+					"g" => lightColorObj.LightColor.G,
+					"b" => lightColorObj.LightColor.B,
+					_ => 0f
+				};
 			}
 		}
 		
@@ -1906,23 +1937,13 @@ public partial class TimelinePanel : Panel
 			if (keyframes.Count == 0) continue;
 			
 			// Parse the full path to get object ID and property path
-			var pathParts = fullPath.Split('.');
-			if (pathParts.Length < 2) continue;
+			// Format: "objectId.propertyPath" where propertyPath may contain dots
+			// e.g., "12345.visible", "12345.position.x", "12345.light.color.r"
+			var dotIndex = fullPath.IndexOf('.');
+			if (dotIndex < 0) continue;
 			
-			var objectIdStr = pathParts[0];
-			string propertyPath;
-			
-			// Handle single property (like "visible") vs compound property (like "position.x")
-			if (pathParts.Length == 2)
-			{
-				propertyPath = pathParts[1]; // e.g., "visible"
-			}
-			else // pathParts.Length >= 3
-			{
-				var propertyType = pathParts[1];
-				var component = pathParts[2];
-				propertyPath = $"{propertyType}.{component}"; // e.g., "position.x"
-			}
+			var objectIdStr = fullPath.Substring(0, dotIndex);
+			var propertyPath = fullPath.Substring(dotIndex + 1); // Everything after the first dot
 			
 			// Find the object
 			if (!ulong.TryParse(objectIdStr, out ulong objectId)) continue;
@@ -2107,6 +2128,38 @@ public partial class TimelinePanel : Panel
 						}
 					}
 					break;
+
+				case "light":
+					if (obj is LightSceneObject lightObj)
+					{
+						switch (component)
+						{
+							case "energy": lightObj.LightEnergy = value; break;
+							case "range": lightObj.LightRange = value; break;
+							case "indirect_energy": lightObj.LightIndirectEnergy = value; break;
+							case "specular": lightObj.LightSpecular = value; break;
+						}
+					}
+					break;
+			}
+		}
+		else if (parts.Length == 3)
+		{
+			// Handle 3-part paths like "light.color.r"
+			var propName = parts[0];
+			var subProp = parts[1];
+			var component = parts[2];
+
+			if (propName == "light" && subProp == "color" && obj is LightSceneObject lightColorObj)
+			{
+				var col = lightColorObj.LightColor;
+				switch (component)
+				{
+					case "r": col.R = value; break;
+					case "g": col.G = value; break;
+					case "b": col.B = value; break;
+				}
+				lightColorObj.LightColor = col;
 			}
 		}
 	}

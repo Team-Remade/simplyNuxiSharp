@@ -11,12 +11,15 @@
 [ext_resource type="Script" uid="uid://yo6sdyucm2lt" path="res://src/core/AnimatedTextureManager.cs" id="6_animtex"]
 [ext_resource type="Script" uid="uid://yk4xrjo1fpr7" path="res://src/core/WorkCamera.cs" id="6_lgr22"]
 [ext_resource type="Shader" uid="uid://btpopdqor5lee" path="res://assets/Shaders/Picking.gdshader" id="7_trn2v"]
+[ext_resource type="Texture2D" uid="uid://h6ota84sm1dg" path="res://assets/img/Untitled.png" id="8_5tuhn"]
 [ext_resource type="Script" uid="uid://cpj7h3wm8fnx2" path="res://src/core/ProjectPropertiesPanel.cs" id="8_projprops"]
 [ext_resource type="Script" uid="uid://gv1c5wwt7ydw" path="res://src/core/ObjectPropertiesPanel.cs" id="8_props"]
 [ext_resource type="Script" uid="uid://d1j8yvxoe0f0r" path="res://src/core/TimelinePanel.cs" id="8_wkp8b"]
+[ext_resource type="Shader" uid="uid://nklr5txjs52a" path="res://assets/Shaders/BackgroundColor.gdshader" id="9_2gh4u"]
 [ext_resource type="Texture2D" uid="uid://lyvreubvsmie" path="res://assets/img/bench.png" id="9_5vvyt"]
 [ext_resource type="Texture2D" uid="uid://ds8cqt4u4ojkv" path="res://assets/img/bee_nest_front.png" id="9_c2ibq"]
 [ext_resource type="PackedScene" uid="uid://c0preview1234" path="res://src/core/PreviewViewport.tscn" id="10_preview"]
+[ext_resource type="Shader" uid="uid://duep02bpb3va4" path="res://assets/Shaders/Background.gdshader" id="12_kjvhd"]
 
 [sub_resource type="Resource" id="Resource_3dxm6"]
 resource_name = "Tabs"
@@ -73,9 +76,25 @@ resource_name = "Layout"
 script = ExtResource("4_3dxm6")
 root = SubResource("Resource_c6i3y")
 
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_5tuhn"]
+render_priority = -128
+shader = ExtResource("12_kjvhd")
+shader_parameter/albedo_tex = ExtResource("8_5tuhn")
+shader_parameter/stretch = true
+
+[sub_resource type="QuadMesh" id="QuadMesh_2gh4u"]
+size = Vector2(2, 2)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_devvj"]
+render_priority = -128
+shader = ExtResource("9_2gh4u")
+shader_parameter/abledo_color = Color(0.5764706, 0.5764706, 1, 1)
+
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_j4qnp"]
 render_priority = -1
-transparency = 1
+transparency = 2
+alpha_scissor_threshold = 0.5
+alpha_antialiasing_mode = 0
 cull_mode = 2
 vertex_color_use_as_albedo = true
 albedo_texture = ExtResource("9_c2ibq")
@@ -136,6 +155,7 @@ layout_mode = 2
 text = "File"
 
 [node name="FilePopup" type="PopupMenu" parent="Content/Menubar/FileButton" unique_id=245091282]
+scaling_3d_mode = 0
 oversampling_override = 1.0
 
 [node name="EditButton" type="MenuButton" parent="Content/Menubar" unique_id=1921133696]
@@ -143,6 +163,7 @@ layout_mode = 2
 text = "Edit"
 
 [node name="EditPopup" type="PopupMenu" parent="Content/Menubar/EditButton" unique_id=53433655]
+scaling_3d_mode = 0
 oversampling_override = 1.0
 
 [node name="ViewButton" type="MenuButton" parent="Content/Menubar" unique_id=2027525395]
@@ -150,6 +171,7 @@ layout_mode = 2
 text = "View"
 
 [node name="ViewPopup" type="PopupMenu" parent="Content/Menubar/ViewButton" unique_id=1329880797]
+scaling_3d_mode = 0
 oversampling_override = 1.0
 
 [node name="RenderButton" type="MenuButton" parent="Content/Menubar" unique_id=302133687]
@@ -157,6 +179,7 @@ layout_mode = 2
 text = "Render"
 
 [node name="RenderPopup" type="PopupMenu" parent="Content/Menubar/RenderButton" unique_id=1109063284]
+scaling_3d_mode = 0
 oversampling_override = 1.0
 
 [node name="HelpButton" type="MenuButton" parent="Content/Menubar" unique_id=1547958817]
@@ -164,6 +187,7 @@ layout_mode = 2
 text = "Help"
 
 [node name="HelpPopup" type="PopupMenu" parent="Content/Menubar/HelpButton" unique_id=1552682200]
+scaling_3d_mode = 0
 oversampling_override = 1.0
 
 [node name="MainContent" type="Container" parent="Content" unique_id=531635407]
@@ -189,27 +213,24 @@ stretch = true
 [node name="SubViewport" type="SubViewport" parent="Content/MainContent/Viewport/MainViewport" unique_id=1386258356]
 handle_input_locally = false
 use_debanding = true
+scaling_3d_mode = 0
 scaling_3d_scale = 0.5
 size = Vector2i(1272, 694)
 render_target_update_mode = 4
 
-[node name="CanvasLayer" type="CanvasLayer" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=1815694963]
+[node name="BackgroundImage" type="MeshInstance3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=1994838526]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -221.36696, 0)
+material_override = SubResource("ShaderMaterial_5tuhn")
+cast_shadow = 0
+extra_cull_margin = 16384.0
+mesh = SubResource("QuadMesh_2gh4u")
 
-[node name="BackgroundColor" type="ColorRect" parent="Content/MainContent/Viewport/MainViewport/SubViewport/CanvasLayer" unique_id=1350367524]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-color = Color(0.5764706, 0.5764706, 1, 1)
-
-[node name="BackgroundImage" type="TextureRect" parent="Content/MainContent/Viewport/MainViewport/SubViewport/CanvasLayer" unique_id=2122414019]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-expand_mode = 1
+[node name="BackgroundColor" type="MeshInstance3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=382741756]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -221.36696, 0)
+material_override = SubResource("ShaderMaterial_devvj")
+cast_shadow = 0
+extra_cull_margin = 16384.0
+mesh = SubResource("QuadMesh_2gh4u")
 
 [node name="WorkCam" type="Camera3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=1302633907]
 transform = Transform3D(0.70710677, -0.49999997, 0.49999997, 0, 0.70710677, 0.70710677, -0.70710677, -0.49999997, 0.49999997, 3, 3, 3)

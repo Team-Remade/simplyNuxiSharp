@@ -8,8 +8,6 @@ public partial class ObjectPropertiesPanel : Panel
 	private VBoxContainer _vboxContainer;
 	private Label _objectNameLabel;
 	private CheckBox _visibilityCheckbox;
-	private HBoxContainer _colorPickerContainer;
-	private ColorPickerButton _colorPicker;
 	private SpinBox _positionX;
 	private SpinBox _positionY;
 	private SpinBox _positionZ;
@@ -31,6 +29,15 @@ public partial class ObjectPropertiesPanel : Panel
 	private Label _materialAlphaLabel;
 	private OptionButton _materialAlphaModeDropdown;
 	private SceneObject _currentObject;
+	
+	// Light-specific controls
+	private CollapsibleSection _lightSection;
+	private ColorPickerButton _lightColorPicker2;
+	private SpinBox _lightEnergySpinBox;
+	private SpinBox _lightRangeSpinBox;
+	private SpinBox _lightIndirectEnergySpinBox;
+	private SpinBox _lightSpecularSpinBox;
+	private CheckBox _lightShadowCheckbox;
 	
 	// Store original values for reset functionality
 	private Vector3 _originalPosition = Vector3.Zero;
@@ -112,24 +119,6 @@ public partial class ObjectPropertiesPanel : Panel
 		_visibilityCheckbox.AddThemeStyleboxOverride("pressed", styleBox);
 		_visibilityCheckbox.Toggled += OnVisibilityChanged;
 		visibilityContainer.AddChild(_visibilityCheckbox);
-
-		// Color picker for lights (initially hidden)
-		_colorPickerContainer = new HBoxContainer();
-		_colorPickerContainer.Visible = false;
-		vbox.AddChild(_colorPickerContainer);
-		
-		var colorLabel = new Label();
-		colorLabel.Text = "Color:";
-		colorLabel.CustomMinimumSize = new Vector2(60, 0);
-		_colorPickerContainer.AddChild(colorLabel);
-		
-		_colorPicker = new ColorPickerButton();
-		_colorPicker.Name = "ColorPicker";
-		_colorPicker.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-		_colorPicker.CustomMinimumSize = new Vector2(0, 30);
-		_colorPicker.EditAlpha = false; // Don't allow alpha editing for light colors
-		_colorPicker.ColorChanged += OnColorChanged;
-		_colorPickerContainer.AddChild(_colorPicker);
 
 		// Position section with toggle arrow
 		_positionSection = new CollapsibleSection("Position");
@@ -227,6 +216,128 @@ public partial class ObjectPropertiesPanel : Panel
 		_materialAlphaModeDropdown.Selected = 0; // Default to Disabled
 		_materialAlphaModeDropdown.ItemSelected += OnMaterialAlphaModeChanged;
 		alphaModeRow.AddChild(_materialAlphaModeDropdown);
+
+		// Light section (initially hidden, shown only for LightSceneObject)
+		_lightSection = new CollapsibleSection("Light");
+		_lightSection.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_lightSection.Visible = false;
+		vbox.AddChild(_lightSection);
+		_lightSection.GetResetButton().Pressed += OnResetLightProperties;
+
+		var lightContainer = _lightSection.GetContentContainer();
+
+		// Color row (reuse the existing color picker but also show it here in the section)
+		var lightColorRow = new HBoxContainer();
+		lightContainer.AddChild(lightColorRow);
+		var lightColorLabel = new Label();
+		lightColorLabel.Text = "Color:";
+		lightColorLabel.CustomMinimumSize = new Vector2(90, 0);
+		lightColorRow.AddChild(lightColorLabel);
+		var lightColorPicker2 = new ColorPickerButton();
+		lightColorPicker2.Name = "LightColorPicker2";
+		lightColorPicker2.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		lightColorPicker2.CustomMinimumSize = new Vector2(0, 30);
+		lightColorPicker2.EditAlpha = false;
+		lightColorPicker2.ColorChanged += (color) =>
+		{
+			if (_currentObject is LightSceneObject lo)
+			{
+				lo.LightColor = color;
+				AutoKeyframe("light.color.r");
+				AutoKeyframe("light.color.g");
+				AutoKeyframe("light.color.b");
+			}
+		};
+		lightColorRow.AddChild(lightColorPicker2);
+		// Store reference so we can update it
+		_lightColorPicker2 = lightColorPicker2;
+
+		// Energy row
+		var energyRow = new HBoxContainer();
+		lightContainer.AddChild(energyRow);
+		var energyLabel = new Label();
+		energyLabel.Text = "Energy:";
+		energyLabel.CustomMinimumSize = new Vector2(90, 0);
+		energyRow.AddChild(energyLabel);
+		_lightEnergySpinBox = new SpinBox();
+		_lightEnergySpinBox.Name = "LightEnergySpinBox";
+		_lightEnergySpinBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_lightEnergySpinBox.MinValue = 0.0;
+		_lightEnergySpinBox.MaxValue = 100.0;
+		_lightEnergySpinBox.Step = 0.1;
+		_lightEnergySpinBox.Value = 1.0;
+		_lightEnergySpinBox.TooltipText = "Light brightness/intensity";
+		_lightEnergySpinBox.ValueChanged += OnLightEnergyChanged;
+		energyRow.AddChild(_lightEnergySpinBox);
+
+		// Range row
+		var rangeRow = new HBoxContainer();
+		lightContainer.AddChild(rangeRow);
+		var rangeLabelCtrl = new Label();
+		rangeLabelCtrl.Text = "Range:";
+		rangeLabelCtrl.CustomMinimumSize = new Vector2(90, 0);
+		rangeRow.AddChild(rangeLabelCtrl);
+		_lightRangeSpinBox = new SpinBox();
+		_lightRangeSpinBox.Name = "LightRangeSpinBox";
+		_lightRangeSpinBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_lightRangeSpinBox.MinValue = 0.01;
+		_lightRangeSpinBox.MaxValue = 500.0;
+		_lightRangeSpinBox.Step = 0.1;
+		_lightRangeSpinBox.Value = 5.0;
+		_lightRangeSpinBox.TooltipText = "Radius of the light's influence";
+		_lightRangeSpinBox.ValueChanged += OnLightRangeChanged;
+		rangeRow.AddChild(_lightRangeSpinBox);
+
+		// Indirect Energy row
+		var indirectRow = new HBoxContainer();
+		lightContainer.AddChild(indirectRow);
+		var indirectLabel = new Label();
+		indirectLabel.Text = "Indirect Energy:";
+		indirectLabel.CustomMinimumSize = new Vector2(90, 0);
+		indirectRow.AddChild(indirectLabel);
+		_lightIndirectEnergySpinBox = new SpinBox();
+		_lightIndirectEnergySpinBox.Name = "LightIndirectEnergySpinBox";
+		_lightIndirectEnergySpinBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_lightIndirectEnergySpinBox.MinValue = 0.0;
+		_lightIndirectEnergySpinBox.MaxValue = 16.0;
+		_lightIndirectEnergySpinBox.Step = 0.1;
+		_lightIndirectEnergySpinBox.Value = 1.0;
+		_lightIndirectEnergySpinBox.TooltipText = "Contribution to global illumination";
+		_lightIndirectEnergySpinBox.ValueChanged += OnLightIndirectEnergyChanged;
+		indirectRow.AddChild(_lightIndirectEnergySpinBox);
+
+		// Specular row
+		var specularRow = new HBoxContainer();
+		lightContainer.AddChild(specularRow);
+		var specularLabel = new Label();
+		specularLabel.Text = "Specular:";
+		specularLabel.CustomMinimumSize = new Vector2(90, 0);
+		specularRow.AddChild(specularLabel);
+		_lightSpecularSpinBox = new SpinBox();
+		_lightSpecularSpinBox.Name = "LightSpecularSpinBox";
+		_lightSpecularSpinBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_lightSpecularSpinBox.MinValue = 0.0;
+		_lightSpecularSpinBox.MaxValue = 1.0;
+		_lightSpecularSpinBox.Step = 0.01;
+		_lightSpecularSpinBox.Value = 0.5;
+		_lightSpecularSpinBox.TooltipText = "Specular highlight intensity (0 = none, 1 = full)";
+		_lightSpecularSpinBox.ValueChanged += OnLightSpecularChanged;
+		specularRow.AddChild(_lightSpecularSpinBox);
+
+		// Shadow checkbox row
+		var shadowRow = new HBoxContainer();
+		lightContainer.AddChild(shadowRow);
+		var shadowLabel = new Label();
+		shadowLabel.Text = "Cast Shadows:";
+		shadowLabel.CustomMinimumSize = new Vector2(90, 0);
+		shadowRow.AddChild(shadowLabel);
+		_lightShadowCheckbox = new CheckBox();
+		_lightShadowCheckbox.Name = "LightShadowCheckbox";
+		_lightShadowCheckbox.Text = "";
+		_lightShadowCheckbox.ButtonPressed = true;
+		_lightShadowCheckbox.TooltipText = "Enable shadow casting";
+		_lightShadowCheckbox.Toggled += OnLightShadowToggled;
+		shadowRow.AddChild(_lightShadowCheckbox);
 	}
 
 	private SpinBox CreateSpinBoxRow(VBoxContainer parent, string labelText, Action onChanged)
@@ -263,7 +374,7 @@ public partial class ObjectPropertiesPanel : Panel
 		{
 			_currentObject = null;
 			_objectNameLabel.Text = "No object selected";
-			_colorPickerContainer.Visible = false;
+			_lightSection.Visible = false;
 			ClearSpinBoxes();
 		}
 	}
@@ -277,15 +388,21 @@ public partial class ObjectPropertiesPanel : Panel
 		// Visibility
 		_visibilityCheckbox.SetPressedNoSignal(_currentObject.ObjectVisible);
 
-		// Show color picker only for lights
+		// Show light section only for lights
 		if (_currentObject is LightSceneObject lightObj)
 		{
-			_colorPickerContainer.Visible = true;
-			_colorPicker.Color = lightObj.LightColor;
+			// Show light section and populate it
+			_lightSection.Visible = true;
+			_lightColorPicker2.Color = lightObj.LightColor;
+			_lightEnergySpinBox.SetValueNoSignal(Math.Round(lightObj.LightEnergy, 3));
+			_lightRangeSpinBox.SetValueNoSignal(Math.Round(lightObj.LightRange, 3));
+			_lightIndirectEnergySpinBox.SetValueNoSignal(Math.Round(lightObj.LightIndirectEnergy, 3));
+			_lightSpecularSpinBox.SetValueNoSignal(Math.Round(lightObj.LightSpecular, 3));
+			_lightShadowCheckbox.SetPressedNoSignal(lightObj.LightShadowEnabled);
 		}
 		else
 		{
-			_colorPickerContainer.Visible = false;
+			_lightSection.Visible = false;
 		}
 
 		// For bones, show TargetPosition and TargetRotation (offset from base pose)
@@ -382,6 +499,12 @@ public partial class ObjectPropertiesPanel : Panel
 		_pivotOffsetX.SetValueNoSignal(0);
 		_pivotOffsetY.SetValueNoSignal(0);
 		_pivotOffsetZ.SetValueNoSignal(0);
+		// Clear light controls
+		_lightEnergySpinBox.SetValueNoSignal(1.0);
+		_lightRangeSpinBox.SetValueNoSignal(5.0);
+		_lightIndirectEnergySpinBox.SetValueNoSignal(1.0);
+		_lightSpecularSpinBox.SetValueNoSignal(0.5);
+		_lightShadowCheckbox.SetPressedNoSignal(true);
 	}
 
 	private void OnVisibilityChanged(bool visible)
@@ -392,18 +515,6 @@ public partial class ObjectPropertiesPanel : Panel
 		
 		// Auto-keyframe when property changes
 		AutoKeyframe("visible");
-	}
-
-	private void OnColorChanged(Color color)
-	{
-		if (_currentObject == null) return;
-		
-		if (_currentObject is LightSceneObject lightObj)
-		{
-			lightObj.LightColor = color;
-		}
-		
-		// Note: Light color could be keyframed in the future if needed
 	}
 
 	private void OnPositionChanged()
@@ -682,6 +793,73 @@ public partial class ObjectPropertiesPanel : Panel
 				}
 			}
 		}
+	}
+
+	// ── Light property handlers ──────────────────────────────────────────────
+
+	private void OnLightEnergyChanged(double value)
+	{
+		if (_currentObject is not LightSceneObject lightObj) return;
+		lightObj.LightEnergy = (float)value;
+		AutoKeyframe("light.energy");
+	}
+
+	private void OnLightRangeChanged(double value)
+	{
+		if (_currentObject is not LightSceneObject lightObj) return;
+		lightObj.LightRange = (float)value;
+		AutoKeyframe("light.range");
+	}
+
+	private void OnLightIndirectEnergyChanged(double value)
+	{
+		if (_currentObject is not LightSceneObject lightObj) return;
+		lightObj.LightIndirectEnergy = (float)value;
+		AutoKeyframe("light.indirect_energy");
+	}
+
+	private void OnLightSpecularChanged(double value)
+	{
+		if (_currentObject is not LightSceneObject lightObj) return;
+		lightObj.LightSpecular = (float)value;
+		AutoKeyframe("light.specular");
+	}
+
+	private void OnLightShadowToggled(bool enabled)
+	{
+		if (_currentObject is not LightSceneObject lightObj) return;
+		lightObj.LightShadowEnabled = enabled;
+		// Shadow is not keyframed (boolean toggle, not typically animated)
+	}
+
+	private void OnResetLightProperties()
+	{
+		if (_currentObject is not LightSceneObject lightObj) return;
+
+		// Reset to defaults
+		lightObj.LightColor = Colors.White;
+		lightObj.LightEnergy = 1.0f;
+		lightObj.LightRange = 5.0f;
+		lightObj.LightIndirectEnergy = 1.0f;
+		lightObj.LightSpecular = 0.5f;
+		lightObj.LightShadowEnabled = true;
+
+		// Update UI
+		_lightColorPicker2.Color = Colors.White;
+		_lightEnergySpinBox.Value = 1.0;
+		_lightRangeSpinBox.Value = 5.0;
+		_lightIndirectEnergySpinBox.Value = 1.0;
+		_lightSpecularSpinBox.Value = 0.5;
+		_lightShadowCheckbox.SetPressedNoSignal(true);
+
+		// Auto-keyframe all light properties
+		AutoKeyframe("light.energy");
+		AutoKeyframe("light.range");
+		AutoKeyframe("light.indirect_energy");
+		AutoKeyframe("light.specular");
+		AutoKeyframe("light.color.r");
+		AutoKeyframe("light.color.g");
+		AutoKeyframe("light.color.b");
 	}
 }
 

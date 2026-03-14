@@ -30,13 +30,15 @@ public partial class ProjectPropertiesPanel : Panel
 	private Label _floorTextureLabel;
 	
 	// Reference to the background nodes in the viewport
-	private ColorRect _backgroundColorNode;
-	private TextureRect _backgroundImageNode;
+	private MeshInstance3D _backgroundColorMesh;
+	private MeshInstance3D _backgroundImageMesh;
 	
 	// Reference to the floor node
 	private Node3D _floorNode;
 	private MeshInstance3D _floorMeshInstance;
 	public Node3D FloorNode => _floorNode;
+	public MeshInstance3D BackgroundColorNode => _backgroundColorMesh;
+	public MeshInstance3D BackgroundImageNode => _backgroundImageMesh;
 	
 	// Store the current background image path
 	private string _currentBackgroundImagePath = "";
@@ -579,7 +581,7 @@ public partial class ProjectPropertiesPanel : Panel
 	private void FindBackgroundNodes()
 	{
 		// Navigate to the background nodes in the scene tree
-		// Path: Main -> Content -> MainContent -> Viewport -> MainViewport -> SubViewport -> CanvasLayer
+		// Path: Main -> Content -> MainContent -> Viewport -> MainViewport -> SubViewport
 		var main = GetTree().Root.GetNode<Control>("Main");
 		if (main == null)
 		{
@@ -594,63 +596,64 @@ public partial class ProjectPropertiesPanel : Panel
 			return;
 		}
 		
-		var canvasLayer = subViewport.GetNode<CanvasLayer>("CanvasLayer");
-		if (canvasLayer == null)
+		_backgroundColorMesh = subViewport.GetNodeOrNull<MeshInstance3D>("BackgroundColor");
+		_backgroundImageMesh = subViewport.GetNodeOrNull<MeshInstance3D>("BackgroundImage");
+		
+		if (_backgroundColorMesh == null)
 		{
-			GD.PrintErr("Could not find CanvasLayer");
-			return;
+			GD.PrintErr("Could not find BackgroundColor MeshInstance3D node");
 		}
 		
-		_backgroundColorNode = canvasLayer.GetNode<ColorRect>("BackgroundColor");
-		_backgroundImageNode = canvasLayer.GetNode<TextureRect>("BackgroundImage");
-		
-		if (_backgroundColorNode == null)
+		if (_backgroundImageMesh == null)
 		{
-			GD.PrintErr("Could not find BackgroundColor node");
-		}
-		
-		if (_backgroundImageNode == null)
-		{
-			GD.PrintErr("Could not find BackgroundImage node");
+			GD.PrintErr("Could not find BackgroundImage MeshInstance3D node");
 		}
 	}
 
 	private void LoadCurrentBackgroundSettings()
 	{
-		// Load the current background color and image from the scene
-		if (_backgroundColorNode != null)
+		// Load the current background color from the BackgroundColor MeshInstance3D shader material
+		if (_backgroundColorMesh != null)
 		{
-			_backgroundColorPicker.Color = _backgroundColorNode.Color;
+			if (_backgroundColorMesh.MaterialOverride is ShaderMaterial colorShaderMat)
+			{
+				var color = colorShaderMat.GetShaderParameter("abledo_color").AsColor();
+				_backgroundColorPicker.Color = color;
+			}
 		}
 		
-		if (_backgroundImageNode != null)
+		// Load the current background image from the BackgroundImage MeshInstance3D shader material
+		if (_backgroundImageMesh != null)
 		{
-			// Load texture path if exists
-			if (_backgroundImageNode.Texture != null)
+			if (_backgroundImageMesh.MaterialOverride is ShaderMaterial shaderMat)
 			{
-				// If there's already a texture, display its path
-				if (_backgroundImageNode.Texture is CompressedTexture2D compressedTex)
+				var tex = shaderMat.GetShaderParameter("albedo_tex").As<Texture2D>();
+				if (tex != null && tex is CompressedTexture2D compressedTex)
 				{
-					_currentBackgroundImagePath = compressedTex.ResourcePath;
-					_backgroundImageLabel.Text = _currentBackgroundImagePath;
+					var resPath = compressedTex.ResourcePath;
+					// Treat the default Untitled.png as "no image selected"
+					if (resPath != "res://assets/img/Untitled.png")
+					{
+						_currentBackgroundImagePath = resPath;
+						_backgroundImageLabel.Text = resPath;
+					}
 				}
+				
+				// Load stretch mode from shader parameter
+				bool isStretchToFit = shaderMat.GetShaderParameter("stretch").AsBool();
+				_stretchToFitCheckbox.SetPressedNoSignal(isStretchToFit);
 			}
-			
-			// Load stretch mode - default to Scale (stretch to fit)
-			bool isStretchToFit = _backgroundImageNode.ExpandMode == TextureRect.ExpandModeEnum.IgnoreSize 
-				&& _backgroundImageNode.StretchMode == TextureRect.StretchModeEnum.Scale;
-			_stretchToFitCheckbox.SetPressedNoSignal(isStretchToFit);
 		}
 	}
 
 	private void OnBackgroundColorChanged(Color color)
 	{
-		if (_backgroundColorNode != null)
+		if (_backgroundColorMesh != null)
 		{
-			_backgroundColorNode.Color = color;
-			
-			// Sync to preview viewport
-			Main.Instance?.SyncPreviewBackground();
+			if (_backgroundColorMesh.MaterialOverride is ShaderMaterial colorShaderMat)
+			{
+				colorShaderMat.SetShaderParameter("abledo_color", color);
+			}
 		}
 	}
 
@@ -696,52 +699,44 @@ public partial class ProjectPropertiesPanel : Panel
 			return;
 		}
 		
-		if (_backgroundImageNode != null)
+		if (_backgroundImageMesh != null)
 		{
-			_backgroundImageNode.Texture = texture;
-			_currentBackgroundImagePath = path;
-			_backgroundImageLabel.Text = path;
-			
-			// Apply the current stretch mode setting
-			OnStretchToFitToggled(_stretchToFitCheckbox.ButtonPressed);
-			
-			// Sync to preview viewport
-			Main.Instance?.SyncPreviewBackground();
+			if (_backgroundImageMesh.MaterialOverride is ShaderMaterial shaderMat)
+			{
+				shaderMat.SetShaderParameter("albedo_tex", texture);
+				_currentBackgroundImagePath = path;
+				_backgroundImageLabel.Text = path;
+				
+				// Apply the current stretch mode setting
+				OnStretchToFitToggled(_stretchToFitCheckbox.ButtonPressed);
+			}
 		}
 	}
 
 	private void OnStretchToFitToggled(bool stretchToFit)
 	{
-		if (_backgroundImageNode != null)
+		if (_backgroundImageMesh != null)
 		{
-			if (stretchToFit)
+			if (_backgroundImageMesh.MaterialOverride is ShaderMaterial shaderMat)
 			{
-				// Stretch to fit: IgnoreSize + Scale
-				_backgroundImageNode.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
-				_backgroundImageNode.StretchMode = TextureRect.StretchModeEnum.Scale;
+				// Set the stretch shader parameter
+				shaderMat.SetShaderParameter("stretch", stretchToFit);
 			}
-			else
-			{
-				// Keep aspect: IgnoreSize + Keep
-				_backgroundImageNode.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
-				_backgroundImageNode.StretchMode = TextureRect.StretchModeEnum.Keep;
-			}
-			
-			// Sync to preview viewport
-			Main.Instance?.SyncPreviewBackground();
 		}
 	}
 
 	private void OnClearImageButtonPressed()
 	{
-		if (_backgroundImageNode != null)
+		if (_backgroundImageMesh != null)
 		{
-			_backgroundImageNode.Texture = null;
-			_currentBackgroundImagePath = "";
-			_backgroundImageLabel.Text = "No image selected";
-			
-			// Sync to preview viewport
-			Main.Instance?.SyncPreviewBackground();
+			if (_backgroundImageMesh.MaterialOverride is ShaderMaterial shaderMat)
+			{
+				// Restore the default Untitled.png texture
+				var defaultTex = GD.Load<Texture2D>("res://assets/img/Untitled.png");
+				shaderMat.SetShaderParameter("albedo_tex", defaultTex);
+				_currentBackgroundImagePath = "";
+				_backgroundImageLabel.Text = "No image selected";
+			}
 		}
 	}
 	

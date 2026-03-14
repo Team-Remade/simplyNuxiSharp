@@ -199,9 +199,16 @@ public partial class WorkCamera : Camera3D
 			}
 		}
 
-		// Store the original floor visibility state
+		// Store the original floor and background visibility states
 		bool originalFloorVisibility = Main.Instance.ProjectPropertyPanel.FloorNode.Visible;
+		bool originalBgColorVisibility = Main.Instance.ProjectPropertyPanel.BackgroundColorNode?.Visible ?? false;
+		bool originalBgImageVisibility = Main.Instance.ProjectPropertyPanel.BackgroundImageNode?.Visible ?? false;
+		
 		Main.Instance.ProjectPropertyPanel.FloorNode.Visible = false;
+		if (Main.Instance.ProjectPropertyPanel.BackgroundColorNode != null)
+			Main.Instance.ProjectPropertyPanel.BackgroundColorNode.Visible = false;
+		if (Main.Instance.ProjectPropertyPanel.BackgroundImageNode != null)
+			Main.Instance.ProjectPropertyPanel.BackgroundImageNode.Visible = false;
 		
 		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
 		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
@@ -221,8 +228,12 @@ public partial class WorkCamera : Camera3D
 			}
 		}
 		
-		// Restore the original floor visibility state instead of forcing it to true
+		// Restore the original floor and background visibility states
 		Main.Instance.ProjectPropertyPanel.FloorNode.Visible = originalFloorVisibility;
+		if (Main.Instance.ProjectPropertyPanel.BackgroundColorNode != null)
+			Main.Instance.ProjectPropertyPanel.BackgroundColorNode.Visible = originalBgColorVisibility;
+		if (Main.Instance.ProjectPropertyPanel.BackgroundImageNode != null)
+			Main.Instance.ProjectPropertyPanel.BackgroundImageNode.Visible = originalBgImageVisibility;
 		
 		PickViewport.ProcessMode = ProcessModeEnum.Disabled;
 		PickViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;

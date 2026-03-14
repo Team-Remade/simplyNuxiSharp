@@ -151,26 +151,9 @@ text = "FPS: 60"
 [node name="PreviewSubViewport" type="SubViewport" parent="MainPanel/VBox/AspectRatioContainerNode/ViewportContainer" unique_id=598387402]
 handle_input_locally = false
 use_debanding = true
+scaling_3d_mode = 0
 size = Vector2i(262, 262)
 render_target_update_mode = 4
-
-[node name="CanvasLayer" type="CanvasLayer" parent="MainPanel/VBox/AspectRatioContainerNode/ViewportContainer/PreviewSubViewport" unique_id=942478871]
-
-[node name="BackgroundColor" type="ColorRect" parent="MainPanel/VBox/AspectRatioContainerNode/ViewportContainer/PreviewSubViewport/CanvasLayer" unique_id=2077445312]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-color = Color(0.5764706, 0.5764706, 1, 1)
-
-[node name="BackgroundImage" type="TextureRect" parent="MainPanel/VBox/AspectRatioContainerNode/ViewportContainer/PreviewSubViewport/CanvasLayer" unique_id=1137715077]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-expand_mode = 1
 
 [node name="PreviewCamera" type="Camera3D" parent="MainPanel/VBox/AspectRatioContainerNode/ViewportContainer/PreviewSubViewport" unique_id=1323281610]
 transform = Transform3D(0.70710677, -0.49999997, 0.49999997, 0, 0.70710677, 0.70710677, -0.70710677, -0.49999997, 0.49999997, 3, 3, 3)
