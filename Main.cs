@@ -42,6 +42,9 @@ public partial class Main : Control
 	private SpawnMenu _spawnMenu;
 	private bool _renderModeEnabled = false;
 	
+	// Debug toggle: set to true to skip the asset downloader on startup
+	private const bool DebugSkipAssetDownloader = false;
+	
 	public override void _EnterTree()
 	{
 		SetWindowTitle("Mine Imator Simply Remade: Nuxi");
@@ -59,7 +62,8 @@ public partial class Main : Control
 		await EnsureFFMpegAsync();
 		
 		// ── Step 2: Show the AssetDownloaderWindow as a child overlay and wait ──
-		await ShowAssetDownloaderAndWait();
+		if (!DebugSkipAssetDownloader)
+			await ShowAssetDownloaderAndWait();
 		
 		// ── Step 3: Normal Main scene setup (assets are now loaded) ─────────────
 		
@@ -502,6 +506,16 @@ public partial class Main : Control
 			{
 				ToggleRenderMode();
 				GetViewport().SetInputAsHandled();
+			}
+			
+			// Ctrl+D to duplicate selected objects
+			if (keyEvent.Keycode == Key.D && keyEvent.CtrlPressed)
+			{
+				if (SelectionManager.Instance.SelectedObjects.Count > 0)
+				{
+					SceneTreePanel.DuplicateSelectedObjects();
+					GetViewport().SetInputAsHandled();
+				}
 			}
 		}
 	}

@@ -24,6 +24,10 @@ public partial class ObjectPropertiesPanel : Panel
 	private CollapsibleSection _rotationSection;
 	private CollapsibleSection _scaleSection;
 	private CollapsibleSection _pivotOffsetSection;
+	private CheckBox _inheritPivotOffsetCheckbox;
+	private CheckBox _inheritPositionCheckbox;
+	private CheckBox _inheritRotationCheckbox;
+	private CheckBox _inheritScaleCheckbox;
 	private CollapsibleSection _materialSection;
 	private HSlider _materialAlphaSlider;
 	private Label _materialAlphaLabel;
@@ -127,6 +131,22 @@ public partial class ObjectPropertiesPanel : Panel
 		_positionSection.GetResetButton().Pressed += OnResetPosition;
 		
 		var posContainer = _positionSection.GetContentContainer();
+
+		// Inherit Position checkbox (checked by default)
+		var inheritPositionRow = new HBoxContainer();
+		posContainer.AddChild(inheritPositionRow);
+		var inheritPositionLabel = new Label();
+		inheritPositionLabel.Text = "Inherit Position:";
+		inheritPositionLabel.CustomMinimumSize = new Vector2(120, 0);
+		inheritPositionRow.AddChild(inheritPositionLabel);
+		_inheritPositionCheckbox = new CheckBox();
+		_inheritPositionCheckbox.Name = "InheritPositionCheckbox";
+		_inheritPositionCheckbox.Text = "";
+		_inheritPositionCheckbox.ButtonPressed = true;
+		_inheritPositionCheckbox.TooltipText = "When checked, this object inherits the parent's position";
+		_inheritPositionCheckbox.Toggled += OnInheritPositionChanged;
+		inheritPositionRow.AddChild(_inheritPositionCheckbox);
+
 		_positionX = CreateSpinBoxRow(posContainer, "X:", OnPositionChanged);
 		_positionY = CreateSpinBoxRow(posContainer, "Y:", OnPositionChanged);
 		_positionZ = CreateSpinBoxRow(posContainer, "Z:", OnPositionChanged);
@@ -138,6 +158,22 @@ public partial class ObjectPropertiesPanel : Panel
 		_rotationSection.GetResetButton().Pressed += OnResetRotation;
 		
 		var rotContainer = _rotationSection.GetContentContainer();
+
+		// Inherit Rotation checkbox (checked by default)
+		var inheritRotationRow = new HBoxContainer();
+		rotContainer.AddChild(inheritRotationRow);
+		var inheritRotationLabel = new Label();
+		inheritRotationLabel.Text = "Inherit Rotation:";
+		inheritRotationLabel.CustomMinimumSize = new Vector2(120, 0);
+		inheritRotationRow.AddChild(inheritRotationLabel);
+		_inheritRotationCheckbox = new CheckBox();
+		_inheritRotationCheckbox.Name = "InheritRotationCheckbox";
+		_inheritRotationCheckbox.Text = "";
+		_inheritRotationCheckbox.ButtonPressed = true;
+		_inheritRotationCheckbox.TooltipText = "When checked, this object inherits the parent's rotation";
+		_inheritRotationCheckbox.Toggled += OnInheritRotationChanged;
+		inheritRotationRow.AddChild(_inheritRotationCheckbox);
+
 		_rotationX = CreateSpinBoxRow(rotContainer, "X:", OnRotationChanged);
 		_rotationY = CreateSpinBoxRow(rotContainer, "Y:", OnRotationChanged);
 		_rotationZ = CreateSpinBoxRow(rotContainer, "Z:", OnRotationChanged);
@@ -149,6 +185,22 @@ public partial class ObjectPropertiesPanel : Panel
 		_scaleSection.GetResetButton().Pressed += OnResetScale;
 		
 		var scaleContainer = _scaleSection.GetContentContainer();
+
+		// Inherit Scale checkbox (checked by default)
+		var inheritScaleRow = new HBoxContainer();
+		scaleContainer.AddChild(inheritScaleRow);
+		var inheritScaleLabel = new Label();
+		inheritScaleLabel.Text = "Inherit Scale:";
+		inheritScaleLabel.CustomMinimumSize = new Vector2(120, 0);
+		inheritScaleRow.AddChild(inheritScaleLabel);
+		_inheritScaleCheckbox = new CheckBox();
+		_inheritScaleCheckbox.Name = "InheritScaleCheckbox";
+		_inheritScaleCheckbox.Text = "";
+		_inheritScaleCheckbox.ButtonPressed = true;
+		_inheritScaleCheckbox.TooltipText = "When checked, this object inherits the parent's scale";
+		_inheritScaleCheckbox.Toggled += OnInheritScaleChanged;
+		inheritScaleRow.AddChild(_inheritScaleCheckbox);
+
 		_scaleX = CreateSpinBoxRow(scaleContainer, "X:", OnScaleChanged);
 		_scaleY = CreateSpinBoxRow(scaleContainer, "Y:", OnScaleChanged);
 		_scaleZ = CreateSpinBoxRow(scaleContainer, "Z:", OnScaleChanged);
@@ -160,6 +212,22 @@ public partial class ObjectPropertiesPanel : Panel
 		_pivotOffsetSection.GetResetButton().Pressed += OnResetPivotOffset;
 		
 		var pivotOffsetContainer = _pivotOffsetSection.GetContentContainer();
+
+		// Inherit Pivot Offset checkbox (unchecked by default)
+		var inheritPivotRow = new HBoxContainer();
+		pivotOffsetContainer.AddChild(inheritPivotRow);
+		var inheritPivotLabel = new Label();
+		inheritPivotLabel.Text = "Inherit Pivot:";
+		inheritPivotLabel.CustomMinimumSize = new Vector2(100, 0);
+		inheritPivotRow.AddChild(inheritPivotLabel);
+		_inheritPivotOffsetCheckbox = new CheckBox();
+		_inheritPivotOffsetCheckbox.Name = "InheritPivotOffsetCheckbox";
+		_inheritPivotOffsetCheckbox.Text = "";
+		_inheritPivotOffsetCheckbox.ButtonPressed = false;
+		_inheritPivotOffsetCheckbox.TooltipText = "When checked, this object accumulates the parent's pivot offset";
+		_inheritPivotOffsetCheckbox.Toggled += OnInheritPivotOffsetChanged;
+		inheritPivotRow.AddChild(_inheritPivotOffsetCheckbox);
+
 		_pivotOffsetX = CreateSpinBoxRow(pivotOffsetContainer, "X:", OnPivotOffsetChanged);
 		_pivotOffsetY = CreateSpinBoxRow(pivotOffsetContainer, "Y:", OnPivotOffsetChanged);
 		_pivotOffsetZ = CreateSpinBoxRow(pivotOffsetContainer, "Z:", OnPivotOffsetChanged);
@@ -406,17 +474,19 @@ public partial class ObjectPropertiesPanel : Panel
 		}
 
 		// For bones, show TargetPosition and TargetRotation (offset from base pose)
-		// For other objects, show regular Position and Rotation
-		Vector3 pos, rot;
+		// For other objects, show local position/rotation (before inheritance is applied)
+		Vector3 pos, rot, scale;
 		if (_currentObject is BoneSceneObject boneObj)
 		{
 			pos = boneObj.TargetPosition;
 			rot = boneObj.TargetRotation;
+			scale = _currentObject.Scale;
 		}
 		else
 		{
-			pos = _currentObject.Position;
-			rot = _currentObject.Rotation;
+			pos = _currentObject.LocalPosition;
+			rot = _currentObject.LocalRotation;
+			scale = _currentObject.LocalScale;
 		}
 
 		// Position (scaled by 16 for display) - use SetValueNoSignal to avoid triggering auto-keyframing
@@ -430,7 +500,6 @@ public partial class ObjectPropertiesPanel : Panel
 		_rotationZ.SetValueNoSignal(Math.Round(Mathf.RadToDeg(rot.Z), 2));
 
 		// Scale - use SetValueNoSignal to avoid triggering auto-keyframing
-		var scale = _currentObject.Scale;
 		_scaleX.SetValueNoSignal(Math.Round(scale.X, 2));
 		_scaleY.SetValueNoSignal(Math.Round(scale.Y, 2));
 		_scaleZ.SetValueNoSignal(Math.Round(scale.Z, 2));
@@ -440,6 +509,12 @@ public partial class ObjectPropertiesPanel : Panel
 		_pivotOffsetX.SetValueNoSignal(Math.Round(pivotOffset.X * 16, 2));
 		_pivotOffsetY.SetValueNoSignal(Math.Round(pivotOffset.Y * 16, 2));
 		_pivotOffsetZ.SetValueNoSignal(Math.Round(pivotOffset.Z * 16, 2));
+
+		// Inheritance checkboxes
+		_inheritPivotOffsetCheckbox.SetPressedNoSignal(_currentObject.InheritPivotOffset);
+		_inheritPositionCheckbox.SetPressedNoSignal(_currentObject.InheritPosition);
+		_inheritRotationCheckbox.SetPressedNoSignal(_currentObject.InheritRotation);
+		_inheritScaleCheckbox.SetPressedNoSignal(_currentObject.InheritScale);
 
 		// Material Alpha - special handling for bones
 		if (_currentObject is BoneSceneObject boneObject)
@@ -499,6 +574,11 @@ public partial class ObjectPropertiesPanel : Panel
 		_pivotOffsetX.SetValueNoSignal(0);
 		_pivotOffsetY.SetValueNoSignal(0);
 		_pivotOffsetZ.SetValueNoSignal(0);
+		// Reset inheritance checkboxes to defaults
+		_inheritPivotOffsetCheckbox.SetPressedNoSignal(false);
+		_inheritPositionCheckbox.SetPressedNoSignal(true);
+		_inheritRotationCheckbox.SetPressedNoSignal(true);
+		_inheritScaleCheckbox.SetPressedNoSignal(true);
 		// Clear light controls
 		_lightEnergySpinBox.SetValueNoSignal(1.0);
 		_lightRangeSpinBox.SetValueNoSignal(5.0);
@@ -535,7 +615,7 @@ public partial class ObjectPropertiesPanel : Panel
 		}
 		else
 		{
-			_currentObject.Position = newPos;
+			_currentObject.SetLocalPosition(newPos);
 		}
 		
 		// Auto-keyframe when property changes
@@ -562,7 +642,7 @@ public partial class ObjectPropertiesPanel : Panel
 		}
 		else
 		{
-			_currentObject.Rotation = newRot;
+			_currentObject.SetLocalRotation(newRot);
 		}
 		
 		// Auto-keyframe when property changes
@@ -575,11 +655,11 @@ public partial class ObjectPropertiesPanel : Panel
 	{
 		if (_currentObject == null) return;
 
-		_currentObject.Scale = new Vector3(
+		_currentObject.SetLocalScale(new Vector3(
 			(float)_scaleX.Value,
 			(float)_scaleY.Value,
 			(float)_scaleZ.Value
-		);
+		));
 		
 		// Auto-keyframe when property changes
 		AutoKeyframe("scale.x");
@@ -596,8 +676,32 @@ public partial class ObjectPropertiesPanel : Panel
 			(float)_pivotOffsetY.Value / 16,
 			(float)_pivotOffsetZ.Value / 16
 		);
-		
+
 		// Note: Pivot offset is NOT auto-keyframed as it's a non-animated property
+	}
+
+	private void OnInheritPivotOffsetChanged(bool inherit)
+	{
+		if (_currentObject == null) return;
+		_currentObject.InheritPivotOffset = inherit;
+	}
+
+	private void OnInheritPositionChanged(bool inherit)
+	{
+		if (_currentObject == null) return;
+		_currentObject.InheritPosition = inherit;
+	}
+
+	private void OnInheritRotationChanged(bool inherit)
+	{
+		if (_currentObject == null) return;
+		_currentObject.InheritRotation = inherit;
+	}
+
+	private void OnInheritScaleChanged(bool inherit)
+	{
+		if (_currentObject == null) return;
+		_currentObject.InheritScale = inherit;
 	}
 	
 	private void AutoKeyframe(string propertyPath)
@@ -625,7 +729,7 @@ public partial class ObjectPropertiesPanel : Panel
 		}
 		else
 		{
-			_currentObject.Position = _originalPosition;
+			_currentObject.SetLocalPosition(_originalPosition);
 			
 			// Update UI to reflect the change
 			_positionX.Value = Math.Round(_originalPosition.X * 16, 2);
@@ -656,7 +760,7 @@ public partial class ObjectPropertiesPanel : Panel
 		}
 		else
 		{
-			_currentObject.Rotation = _originalRotation;
+			_currentObject.SetLocalRotation(_originalRotation);
 			
 			// Update UI to reflect the change
 			_rotationX.Value = Math.Round(Mathf.RadToDeg(_originalRotation.X), 2);
@@ -675,7 +779,7 @@ public partial class ObjectPropertiesPanel : Panel
 		if (_currentObject == null) return;
 		
 		// Reset to original scale
-		_currentObject.Scale = _originalScale;
+		_currentObject.SetLocalScale(_originalScale);
 		
 		// Update UI to reflect the change
 		_scaleX.Value = Math.Round(_originalScale.X, 2);

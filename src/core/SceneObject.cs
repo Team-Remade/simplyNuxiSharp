@@ -14,7 +14,7 @@ public partial class SceneObject : Node3D
 	public Color PickColor = Colors.White;
 	public string ObjectId = "";
 	public int PickColorId = 0;
-	
+
 	// Keyframe storage for animation
 	// Dictionary key format: "propertyPath" (e.g., "visible", "position.x", "rotation.y")
 	public Dictionary<string, List<ObjectKeyframe>> Keyframes = new Dictionary<string, List<ObjectKeyframe>>();
@@ -30,8 +30,44 @@ public partial class SceneObject : Node3D
 			UpdateChildrenPivotOffsets();
 		}
 	}
+
+	/// <summary>
+	/// When true, this object accumulates the parent's pivot offset into its own visual position.
+	/// When false, the parent's pivot offset is ignored (default: false).
+	/// </summary>
+	private bool _inheritPivotOffset = false;
+	public bool InheritPivotOffset
+	{
+		get => _inheritPivotOffset;
+		set
+		{
+			_inheritPivotOffset = value;
+			UpdateVisualPosition();
+			UpdateChildrenPivotOffsets();
+		}
+	}
+
+	/// <summary>
+	/// When true, this object inherits the parent's position (default: true).
+	/// </summary>
+	public bool InheritPosition = true;
+
+	/// <summary>
+	/// When true, this object inherits the parent's rotation (default: true).
+	/// </summary>
+	public bool InheritRotation = true;
+
+	/// <summary>
+	/// When true, this object inherits the parent's scale (default: true).
+	/// </summary>
+	public bool InheritScale = true;
 	
 	public Node3D Visual;
+
+	// Stores the local transform set by the user (position/rotation/scale before inheritance is applied)
+	private Vector3 _localPosition = Vector3.Zero;
+	private Vector3 _localRotation = Vector3.Zero;
+	private Vector3 _localScale = Vector3.One;
 	
 	public SceneObject()
 	{
@@ -49,7 +85,123 @@ public partial class SceneObject : Node3D
 		base._Ready();
 		// Update visual position after all parent-child relationships are established
 		UpdateVisualPosition();
+		// Sync local transform cache from current node transform
+		_localPosition = Position;
+		_localRotation = Rotation;
+		_localScale = Scale;
 	}
+
+	public override void _Process(double delta)
+	{
+		ApplyInheritanceTransform();
+	}
+
+	/// <summary>
+	/// Applies per-component transform inheritance from the parent SceneObject.
+	/// When all three are true this is equivalent to normal Godot parenting.
+	/// When all three are false the object behaves as a top-level node.
+	/// </summary>
+	private void ApplyInheritanceTransform()
+	{
+		// If all components are inherited, use normal Godot parenting (TopLevel = false)
+		if (InheritPosition && InheritRotation && InheritScale)
+		{
+			if (TopLevel)
+			{
+				TopLevel = false;
+				// Restore local transform
+				Position = _localPosition;
+				Rotation = _localRotation;
+				Scale = _localScale;
+			}
+			return;
+		}
+
+		// At least one component is not inherited — switch to TopLevel and manually compose
+		if (!TopLevel)
+		{
+			// Cache current local transform before switching to TopLevel
+			_localPosition = Position;
+			_localRotation = Rotation;
+			_localScale = Scale;
+			TopLevel = true;
+		}
+
+		var parent = GetParent() as Node3D;
+		if (parent == null)
+		{
+			// No parent — just apply local transform directly
+			Position = _localPosition;
+			Rotation = _localRotation;
+			Scale = _localScale;
+			return;
+		}
+
+		var parentGlobalPos = parent.GlobalPosition;
+		var parentGlobalRot = parent.GlobalRotation;
+		var parentGlobalScale = parent.GlobalTransform.Basis.Scale;
+
+		// Build the world-space transform by selectively inheriting components
+		var worldPos = InheritPosition ? parentGlobalPos + _localPosition : _localPosition;
+		var worldRot = InheritRotation ? parentGlobalRot + _localRotation : _localRotation;
+		var worldScale = InheritScale
+			? new Vector3(parentGlobalScale.X * _localScale.X, parentGlobalScale.Y * _localScale.Y, parentGlobalScale.Z * _localScale.Z)
+			: _localScale;
+
+		GlobalPosition = worldPos;
+		GlobalRotation = worldRot;
+		GlobalTransform = new Transform3D(
+			GlobalTransform.Basis.Scaled(worldScale / GlobalTransform.Basis.Scale),
+			GlobalTransform.Origin);
+	}
+
+	/// <summary>
+	/// Sets the local position and keeps the cache in sync.
+	/// Use this instead of setting Position directly when inheritance may be active.
+	/// </summary>
+	public void SetLocalPosition(Vector3 pos)
+	{
+		_localPosition = pos;
+		if (!TopLevel)
+			Position = pos;
+	}
+
+	/// <summary>
+	/// Sets the local rotation and keeps the cache in sync.
+	/// Use this instead of setting Rotation directly when inheritance may be active.
+	/// </summary>
+	public void SetLocalRotation(Vector3 rot)
+	{
+		_localRotation = rot;
+		if (!TopLevel)
+			Rotation = rot;
+	}
+
+	/// <summary>
+	/// Sets the local scale and keeps the cache in sync.
+	/// Use this instead of setting Scale directly when inheritance may be active.
+	/// </summary>
+	public void SetLocalScale(Vector3 scale)
+	{
+		_localScale = scale;
+		if (!TopLevel)
+			Scale = scale;
+	}
+
+	/// <summary>
+	/// Gets the local position (the value the user set, before inheritance is applied).
+	/// </summary>
+	public Vector3 LocalPosition => _localPosition;
+
+	/// <summary>
+	/// Gets the local rotation (the value the user set, before inheritance is applied).
+	/// </summary>
+	public Vector3 LocalRotation => _localRotation;
+
+	/// <summary>
+	/// Gets the local scale (the value the user set, before inheritance is applied).
+	/// </summary>
+	public Vector3 LocalScale => _localScale;
 	
 	private void GeneratePickColor()
 	{
@@ -114,7 +266,7 @@ public partial class SceneObject : Node3D
 		Reparent(parent);
 
 		GlobalTransform = globalTransform;
-		
+
 		// Update pivot offset based on new parent hierarchy
 		UpdateVisualPosition();
 		
@@ -202,22 +354,26 @@ public partial class SceneObject : Node3D
 	}
 
 	/// <summary>
-	/// Gets the accumulated pivot offset from all parent SceneObjects
+	/// Gets the accumulated pivot offset from all parent SceneObjects.
+	/// Only accumulates parent offsets when InheritPivotOffset is true.
 	/// </summary>
 	public Vector3 GetAccumulatedPivotOffset()
 	{
 		var accumulated = PivotOffset;
-		var parent = GetParent();
 		
-		if (parent is SceneObject parentSceneObject)
+		if (InheritPivotOffset)
 		{
-			accumulated += parentSceneObject.GetAccumulatedPivotOffset();
+			var parent = GetParent();
+			if (parent is SceneObject parentSceneObject)
+			{
+				accumulated += parentSceneObject.GetAccumulatedPivotOffset();
+			}
 		}
 		
 		return accumulated;
 	}
-	
-	private void UpdateVisualPosition()
+
+	public void UpdateVisualPosition()
 	{
 		if (Visual != null)
 		{
@@ -225,7 +381,7 @@ public partial class SceneObject : Node3D
 			Visual.Position = -GetAccumulatedPivotOffset();
 		}
 	}
-	
+
 	private void UpdateChildrenPivotOffsets()
 	{
 		// Recursively update all children when this object's pivot changes

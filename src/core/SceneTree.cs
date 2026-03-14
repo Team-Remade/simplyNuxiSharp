@@ -66,13 +66,15 @@ public partial class SceneTree : Panel
 		Tree.AllowReselect = true;
 		Tree.AllowRmbSelect = true; // Enable right-click selection
 		Tree.DropModeFlags = (int)Tree.DropModeFlagsEnum.OnItem | (int)Tree.DropModeFlagsEnum.Inbetween;
+		Tree.FocusMode = FocusModeEnum.None;
 		
 		vbox.AddChild(Tree);
 		
 		// Setup context menu
 		_contextMenu = new PopupMenu();
 		_contextMenu.Name = "ContextMenu";
-		_contextMenu.AddItem("Delete", 0);
+		_contextMenu.AddItem("Duplicate", 0);
+		_contextMenu.AddItem("Delete", 1);
 		_contextMenu.IndexPressed += OnContextMenuIndexPressed;
 		AddChild(_contextMenu);
 		
@@ -286,6 +288,8 @@ public partial class SceneTree : Panel
 		
 		// Reselect the object
 		SelectObject(sceneObject);
+
+		sceneObject.UpdateVisualPosition();
 	}
 
 	private void OnItemSelected()
@@ -351,7 +355,15 @@ public partial class SceneTree : Panel
 	
 	private void OnContextMenuIndexPressed(long index)
 	{
-		if (index == 0) // Delete
+		if (index == 0) // Duplicate
+		{
+			if (_contextMenuItem != null && ObjectMap.TryGetValue(_contextMenuItem, out var sceneObject))
+			{
+				DuplicateObject(sceneObject);
+				_contextMenuItem = null;
+			}
+		}
+		else if (index == 1) // Delete
 		{
 			if (_contextMenuItem != null && ObjectMap.TryGetValue(_contextMenuItem, out var sceneObject))
 			{
@@ -402,6 +414,203 @@ public partial class SceneTree : Panel
 		}
 		
 		return nextNumber;
+	}
+
+	/// <summary>
+	/// Strips any trailing integer from a name and returns the base name.
+	/// E.g. "Cube3" -> "Cube", "PointLight" -> "PointLight"
+	/// </summary>
+	private static string GetBaseName(string name)
+	{
+		int i = name.Length - 1;
+		while (i >= 0 && char.IsDigit(name[i]))
+			i--;
+		// Only strip if there is at least one digit at the end and something before it
+		if (i >= 0 && i < name.Length - 1)
+			return name.Substring(0, i + 1);
+		return name;
+	}
+
+	/// <summary>
+	/// Returns the next available number for a given base name across all SceneObjects
+	/// in the viewport, using the same convention as SpawnMenu (no suffix for 1, suffix
+	/// "2", "3", … for subsequent instances).
+	/// </summary>
+	private int GetNextAvailableNameNumber(string baseName)
+	{
+		var existingNumbers = new System.Collections.Generic.HashSet<int>();
+
+		void ScanNode(Node node)
+		{
+			foreach (var child in node.GetChildren())
+			{
+				if (child is SceneObject so)
+				{
+					var n = so.Name.ToString();
+					if (n == baseName)
+					{
+						existingNumbers.Add(1);
+					}
+					else if (n.StartsWith(baseName) && n.Length > baseName.Length)
+					{
+						var suffix = n.Substring(baseName.Length);
+						if (int.TryParse(suffix, out int num))
+							existingNumbers.Add(num);
+					}
+					ScanNode(so);
+				}
+			}
+		}
+
+		if (Viewport != null)
+			ScanNode(Viewport);
+
+		int next = 1;
+		while (existingNumbers.Contains(next))
+			next++;
+		return next;
+	}
+
+	/// <summary>
+	/// Creates a shallow duplicate of a single SceneObject (no children), copies all
+	/// custom C# properties, and adds it to <paramref name="parent"/>.
+	/// Returns null if the type cannot be duplicated (e.g. CharacterSceneObject).
+	/// </summary>
+	private SceneObject CreateSceneObjectDuplicate(SceneObject original, Node parent)
+	{
+		SceneObject duplicate;
+
+		switch (original)
+		{
+			case LightSceneObject originalLight:
+			{
+				var dup = new LightSceneObject();
+				dup.LightColor = originalLight.LightColor;
+				dup.LightEnergy = originalLight.LightEnergy;
+				dup.LightRange = originalLight.LightRange;
+				dup.LightIndirectEnergy = originalLight.LightIndirectEnergy;
+				dup.LightSpecular = originalLight.LightSpecular;
+				dup.LightShadowEnabled = originalLight.LightShadowEnabled;
+				duplicate = dup;
+				break;
+			}
+			case CameraSceneObject originalCamera:
+			{
+				var dup = new CameraSceneObject();
+				dup.Fov = originalCamera.Fov;
+				dup.Near = originalCamera.Near;
+				dup.Far = originalCamera.Far;
+				duplicate = dup;
+				break;
+			}
+			case CharacterSceneObject:
+				GD.PrintErr("[SceneTree] Duplicating CharacterSceneObject is not supported.");
+				return null;
+			default:
+			{
+				// Generic SceneObject – duplicate the Visual children so meshes/models are copied
+				duplicate = new SceneObject();
+				foreach (var child in original.Visual.GetChildren())
+				{
+					if (child is Node childNode)
+						duplicate.Visual.AddChild((Node)childNode.Duplicate());
+				}
+				break;
+			}
+		}
+
+		// Determine the name: strip trailing number from original, then find next available
+		var baseName = GetBaseName(original.Name.ToString());
+		var nextNum = GetNextAvailableNameNumber(baseName);
+		duplicate.Name = nextNum > 1 ? $"{baseName}{nextNum}" : baseName;
+
+		// Copy base SceneObject properties
+		duplicate.ObjectType = original.ObjectType;
+		duplicate.IsSelectable = original.IsSelectable;
+
+		// Copy transform
+		duplicate.Position = original.Position;
+		duplicate.Rotation = original.Rotation;
+		duplicate.Scale = original.Scale;
+
+		// Copy pivot offset
+		duplicate.PivotOffset = original.PivotOffset;
+
+		// Copy visibility
+		duplicate.SetObjectVisible(original.ObjectVisible);
+
+		// Deep-copy keyframes
+		foreach (var kvp in original.Keyframes)
+		{
+			var copiedFrames = new System.Collections.Generic.List<ObjectKeyframe>();
+			foreach (var kf in kvp.Value)
+			{
+				copiedFrames.Add(new ObjectKeyframe
+				{
+					Frame = kf.Frame,
+					Value = kf.Value,
+					InterpolationType = kf.InterpolationType
+				});
+			}
+			duplicate.Keyframes[kvp.Key] = copiedFrames;
+		}
+
+		// Add to the requested parent
+		parent.AddChild(duplicate);
+		return duplicate;
+	}
+
+	/// <summary>
+	/// Recursively duplicates <paramref name="original"/> and all of its child
+	/// SceneObjects, parenting the root duplicate to the same parent as the original.
+	/// Returns the root duplicate, or null if the type is unsupported.
+	/// </summary>
+	private SceneObject DuplicateObjectRecursive(SceneObject original, Node parent)
+	{
+		var duplicate = CreateSceneObjectDuplicate(original, parent);
+		if (duplicate == null)
+			return null;
+
+		// Recursively duplicate child SceneObjects
+		foreach (var child in original.GetChildren())
+		{
+			if (child is SceneObject childSceneObject)
+				DuplicateObjectRecursive(childSceneObject, duplicate);
+		}
+
+		return duplicate;
+	}
+
+	/// <summary>
+	/// Duplicates the given SceneObject (and its child SceneObjects), then rebuilds
+	/// the scene tree and selects the new root duplicate.
+	/// </summary>
+	private async void DuplicateObject(SceneObject original)
+	{
+		var parent = original.GetParent();
+		var duplicate = DuplicateObjectRecursive(original, parent);
+		if (duplicate == null)
+			return;
+
+		// Rebuild tree and select the new duplicate
+		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+		BuildTree();
+
+		SelectionManager.Instance.ClearSelection();
+		SelectionManager.Instance.SelectObject(duplicate);
+	}
+
+	/// <summary>
+	/// Duplicates all currently selected objects. Called from Ctrl+D shortcut.
+	/// </summary>
+	public void DuplicateSelectedObjects()
+	{
+		var selected = new System.Collections.Generic.List<SceneObject>(
+			SelectionManager.Instance.SelectedObjects);
+		foreach (var obj in selected)
+		{
+			DuplicateObject(obj);
+		}
 	}
 
 	private async void DeleteObject(SceneObject sceneObject)
