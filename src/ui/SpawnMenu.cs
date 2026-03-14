@@ -670,29 +670,23 @@ public partial class SpawnMenu : PopupPanel
 		// Handle light spawning specially
 		if (objectName == "Point Light")
 		{
-			var lightObject = new LightSceneObject();
-			lightObject.Name = fullObjectName;
-			Viewport.AddChild(lightObject);
-			
-			// Position at world origin
-			lightObject.GlobalPosition = Vector3.Zero;
-			
-			// Notify the scene tree panel to refresh
-			if (GetTree().Root.GetNode<Main>("/root/Main") is Main main)
+			var lightObject = SpawnLightObject(fullObjectName);
+			if (lightObject != null)
 			{
-				main.SceneTreePanel.Refresh();
+				lightObject.SpawnCategory = "Light";
+				if (GetTree().Root.GetNode<Main>("/root/Main") is Main mainL)
+					mainL.SceneTreePanel.Refresh();
 			}
-			
 			return;
 		}
 
-        sceneObject = new SceneObject
-        {
-            Name = fullObjectName,
-            ObjectType = objectName
-        };
+		      sceneObject = new SceneObject
+		      {
+		          Name = fullObjectName,
+		          ObjectType = objectName
+		      };
 
-        Node3D visualNode = null;
+		      Node3D visualNode = null;
 		
 		// Check if this is a Minecraft block
 		if (_selectedCategory == "Blocks")
@@ -700,6 +694,13 @@ public partial class SpawnMenu : PopupPanel
 			visualNode = CreateMinecraftBlock(objectName);
 			// Minecraft blocks are already positioned correctly in their models
 			sceneObject.PivotOffset = new Vector3(0.5f, 0, 0.5f);
+			sceneObject.SpawnCategory = "Blocks";
+			// Save the variant so it can be restored
+			if (_selectedVariantIndex >= 0 && _selectedVariantIndex < _variantList.ItemCount)
+			{
+				var variantName = _variantList.GetItemText(_selectedVariantIndex);
+				sceneObject.BlockVariant = variantName == "Default" ? "" : variantName;
+			}
 		}
 		else if (_selectedCategory == "Items")
 		{
@@ -707,7 +708,10 @@ public partial class SpawnMenu : PopupPanel
 			visualNode = CreateTexturePlane(objectName);
 			// Texture planes are centered
 			sceneObject.PivotOffset = new Vector3(0.5f, 0, 0.03125f);
-			visualNode.Position = new Vector3(0.5f, 0.5f, -0.03125f);
+			if (visualNode != null)
+				visualNode.Position = new Vector3(0.5f, 0.5f, -0.03125f);
+			sceneObject.SpawnCategory = "Items";
+			sceneObject.TextureType   = _selectedTextureType;
 		}
 		else
 		{
@@ -719,14 +723,14 @@ public partial class SpawnMenu : PopupPanel
 			{
 				meshInstance.Mesh = mesh;
 
-                // Create a material for the mesh
-                var material = new StandardMaterial3D
-                {
-                    AlbedoColor = new Color(0.8f, 0.8f, 0.8f)
-                };
+		              // Create a material for the mesh
+		              var material = new StandardMaterial3D
+		              {
+		                  AlbedoColor = new Color(0.8f, 0.8f, 0.8f)
+		              };
 
-                // Apply material to mesh surface instead of using MaterialOverride
-                if (mesh is PrimitiveMesh primitiveMesh)
+		              // Apply material to mesh surface instead of using MaterialOverride
+		              if (mesh is PrimitiveMesh primitiveMesh)
 				{
 					primitiveMesh.Material = material;
 				}
@@ -739,6 +743,7 @@ public partial class SpawnMenu : PopupPanel
 			
 			// Set pivot offset for primitives so they sit on the ground
 			sceneObject.PivotOffset = new Vector3(0, -0.5f, 0);
+			sceneObject.SpawnCategory = "Primitives";
 		}
 		
 		if (visualNode != null)
@@ -763,6 +768,89 @@ public partial class SpawnMenu : PopupPanel
 			sceneObject.QueueFree();
 			GD.PrintErr($"Could not create visual for {objectName}");
 		}
+	}
+
+	/// <summary>
+	/// Creates a LightSceneObject and adds it to the viewport.
+	/// Returns the created object, or null on failure.
+	/// </summary>
+	public LightSceneObject SpawnLightObject(string objectName)
+	{
+		if (Viewport == null) return null;
+		var lightObject = new LightSceneObject();
+		lightObject.Name = objectName;
+		Viewport.AddChild(lightObject);
+		lightObject.GlobalPosition = Vector3.Zero;
+		return lightObject;
+	}
+
+	/// <summary>
+	/// Creates a Minecraft block SceneObject and adds it to the viewport.
+	/// <paramref name="blockName"/> is the display name (e.g. "Grass Block").
+	/// <paramref name="variant"/> is the blockstate variant string (empty = default).
+	/// Returns the created object, or null on failure.
+	/// </summary>
+	public SceneObject SpawnBlockObject(string blockName, string variant, string objectName)
+	{
+		if (Viewport == null) return null;
+
+		var fileName = blockName.ToLower().Replace(" ", "_");
+		var blockNode = MinecraftModelHelper.CreateNodeFromBlockState(fileName, variant);
+		if (blockNode == null)
+		{
+			GD.PrintErr($"SpawnMenu.SpawnBlockObject: failed to create block '{blockName}'");
+			return null;
+		}
+
+		var sceneObject = new SceneObject
+		{
+			Name          = objectName,
+			ObjectType    = blockName,
+			SpawnCategory = "Blocks",
+			BlockVariant  = variant,
+		};
+		sceneObject.PivotOffset = new Vector3(0.5f, 0, 0.5f);
+		sceneObject.AddVisualInstance(blockNode);
+		Viewport.AddChild(sceneObject);
+		sceneObject.GlobalPosition = Vector3.Zero;
+		return sceneObject;
+	}
+
+	/// <summary>
+	/// Creates a Minecraft item/block texture plane SceneObject and adds it to the viewport.
+	/// <paramref name="itemName"/> is the display name (e.g. "Diamond Sword").
+	/// <paramref name="textureType"/> is "block" or "item".
+	/// Returns the created object, or null on failure.
+	/// </summary>
+	public SceneObject SpawnItemObject(string itemName, string textureType, string objectName)
+	{
+		if (Viewport == null) return null;
+
+		// Temporarily override the texture type so CreateTexturePlane uses the right one
+		var savedType = _selectedTextureType;
+		_selectedTextureType = textureType;
+		var visualNode = CreateTexturePlane(itemName);
+		_selectedTextureType = savedType;
+
+		if (visualNode == null)
+		{
+			GD.PrintErr($"SpawnMenu.SpawnItemObject: failed to create texture plane for '{itemName}'");
+			return null;
+		}
+
+		var sceneObject = new SceneObject
+		{
+			Name          = objectName,
+			ObjectType    = itemName,
+			SpawnCategory = "Items",
+			TextureType   = textureType,
+		};
+		sceneObject.PivotOffset = new Vector3(0.5f, 0, 0.03125f);
+		visualNode.Position     = new Vector3(0.5f, 0.5f, -0.03125f);
+		sceneObject.AddVisualInstance(visualNode);
+		Viewport.AddChild(sceneObject);
+		sceneObject.GlobalPosition = Vector3.Zero;
+		return sceneObject;
 	}
 	
 	private Node3D CreateMinecraftBlock(string blockName)
@@ -838,6 +926,48 @@ public partial class SpawnMenu : PopupPanel
 		return nextNumber;
 	}
 	
+	/// <summary>
+	/// Creates a primitive SceneObject and adds it to the viewport.
+	/// Returns the created SceneObject, or null on failure.
+	/// Used by the project restore system.
+	/// </summary>
+	public SceneObject SpawnPrimitiveObject(string primitiveType, string objectName)
+	{
+		if (Viewport == null)
+		{
+			GD.PrintErr("SpawnMenu.SpawnPrimitiveObject: Viewport not set");
+			return null;
+		}
+
+		var mesh = CreatePrimitiveMesh(primitiveType);
+		if (mesh == null)
+		{
+			GD.PrintErr($"SpawnMenu.SpawnPrimitiveObject: unknown primitive type '{primitiveType}'");
+			return null;
+		}
+
+		var sceneObject = new SceneObject
+		{
+			Name       = objectName,
+			ObjectType = primitiveType,
+		};
+
+		var meshInstance = new MeshInstance3D();
+		meshInstance.Mesh = mesh;
+
+		var material = new StandardMaterial3D { AlbedoColor = new Color(0.8f, 0.8f, 0.8f) };
+		if (mesh is PrimitiveMesh primitiveMesh)
+			primitiveMesh.Material = material;
+
+		meshInstance.CastShadow = GeometryInstance3D.ShadowCastingSetting.On;
+		sceneObject.PivotOffset = new Vector3(0, -0.5f, 0);
+		sceneObject.AddVisualInstance(meshInstance);
+		Viewport.AddChild(sceneObject);
+		sceneObject.GlobalPosition = Vector3.Zero;
+
+		return sceneObject;
+	}
+
 	private Mesh CreatePrimitiveMesh(string primitiveType)
 	{
 		return primitiveType switch
@@ -1191,7 +1321,7 @@ public partial class SpawnMenu : PopupPanel
 		);
 	}
 	
-	private async void LoadAndSpawnCustomModel(string modelPath)
+	private async System.Threading.Tasks.Task LoadAndSpawnCustomModel(string modelPath)
 	{
 		if (!System.IO.File.Exists(modelPath))
 		{
@@ -1332,6 +1462,9 @@ public partial class SpawnMenu : PopupPanel
 			return;
 		}
 
+		// Record the source asset path so the project save system can restore it
+		customModelObject.SourceAssetPath = modelPath;
+
 		// Model is now fully loaded with textures preloaded and shaders compiled
 		
 		// Position at world origin
@@ -1343,11 +1476,66 @@ public partial class SpawnMenu : PopupPanel
 			main.SceneTreePanel.Refresh();
 		}
 		
-		// Add to history
-		AddToCustomModelHistory(modelPath, displayName);
+		// Auto-import the model into the current project (if one is open),
+		// but only if the file is NOT already inside the project folder
+		// (avoids duplicating assets that were spawned from the Content Drawer).
+		if (!string.IsNullOrEmpty(ProjectManager.CurrentProjectFolder))
+		{
+			var projectFolder = ProjectManager.CurrentProjectFolder
+				.TrimEnd(System.IO.Path.DirectorySeparatorChar,
+				         System.IO.Path.AltDirectorySeparatorChar);
+			var normalizedModel = System.IO.Path.GetFullPath(modelPath);
+			var normalizedProject = System.IO.Path.GetFullPath(projectFolder);
+
+			bool alreadyInProject = normalizedModel.StartsWith(
+				normalizedProject + System.IO.Path.DirectorySeparatorChar,
+				System.StringComparison.OrdinalIgnoreCase);
+
+			if (!alreadyInProject)
+			{
+				// Import the asset into the project folder and update SourceAssetPath
+				// to point to the imported copy.  Without this update the save system
+				// would record the original external path, and on the next project open
+				// the alreadyInProject check would fail and create a duplicate copy.
+				var importedPath = ProjectManager.ImportAsset(modelPath);
+				if (!string.IsNullOrEmpty(importedPath))
+					customModelObject.SourceAssetPath = importedPath;
+			}
+		}
+		
+		// Add to history using the final resolved path (imported copy if applicable)
+		AddToCustomModelHistory(customModelObject.SourceAssetPath, displayName);
 		
 		// Hide the menu after spawning
 		Hide();
+	}
+
+	/// <summary>
+	/// Fire-and-forget entry point (used by the Content Drawer single-click spawn).
+	/// </summary>
+	public void SpawnModelFromPath(string modelPath)
+	{
+		if (string.IsNullOrEmpty(modelPath) || !System.IO.File.Exists(modelPath))
+		{
+			GD.PrintErr($"SpawnMenu.SpawnModelFromPath: file not found '{modelPath}'");
+			return;
+		}
+		// Discard the task intentionally — caller does not need to await
+		_ = LoadAndSpawnCustomModel(modelPath);
+	}
+
+	/// <summary>
+	/// Awaitable entry point used by the project restore system so it can
+	/// show a progress bar and wait for each model to finish loading.
+	/// </summary>
+	public System.Threading.Tasks.Task SpawnModelFromPathAsync(string modelPath)
+	{
+		if (string.IsNullOrEmpty(modelPath) || !System.IO.File.Exists(modelPath))
+		{
+			GD.PrintErr($"SpawnMenu.SpawnModelFromPathAsync: file not found '{modelPath}'");
+			return System.Threading.Tasks.Task.CompletedTask;
+		}
+		return LoadAndSpawnCustomModel(modelPath);
 	}
 	
 	/// <summary>

@@ -38,6 +38,7 @@ public partial class Main : Control
 	[Export] public SceneTree SceneTreePanel;
 	[Export] public ProjectPropertiesPanel ProjectPropertyPanel;
 	[Export] public ObjectPropertiesPanel ObjectPropertyPanel;
+	[Export] public ContentDrawerPanel ContentDrawerPanel;
 	
 	private SpawnMenu _spawnMenu;
 	private bool _renderModeEnabled = false;
@@ -85,6 +86,7 @@ public partial class Main : Control
 		
 		SceneTreePanel.ObjectSelected += OnSceneObjectSelected;
 		SelectionManager.Instance.SelectionChanged += OnSelectionChanged;
+		ProjectManager.ProjectSaved += OnProjectSaved;
 		
 		IconEasterEgg();
 
@@ -280,11 +282,12 @@ public partial class Main : Control
 	{
 		//Setup File Menu
 		var filePopup = FileButton.GetPopup();
-		filePopup.AddItem("New Project", 0);
+		filePopup.AddItem("New Project",  0);
 		filePopup.AddItem("Open Project", 1);
 		filePopup.AddItem("Save Project", 2);
 		filePopup.AddSeparator();
 		filePopup.AddItem("Exit", 3);
+		filePopup.IndexPressed += OnFileMenuPressed;
 		
 		//Setup Edit Menu
 		var editPopup = EditButton.GetPopup();
@@ -334,6 +337,51 @@ public partial class Main : Control
 		// Connect the SpawnButton pressed signal to show the menu
 		SpawnButton.Pressed += OnSpawnButtonPressed;
 	}
+
+	/// <summary>
+	/// Spawns a 3D model from an absolute file path into the current scene.
+	/// Called by the Content Drawer when the user double-clicks a Model asset.
+	/// </summary>
+	public void SpawnModelFromPath(string modelPath)
+	{
+		_spawnMenu?.SpawnModelFromPath(modelPath);
+	}
+
+	/// <summary>
+	/// Awaitable version used by the project restore system.
+	/// </summary>
+	public System.Threading.Tasks.Task SpawnModelFromPathAsync(string modelPath)
+	{
+		if (_spawnMenu == null) return System.Threading.Tasks.Task.CompletedTask;
+		return _spawnMenu.SpawnModelFromPathAsync(modelPath);
+	}
+
+	/// <summary>
+	/// Creates a primitive SceneObject and adds it to the viewport.
+	/// Used by the project restore system.
+	/// </summary>
+	public SceneObject SpawnPrimitiveObject(string primitiveType, string objectName)
+	{
+		return _spawnMenu?.SpawnPrimitiveObject(primitiveType, objectName);
+	}
+
+	/// <summary>Creates a LightSceneObject and adds it to the viewport.</summary>
+	public LightSceneObject SpawnLightObject(string objectName)
+	{
+		return _spawnMenu?.SpawnLightObject(objectName);
+	}
+
+	/// <summary>Creates a Minecraft block SceneObject and adds it to the viewport.</summary>
+	public SceneObject SpawnBlockObject(string blockName, string variant, string objectName)
+	{
+		return _spawnMenu?.SpawnBlockObject(blockName, variant, objectName);
+	}
+
+	/// <summary>Creates a Minecraft item/block texture plane SceneObject and adds it to the viewport.</summary>
+	public SceneObject SpawnItemObject(string itemName, string textureType, string objectName)
+	{
+		return _spawnMenu?.SpawnItemObject(itemName, textureType, objectName);
+	}
 	
 	private void SetupPreviewToggleButton()
 	{
@@ -361,14 +409,169 @@ public partial class Main : Control
 		_spawnMenu.ShowMenu(menuPosition);
 	}
 
-	private void OnFileMenuPressed(int id)
+	private void OnFileMenuPressed(long id)
 	{
 		switch (id)
 		{
-			case 3:
+			case 0: // New Project
+				ShowNewProjectDialog();
+				break;
+			case 1: // Open Project
+				ShowOpenProjectDialog();
+				break;
+			case 2: // Save Project
+				OnSaveProject();
+				break;
+			case 3: // Exit
 				GetTree().Quit();
 				break;
 		}
+	}
+
+	// ── Project file dialogs ──────────────────────────────────────────────────
+
+	private void ShowNewProjectDialog()
+	{
+		NativeFileDialog.ShowOpenDirectory("Choose New Project Folder", (success, folderPath) =>
+		{
+			if (!success || string.IsNullOrEmpty(folderPath)) return;
+
+			// Ask for a project name
+			var dlg = new ConfirmationDialog();
+			dlg.Title     = "New Project";
+			dlg.Exclusive = true;
+			dlg.Transient = true;
+
+			var vbox = new VBoxContainer();
+			dlg.AddChild(vbox);
+
+			var lbl = new Label();
+			lbl.Text = "Enter a name for the new project:";
+			vbox.AddChild(lbl);
+
+			var edit = new LineEdit();
+			edit.Text = "MyProject";
+			edit.SelectAll();
+			vbox.AddChild(edit);
+
+			dlg.Confirmed += () =>
+			{
+				var projectName = edit.Text.Trim();
+				if (string.IsNullOrEmpty(projectName)) projectName = "MyProject";
+
+				var projectFolder = System.IO.Path.Combine(folderPath, projectName);
+				if (ProjectManager.NewProject(projectFolder))
+				{
+					SetWindowTitle($"Mine Imator Simply Remade: Nuxi — {projectName}");
+				}
+				dlg.QueueFree();
+			};
+			dlg.Canceled += () => dlg.QueueFree();
+
+			AddChild(dlg);
+			dlg.PopupCentered(new Vector2I(400, 120));
+		});
+	}
+
+	private void ShowOpenProjectDialog()
+	{
+		NativeFileDialog.ShowOpenFile(
+			"Open Project",
+			new[] { "*.srproject ; Simply Remade Project" },
+			(success, filePath) =>
+			{
+				if (!success || string.IsNullOrEmpty(filePath)) return;
+
+				if (ProjectManager.OpenProject(filePath))
+				{
+					SetWindowTitle($"Mine Imator Simply Remade: Nuxi — {ProjectManager.CurrentProjectName}");
+					// Restore scene objects with a progress window
+					_ = RestoreSceneWithProgressAsync();
+				}
+			});
+	}
+
+	private async System.Threading.Tasks.Task RestoreSceneWithProgressAsync()
+	{
+		// Clear any active selection before wiping the scene so the gizmo and
+		// property panels don't hold stale references to objects about to be freed.
+		SelectionManager.Instance?.ClearSelection();
+
+		// Refresh the scene tree panel immediately so it shows an empty tree
+		// while the new project is being loaded.
+		SceneTreePanel?.Refresh();
+
+		// Count how many models need to be loaded
+		var assets = ProjectManager.GetAssets();
+
+		// Create and show the progress window
+		var progressWindow = new ModelLoadingProgressWindow();
+		progressWindow.Title = "Loading Project";
+		GetTree().Root.AddChild(progressWindow);
+		progressWindow.SetModelName(ProjectManager.CurrentProjectName);
+		progressWindow.ShowWindow();
+		progressWindow.UpdateProgress(0f, "Preparing...");
+
+		await ProjectManager.RestoreSceneStateAsync((loaded, total, modelName) =>
+		{
+			if (total == 0) return;
+			float progress = (float)loaded / total;
+			var msg = loaded < total
+				? $"Loading model {loaded + 1} of {total}: {modelName}"
+				: "Done";
+			progressWindow.UpdateProgress(progress, msg);
+		});
+
+		progressWindow.HideWindow();
+		progressWindow.QueueFree();
+
+		// Refresh the scene tree panel
+		SceneTreePanel?.Refresh();
+
+		// Load keyframes from all restored SceneObjects into the timeline's working
+		// dictionary, then seek to the current frame so positions are applied.
+		if (TimelinePanel.Instance != null && Viewport != null)
+		{
+			var allObjects = new System.Collections.Generic.List<SceneObject>();
+			foreach (var child in Viewport.GetChildren())
+			{
+				if (child is SceneObject so)
+				{
+					allObjects.Add(so);
+					// Also include all descendants (e.g. bones/parts of a model)
+					allObjects.AddRange(so.GetAllDescendants());
+				}
+			}
+
+			TimelinePanel.Instance.LoadKeyframesForAllObjects(allObjects);
+			TimelinePanel.Instance.SetCurrentFrame(TimelinePanel.Instance.CurrentFrame);
+		}
+	}
+
+	private void OnProjectSaved()
+	{
+		ToastNotification.Show(this, "Project saved");
+	}
+
+	private void OnSaveProject()
+	{
+		if (string.IsNullOrEmpty(ProjectManager.CurrentProjectFile))
+		{
+			// No project open — prompt to create one first
+			var dlg = new AcceptDialog();
+			dlg.Title      = "No Project Open";
+			dlg.DialogText = "Please create or open a project before saving.\n\nUse File → New Project or File → Open Project.";
+			dlg.OkButtonText = "OK";
+			dlg.Exclusive  = true;
+			dlg.Transient  = true;
+			dlg.CloseRequested += () => { dlg.Hide(); dlg.QueueFree(); };
+			AddChild(dlg);
+			dlg.PopupCentered();
+			return;
+		}
+
+		ProjectManager.SaveProject();
+		SetWindowTitle($"Mine Imator Simply Remade: Nuxi — {ProjectManager.CurrentProjectName}");
 	}
 	
 	private void OnRenderMenuPressed(long id)
@@ -508,6 +711,13 @@ public partial class Main : Control
 				GetViewport().SetInputAsHandled();
 			}
 			
+			// Ctrl+S to save the project
+			if (keyEvent.Keycode == Key.S && keyEvent.CtrlPressed)
+			{
+				OnSaveProject();
+				GetViewport().SetInputAsHandled();
+			}
+
 			// Ctrl+D to duplicate selected objects
 			if (keyEvent.Keycode == Key.D && keyEvent.CtrlPressed)
 			{

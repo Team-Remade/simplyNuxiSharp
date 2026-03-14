@@ -1197,14 +1197,40 @@ public partial class TimelinePanel : Panel
 			noSelectionRightLabel.Text = "";
 			noSelectionRightLabel.CustomMinimumSize = new Vector2(0, 30);
 			_keyframesTracksContainer.AddChild(noSelectionRightLabel);
-			return;
+		}
+		else
+		{
+			// Add properties for selected objects
+			foreach (var obj in selectedObjects)
+			{
+				AddObjectProperties(obj);
+			}
 		}
 
-		// Add properties for selected objects
-		foreach (var obj in selectedObjects)
+		// Always load keyframes for ALL scene objects so that timeline actions
+		// (play, scrub, step, etc.) apply keyframes to every object in the scene,
+		// not just the currently selected ones.
+		LoadKeyframesForAllSceneObjects();
+	}
+
+	/// <summary>
+	/// Loads keyframes from every SceneObject currently in the scene tree into
+	/// the timeline's working dictionary.  This ensures that playback and scrubbing
+	/// apply animation to all objects regardless of which ones are selected.
+	/// </summary>
+	private void LoadKeyframesForAllSceneObjects()
+	{
+		if (GetTree() == null) return;
+
+		var allNodes = GetTree().GetNodesInGroup("SceneObject");
+		var allSceneObjects = new System.Collections.Generic.List<SceneObject>();
+		foreach (var node in allNodes)
 		{
-			AddObjectProperties(obj);
+			if (node is SceneObject so)
+				allSceneObjects.Add(so);
 		}
+
+		LoadKeyframesForAllObjects(allSceneObjects);
 	}
 
 	private void AddObjectProperties(SceneObject obj)
@@ -1534,6 +1560,71 @@ public partial class TimelinePanel : Panel
 		}
 	}
 	
+	/// <summary>
+	/// Loads keyframes from a collection of SceneObjects into the timeline's working
+	/// dictionary so that <see cref="ApplyKeyframesAtCurrentFrame"/> can apply them
+	/// even when the objects are not currently selected.
+	/// Called by the project restore system after all objects have been spawned.
+	/// </summary>
+	public void LoadKeyframesForAllObjects(System.Collections.Generic.IEnumerable<SceneObject> objects)
+	{
+		// The standard property paths that every SceneObject can have keyframes on
+		var standardPaths = new[]
+		{
+			"visible", "material.alpha",
+			"position.x", "position.y", "position.z",
+			"rotation.x", "rotation.y", "rotation.z",
+			"scale.x",    "scale.y",    "scale.z",
+		};
+
+		// Light-specific paths
+		var lightPaths = new[]
+		{
+			"light.energy", "light.range", "light.indirect_energy", "light.specular",
+			"light.color.r", "light.color.g", "light.color.b",
+		};
+
+		foreach (var obj in objects)
+		{
+			if (obj == null || obj.Keyframes.Count == 0) continue;
+
+			var paths = obj is LightSceneObject
+				? System.Linq.Enumerable.Concat(standardPaths, lightPaths)
+				: (System.Collections.Generic.IEnumerable<string>)standardPaths;
+
+			foreach (var propPath in paths)
+			{
+				if (obj.Keyframes.ContainsKey(propPath) && obj.Keyframes[propPath].Count > 0)
+				{
+					// Register the object in _properties if not already there
+					bool alreadyRegistered = false;
+					foreach (var p in _properties)
+					{
+						if (p.Object == obj && p.PropertyPath == propPath)
+						{
+							alreadyRegistered = true;
+							break;
+						}
+					}
+					if (!alreadyRegistered)
+					{
+						_properties.Add(new AnimatableProperty
+						{
+							Object       = obj,
+							PropertyPath = propPath,
+							PropertyGroup = null,
+							TrackGroup    = null,
+						});
+					}
+
+					LoadKeyframesFromObject(obj, propPath);
+				}
+			}
+		}
+
+		RecalculateTimelineLength();
+	}
+
 	/// <summary>
 	/// Recalculate timeline length based on the furthest keyframe
 	/// </summary>
@@ -1949,16 +2040,31 @@ public partial class TimelinePanel : Panel
 			if (!ulong.TryParse(objectIdStr, out ulong objectId)) continue;
 			
 			SceneObject targetObject = null;
-			foreach (var prop in _properties)
-			{
-				if (prop.Object.GetInstanceId() == objectId)
+				foreach (var prop in _properties)
 				{
-					targetObject = prop.Object;
-					break;
+					if (prop.Object.GetInstanceId() == objectId)
+					{
+						targetObject = prop.Object;
+						break;
+					}
 				}
-			}
-			
-			if (targetObject == null) continue;
+				
+				// If not found in the selected-objects list, search the full scene tree.
+				// This ensures keyframes are applied to every object in the scene, not
+				// just the ones that are currently selected / shown in the timeline UI.
+				if (targetObject == null && GetTree() != null)
+				{
+					foreach (var node in GetTree().GetNodesInGroup("SceneObject"))
+					{
+						if (node is SceneObject so && so.GetInstanceId() == objectId)
+						{
+							targetObject = so;
+							break;
+						}
+					}
+				}
+				
+				if (targetObject == null) continue;
 			
 			// Find keyframes around current frame
 			Keyframe prevKeyframe = null;

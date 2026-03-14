@@ -1,5 +1,6 @@
 [gd_scene format=3 uid="uid://f4a6hf0g12j2"]
 
+[ext_resource type="Script" uid="uid://chhbesoy4d2ks" path="res://src/core/ContentDrawerPanel.cs" id="1_cdpanel"]
 [ext_resource type="Script" uid="uid://c3g35x51isfy2" path="res://Main.cs" id="1_glv2v"]
 [ext_resource type="Script" uid="uid://d3sbpgo0rl5pc" path="res://addons/dockable_container/dockable_container.gd" id="2_cm0pq"]
 [ext_resource type="Texture2D" uid="uid://bj2x7qagxoiuq" path="res://assets/img/chegg.png" id="2_fpfj3"]
@@ -105,7 +106,7 @@ texture_filter = 0
 [sub_resource type="PlaneMesh" id="PlaneMesh_fpfj3"]
 size = Vector2(64, 64)
 
-[node name="Main" type="Control" unique_id=718552606 node_paths=PackedStringArray("FileButton", "EditButton", "ViewButton", "RenderButton", "HelpButton", "SpawnButton", "PreviewViewportControl", "PreviewToggleButton", "MainViewportFpsLabel", "GizmoHintLabel", "Viewport", "SceneTreePanel", "ProjectPropertyPanel", "ObjectPropertyPanel")]
+[node name="Main" type="Control" unique_id=718552606 node_paths=PackedStringArray("FileButton", "EditButton", "ViewButton", "RenderButton", "HelpButton", "SpawnButton", "PreviewViewportControl", "PreviewToggleButton", "MainViewportFpsLabel", "GizmoHintLabel", "Viewport", "SceneTreePanel", "ProjectPropertyPanel", "ObjectPropertyPanel", "ContentDrawerPanel")]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -128,6 +129,7 @@ Viewport = NodePath("Content/MainContent/Viewport/MainViewport/SubViewport")
 SceneTreePanel = NodePath("Content/MainContent/Scene Tree")
 ProjectPropertyPanel = NodePath("Content/MainContent/Project Properties")
 ObjectPropertyPanel = NodePath("Content/MainContent/Object Properties")
+ContentDrawerPanel = NodePath("Content/MainContent/Content Drawer")
 
 [node name="ColorRect" type="ColorRect" parent="." unique_id=1736416454]
 layout_mode = 1
@@ -336,18 +338,7 @@ script = ExtResource("8_wkp8b")
 [node name="Content Drawer" type="Panel" parent="Content/MainContent" unique_id=211008585]
 visible = false
 layout_mode = 2
-
-[node name="CenterContainer" type="CenterContainer" parent="Content/MainContent/Content Drawer" unique_id=2052314246]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="Label" type="Label" parent="Content/MainContent/Content Drawer/CenterContainer" unique_id=1873249035]
-layout_mode = 2
-text = "WIP"
+script = ExtResource("1_cdpanel")
 
 [node name="Scene Tree" type="Panel" parent="Content/MainContent" unique_id=480008741]
 layout_mode = 2

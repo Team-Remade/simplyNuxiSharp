@@ -15,6 +15,29 @@ public partial class SceneObject : Node3D
 	public string ObjectId = "";
 	public int PickColorId = 0;
 
+	/// <summary>
+	/// Absolute path to the source asset file that was used to create this object.
+	/// Set by SpawnMenu when loading a custom model so the project save system can
+	/// serialise and restore it.  Empty for built-in objects (primitives, lights, etc.).
+	/// </summary>
+	public string SourceAssetPath = "";
+
+	/// <summary>
+	/// The spawn category this object belongs to (e.g. "Primitives", "Blocks", "Items",
+	/// "Light", "Characters", "Custom Models").  Set by SpawnMenu.
+	/// </summary>
+	public string SpawnCategory = "";
+
+	/// <summary>
+	/// For Blocks: the blockstate variant string (e.g. "facing=north").
+	/// </summary>
+	public string BlockVariant = "";
+
+	/// <summary>
+	/// For Items: the texture type ("block" or "item").
+	/// </summary>
+	public string TextureType = "item";
+
 	// Keyframe storage for animation
 	// Dictionary key format: "propertyPath" (e.g., "visible", "position.x", "rotation.y")
 	public Dictionary<string, List<ObjectKeyframe>> Keyframes = new Dictionary<string, List<ObjectKeyframe>>();
