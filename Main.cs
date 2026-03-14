@@ -629,5 +629,39 @@ public partial class Main : Control
 				MainViewportFpsLabel.Text = $"FPS: {fps}";
 			}
 		}
+		
+		// Draw debug range spheres for all selected lights
+		DrawSelectedLightRanges();
+	}
+	
+	/// <summary>
+	/// Uses DebugDraw3D to draw a wireframe sphere showing the range of each selected light.
+	/// The sphere is drawn every frame (duration = 0) so it disappears when the light is deselected.
+	/// </summary>
+	private void DrawSelectedLightRanges()
+	{
+		// Never draw debug overlays during image/animation rendering
+		if (_renderModeEnabled)
+			return;
+		
+		if (SelectionManager.Instance == null || SelectionManager.Instance.SelectedObjects.Count == 0)
+			return;
+		
+		foreach (var obj in SelectionManager.Instance.SelectedObjects)
+		{
+			if (obj is LightSceneObject lightObj)
+			{
+				// Use a scoped config targeting the main SubViewport so the sphere
+				// appears in the correct 3D world and not the editor root viewport.
+				using var scopedCfg = DebugDraw3D.NewScopedConfig()?.SetViewport(Viewport);
+				
+				var position = lightObj.GlobalPosition;
+				var range = lightObj.LightRange;
+				// Use the light's color with full alpha for the range indicator
+				var color = new Color(lightObj.LightColor, 1.0f);
+				
+				DebugDraw3D.DrawSphere(position, range, color);
+			}
+		}
 	}
 }

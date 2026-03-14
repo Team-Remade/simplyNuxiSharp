@@ -31,6 +31,10 @@ VoxelSettings="*uid://p50e41mp6pj5"
 
 file_logging/log_path="user://logs/nuxi.log"
 
+[debug_draw_3d]
+
+settings/addon_root_folder="res://addons/debug_draw_3d"
+
 [display]
 
 window/size/viewport_width=1920
@@ -53,7 +57,7 @@ naming/script_name_casing=1
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/Gizmo3DSharp/plugin.cfg", "res://addons/csharp_gdextension_bindgen/plugin.cfg", "res://addons/dockable_container/plugin.cfg", "res://addons/plugin_refresher/plugin.cfg")
+enabled=PackedStringArray("res://addons/Gizmo3DSharp/plugin.cfg", "res://addons/csharp_gdextension_bindgen/plugin.cfg", "res://addons/dockable_container/plugin.cfg", "res://addons/plugin_refresher/plugin.cfg", "res://addons/shader_library/plugin.cfg")
 
 [physics]
 
