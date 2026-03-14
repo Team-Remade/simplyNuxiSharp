@@ -392,7 +392,7 @@ public class ZN_EditorProperty
 	public int AccessibilityLive
 	{
 		get => (int)_object.AccessibilityLive;
-		set => _object.AccessibilityLive = (Godot.DisplayServer.AccessibilityLiveMode)value;
+		set => _object.AccessibilityLive = (Godot.AccessibilityServer.AccessibilityLiveMode)value;
 	}
 
 	public Godot.Collections.Array<Godot.NodePath> AccessibilityControlsNodes
@@ -1413,12 +1413,12 @@ public class ZN_EditorProperty
 		return _object.GetAccessibilityDescription();
 	}
 
-	public void SetAccessibilityLive(DisplayServer.AccessibilityLiveMode @mode)
+	public void SetAccessibilityLive(AccessibilityServer.AccessibilityLiveMode @mode)
 	{
 		_object.SetAccessibilityLive(@mode);
 	}
 
-	public DisplayServer.AccessibilityLiveMode GetAccessibilityLive()
+	public AccessibilityServer.AccessibilityLiveMode GetAccessibilityLive()
 	{
 		return _object.GetAccessibilityLive();
 	}

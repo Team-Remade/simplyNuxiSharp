@@ -5,6 +5,8 @@ using simplyRemadeNuxi.ui;
 using System.Linq;
 using SceneTree = simplyRemadeNuxi.core.SceneTree;
 using GDExtensionBindgen;
+using FFMpegCore;
+using FFMpegCore.Extensions.Downloader;
 
 namespace simplyRemadeNuxi;
 
@@ -43,11 +45,29 @@ public partial class Main : Control
 	public override void _EnterTree()
 	{
 		SetWindowTitle("Mine Imator Simply Remade: Nuxi");
+		
+		// Disable viewport rendering during asset loading to save GPU time.
+		// Re-enabled in _Ready() after ShowAssetDownloaderAndWait() completes.
+		DisableViewportRendering();
 	}
 
 	public override async void _Ready()
 	{
 		Instance = this;
+		
+		// ── Step 1: Download FFMpeg binaries if needed ──────────────────────────
+		await EnsureFFMpegAsync();
+		
+		// ── Step 2: Show the AssetDownloaderWindow as a child overlay and wait ──
+		await ShowAssetDownloaderAndWait();
+		
+		// ── Step 3: Normal Main scene setup (assets are now loaded) ─────────────
+		
+		// Re-enable viewport rendering now that assets are loaded
+		EnableViewportRendering();
+		
+		// Notify panels that depend on loaded assets
+		ProjectPropertyPanel?.OnAssetsLoaded();
 		
 		SetupMenus();
 		SetupSpawnMenu();
@@ -63,26 +83,6 @@ public partial class Main : Control
 		SelectionManager.Instance.SelectionChanged += OnSelectionChanged;
 		
 		IconEasterEgg();
-		
-		// Check if Minecraft assets are loaded
-		var loader = MinecraftJsonLoader.Instance;
-		var textureLoader = MinecraftTextureLoader.Instance;
-		var characterLoader = CharacterLoader.Instance;
-		
-		if (!loader.IsLoaded)
-		{
-			GD.PrintErr("Warning: Main scene started without Minecraft JSON files loaded!");
-		}
-		
-		if (!textureLoader.IsLoaded)
-		{
-			GD.PrintErr("Warning: Main scene started without Minecraft textures loaded!");
-		}
-		
-		if (!characterLoader.IsLoaded)
-		{
-			GD.PrintErr("Warning: Main scene started without character files scanned!");
-		}
 
 		// Pre-warm the Blender PBR shader so the GPU compiles it before the first
 		// GLB is loaded.  Without this, the first load triggers synchronous shader
@@ -91,6 +91,115 @@ public partial class Main : Control
 		
 		// TEST: Create a BlockArrayGenerator with a few blocks
 		//SetupTestBlockArrayGenerator();
+	}
+	
+	/// <summary>
+	/// Disables rendering on all SubViewports in the scene so the GPU is not
+	/// busy during asset loading.
+	/// </summary>
+	private void DisableViewportRendering()
+	{
+		// Main 3D viewport
+		var mainViewport = GetNodeOrNull<SubViewport>(
+			"Content/MainContent/Viewport/MainViewport/SubViewport");
+		if (mainViewport != null)
+			mainViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+		
+		// Preview viewport SubViewport (instanced scene)
+		var previewSubViewport = GetNodeOrNull<SubViewport>(
+			"Content/MainContent/Viewport/ViewportUI/PreviewViewport/MainPanel/VBox/AspectRatioContainerNode/ViewportContainer/PreviewSubViewport");
+		if (previewSubViewport != null)
+			previewSubViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+	}
+	
+	/// <summary>
+	/// Re-enables rendering on all SubViewports after asset loading is complete.
+	/// </summary>
+	private void EnableViewportRendering()
+	{
+		// Main 3D viewport – restore to ALWAYS (continuous rendering)
+		var mainViewport = GetNodeOrNull<SubViewport>(
+			"Content/MainContent/Viewport/MainViewport/SubViewport");
+		if (mainViewport != null)
+			mainViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
+		
+		// Preview viewport SubViewport – restore to ALWAYS so it is ready when toggled on
+		if (PreviewViewportControl?.PreviewSubViewport != null)
+		{
+			PreviewViewportControl.PreviewSubViewport.RenderTargetUpdateMode =
+				SubViewport.UpdateMode.Always;
+		}
+		else
+		{
+			// Fallback: find by path if the export ref isn't wired yet
+			var previewSubViewport = GetNodeOrNull<SubViewport>(
+				"Content/MainContent/Viewport/ViewportUI/PreviewViewport/MainPanel/VBox/AspectRatioContainerNode/ViewportContainer/PreviewSubViewport");
+			if (previewSubViewport != null)
+				previewSubViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
+		}
+	}
+	
+	/// <summary>
+	/// Ensures FFMpeg binaries are present, downloading them if necessary.
+	/// Mirrors the logic that was previously in Launcher.cs.
+	/// </summary>
+	private async System.Threading.Tasks.Task EnsureFFMpegAsync()
+	{
+		try
+		{
+			var ffmpegPath = System.IO.Path.Combine(OS.GetUserDataDir(), "ffmpeg");
+			System.IO.Directory.CreateDirectory(ffmpegPath);
+			GlobalFFOptions.Configure(options => options.BinaryFolder = ffmpegPath);
+			
+			bool ffmpegAvailable = false;
+			try
+			{
+				var process = new System.Diagnostics.Process();
+				process.StartInfo.FileName = GlobalFFOptions.GetFFMpegBinaryPath();
+				process.StartInfo.Arguments = "-version";
+				process.StartInfo.UseShellExecute = false;
+				process.StartInfo.RedirectStandardOutput = true;
+				process.StartInfo.CreateNoWindow = true;
+				process.Start();
+				process.WaitForExit();
+				ffmpegAvailable = process.ExitCode == 0;
+			}
+			catch
+			{
+				ffmpegAvailable = false;
+			}
+			
+			if (!ffmpegAvailable)
+			{
+				GD.Print("Downloading FFMpeg binaries...");
+				await FFMpegDownloader.DownloadBinaries();
+			}
+		}
+		catch (System.Exception ex)
+		{
+			GD.PrintErr($"Failed to ensure FFMpeg: {ex.Message}");
+		}
+	}
+	
+	/// <summary>
+	/// Instantiates the AssetDownloaderWindow as a child of this node, waits for
+	/// it to emit <c>LoadingComplete</c>, then returns so Main can finish setup.
+	/// </summary>
+	private async System.Threading.Tasks.Task ShowAssetDownloaderAndWait()
+	{
+		var assetDownloaderScene = GD.Load<PackedScene>("res://AssetDownloaderWindow.tscn");
+		if (assetDownloaderScene == null)
+		{
+			GD.PrintErr("Could not load AssetDownloaderWindow.tscn");
+			return;
+		}
+		
+		var assetDownloaderWindow = assetDownloaderScene.Instantiate<AssetDownloaderWindow>();
+		AddChild(assetDownloaderWindow);
+		assetDownloaderWindow.Show();
+		
+		// Wait until the downloader signals that all assets are ready
+		await ToSignal(assetDownloaderWindow, AssetDownloaderWindow.SignalName.LoadingComplete);
 	}
 	
 	/// <summary>

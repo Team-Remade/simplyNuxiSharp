@@ -1,15 +1,17 @@
 [gd_scene format=3 uid="uid://blp5kl2cxiqgg"]
 
-[ext_resource type="Script" path="res://src/ui/AssetDownloaderWindow.cs" id="1_j3xw8"]
+[ext_resource type="Script" uid="uid://dq4e7b1wdrrfx" path="res://src/ui/AssetDownloaderWindow.cs" id="1_j3xw8"]
 
-[node name="AssetDownloaderWindow" type="Window"]
+[node name="AssetDownloaderWindow" type="Window" unique_id=143981478]
+oversampling_override = 1.0
 title = "Asset Downloader"
 initial_position = 1
 size = Vector2i(500, 200)
+exclusive = true
 unresizable = true
 script = ExtResource("1_j3xw8")
 
-[node name="MarginContainer" type="MarginContainer" parent="."]
+[node name="MarginContainer" type="MarginContainer" parent="." unique_id=229201707]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -20,36 +22,35 @@ theme_override_constants/margin_top = 20
 theme_override_constants/margin_right = 20
 theme_override_constants/margin_bottom = 20
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer" unique_id=1295819563]
 layout_mode = 2
 theme_override_constants/separation = 15
 
-[node name="TitleLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+[node name="TitleLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1449474744]
 layout_mode = 2
 text = "Simply Remade - Asset Downloader"
 horizontal_alignment = 1
 
-[node name="StatusLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+[node name="StatusLabel" type="Label" parent="MarginContainer/VBoxContainer" unique_id=1948514887]
 layout_mode = 2
 text = "Initializing..."
 horizontal_alignment = 1
 
-[node name="ProgressBar" type="ProgressBar" parent="MarginContainer/VBoxContainer"]
-layout_mode = 2
-max_value = 100.0
-
-[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+[node name="ProgressBar" type="ProgressBar" parent="MarginContainer/VBoxContainer" unique_id=202149782]
 layout_mode = 2
 
-[node name="ButtonContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer" unique_id=1964671722]
+layout_mode = 2
+
+[node name="ButtonContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=461839542]
 layout_mode = 2
 alignment = 1
 
-[node name="DownloadButton" type="Button" parent="MarginContainer/VBoxContainer/ButtonContainer"]
+[node name="DownloadButton" type="Button" parent="MarginContainer/VBoxContainer/ButtonContainer" unique_id=179860101]
 layout_mode = 2
 text = "Download Assets"
 
-[node name="SkipButton" type="Button" parent="MarginContainer/VBoxContainer/ButtonContainer"]
+[node name="SkipButton" type="Button" parent="MarginContainer/VBoxContainer/ButtonContainer" unique_id=234424863]
 layout_mode = 2
 text = "Skip"
 

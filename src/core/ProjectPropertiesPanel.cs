@@ -50,6 +50,16 @@ public partial class ProjectPropertiesPanel : Panel
 		FindBackgroundNodes();
 		FindFloorNode();
 		LoadCurrentBackgroundSettings();
+		// Asset-dependent initialization is deferred until OnAssetsLoaded() is called
+		// by Main after the AssetDownloaderWindow has finished loading.
+	}
+
+	/// <summary>
+	/// Called by Main after all Minecraft assets have been loaded.
+	/// Populates any UI that depends on textures / JSON data.
+	/// </summary>
+	public void OnAssetsLoaded()
+	{
 		LoadBlockTextures();
 		LoadCurrentFloorSettings();
 	}

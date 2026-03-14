@@ -7,12 +7,14 @@ using System.Text.Json;
 using System.Collections.Generic;
 using System.Linq;
 using simplyRemadeNuxi.core;
-using SceneTree = Godot.SceneTree;
 
 namespace simplyRemadeNuxi.ui;
 
 public partial class AssetDownloaderWindow : Window
 {
+	/// <summary>Emitted when all assets have been loaded and the window is ready to close.</summary>
+	[Signal] public delegate void LoadingCompleteEventHandler();
+
 	[Export] public Label StatusLabel;
 	[Export] public ProgressBar ProgressBar;
 	[Export] public Button DownloadButton;
@@ -592,16 +594,13 @@ public partial class AssetDownloaderWindow : Window
 		// Mark window as closing to prevent further UI updates
 		_isClosing = true;
 		
-		// Get the scene tree from the root node to avoid null reference
-		if (Engine.GetMainLoop() is SceneTree tree)
-		{
-			// Load the main scene
-			tree.ChangeSceneToFile("res://Main.tscn");
-		}
-		else
-		{
-			GD.PrintErr("Failed to get SceneTree - cannot load main scene");
-		}
+		// Notify the parent (Main) that loading is complete so it can proceed with its own setup.
+		// Main.tscn is already in the scene tree – no scene switch needed.
+		EmitSignal(SignalName.LoadingComplete);
+		
+		// Hide and free this overlay window
+		Hide();
+		QueueFree();
 	}
 }
 
