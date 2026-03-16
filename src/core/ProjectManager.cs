@@ -50,12 +50,154 @@ public static class ProjectManager
 	/// <summary>Fired when the project is closed / reset to a new blank state.</summary>
 	public static event Action ProjectClosed;
 
+	/// <summary>Fired when the dirty (unsaved-changes) state changes.</summary>
+	public static event Action<bool> DirtyChanged;
+
 	/// <summary>Fired when the asset manifest changes (import / remove).</summary>
 	public static event Action AssetsChanged;
 
 	// ── Internal ─────────────────────────────────────────────────────────────
 
 	private static ProjectData _currentData = new ProjectData();
+
+	// ── Recent projects ───────────────────────────────────────────────────────
+
+	/// <summary>Maximum number of recent project entries to keep.</summary>
+	private const int MaxRecentProjects = 10;
+
+	/// <summary>File name for the recent projects list stored in user data.</summary>
+	private const string RecentProjectsFileName = "recent_projects.json";
+
+	/// <summary>File name for the user preferences stored in user data.</summary>
+	private const string UserPrefsFileName = "user_prefs.json";
+
+	/// <summary>
+	/// Returns the folder path that was last used when creating a new project,
+	/// or an empty string if none has been saved yet.
+	/// </summary>
+	public static string GetLastNewProjectFolder()
+	{
+		try
+		{
+			var path = Path.Combine(OS.GetUserDataDir(), UserPrefsFileName);
+			if (!File.Exists(path)) return "";
+			var json = File.ReadAllText(path);
+			var prefs = JsonSerializer.Deserialize<UserPrefs>(json, JsonOptions);
+			return prefs?.LastNewProjectFolder ?? "";
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ProjectManager.GetLastNewProjectFolder failed: {ex.Message}");
+			return "";
+		}
+	}
+
+	/// <summary>
+	/// Saves <paramref name="folderPath"/> as the default folder for new project creation.
+	/// </summary>
+	public static void SaveLastNewProjectFolder(string folderPath)
+	{
+		if (string.IsNullOrEmpty(folderPath)) return;
+		try
+		{
+			var path = Path.Combine(OS.GetUserDataDir(), UserPrefsFileName);
+			UserPrefs prefs;
+			if (File.Exists(path))
+			{
+				var existing = File.ReadAllText(path);
+				prefs = JsonSerializer.Deserialize<UserPrefs>(existing, JsonOptions) ?? new UserPrefs();
+			}
+			else
+			{
+				prefs = new UserPrefs();
+			}
+			prefs.LastNewProjectFolder = folderPath;
+			File.WriteAllText(path, JsonSerializer.Serialize(prefs, JsonOptions));
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ProjectManager.SaveLastNewProjectFolder failed: {ex.Message}");
+		}
+	}
+
+	/// <summary>
+	/// Returns the list of recently opened projects, most recent first.
+	/// Each entry is a <see cref="RecentProjectEntry"/>.
+	/// </summary>
+	public static IReadOnlyList<RecentProjectEntry> GetRecentProjects()
+	{
+		return LoadRecentProjects().AsReadOnly();
+	}
+
+	/// <summary>
+	/// Adds or updates a recent project entry for the given project file path.
+	/// Moves it to the top of the list if it already exists.
+	/// </summary>
+	private static void AddToRecentProjects(string projectFilePath, string projectName)
+	{
+		if (string.IsNullOrEmpty(projectFilePath)) return;
+
+		var list = LoadRecentProjects();
+
+		// Remove any existing entry for this path
+		list.RemoveAll(e => string.Equals(e.FilePath, projectFilePath, StringComparison.OrdinalIgnoreCase));
+
+		// Insert at the front
+		list.Insert(0, new RecentProjectEntry
+		{
+			FilePath    = projectFilePath,
+			ProjectName = projectName,
+			LastOpened  = DateTime.UtcNow.ToString("o"),
+		});
+
+		// Trim to max
+		if (list.Count > MaxRecentProjects)
+			list.RemoveRange(MaxRecentProjects, list.Count - MaxRecentProjects);
+
+		SaveRecentProjects(list);
+	}
+
+	/// <summary>
+	/// Removes a recent project entry by file path (e.g. when the file no longer exists).
+	/// </summary>
+	public static void RemoveFromRecentProjects(string projectFilePath)
+	{
+		if (string.IsNullOrEmpty(projectFilePath)) return;
+		var list = LoadRecentProjects();
+		list.RemoveAll(e => string.Equals(e.FilePath, projectFilePath, StringComparison.OrdinalIgnoreCase));
+		SaveRecentProjects(list);
+	}
+
+	private static List<RecentProjectEntry> LoadRecentProjects()
+	{
+		try
+		{
+			var path = Path.Combine(OS.GetUserDataDir(), RecentProjectsFileName);
+			if (!File.Exists(path)) return new List<RecentProjectEntry>();
+			var json = File.ReadAllText(path);
+			return JsonSerializer.Deserialize<List<RecentProjectEntry>>(json, JsonOptions)
+			       ?? new List<RecentProjectEntry>();
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ProjectManager.LoadRecentProjects failed: {ex.Message}");
+			return new List<RecentProjectEntry>();
+		}
+	}
+
+	private static void SaveRecentProjects(List<RecentProjectEntry> list)
+	{
+		try
+		{
+			var path = Path.Combine(OS.GetUserDataDir(), RecentProjectsFileName);
+			var json = JsonSerializer.Serialize(list, JsonOptions);
+			File.WriteAllText(path, json);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ProjectManager.SaveRecentProjects failed: {ex.Message}");
+		}
+	}
 
 	// ── Sub-folder names ─────────────────────────────────────────────────────
 
@@ -114,11 +256,12 @@ public static class ProjectManager
 			CurrentProjectFolder = projectFolder;
 			CurrentProjectFile   = projectFilePath;
 			CurrentProjectName   = projectName;
-			IsDirty              = false;
+			ClearDirty();
 
-			GD.Print($"ProjectManager: New project created at '{projectFolder}'");
-			ProjectOpened?.Invoke(projectFolder);
-			return true;
+		GD.Print($"ProjectManager: New project created at '{projectFolder}'");
+		AddToRecentProjects(projectFilePath, projectName);
+		ProjectOpened?.Invoke(projectFolder);
+		return true;
 		}
 		catch (Exception ex)
 		{
@@ -152,12 +295,13 @@ public static class ProjectManager
 			CurrentProjectFile   = projectFilePath;
 			CurrentProjectFolder = Path.GetDirectoryName(projectFilePath) ?? "";
 			CurrentProjectName   = data.ProjectName;
-			IsDirty              = false;
+			ClearDirty();
 
-			GD.Print($"ProjectManager: Opened project '{CurrentProjectName}' from '{projectFilePath}'");
-			ProjectOpened?.Invoke(CurrentProjectFolder);
-			AssetsChanged?.Invoke();
-			return true;
+		GD.Print($"ProjectManager: Opened project '{CurrentProjectName}' from '{projectFilePath}'");
+		AddToRecentProjects(projectFilePath, CurrentProjectName);
+		ProjectOpened?.Invoke(CurrentProjectFolder);
+		AssetsChanged?.Invoke();
+		return true;
 		}
 		catch (Exception ex)
 		{
@@ -195,9 +339,8 @@ public static class ProjectManager
 			WriteProjectFile(projectFilePath, _currentData);
 
 			CurrentProjectFile = projectFilePath;
-			IsDirty            = false;
+			ClearDirty();
 
-			GD.Print($"ProjectManager: Project saved to '{projectFilePath}'");
 			ProjectSaved?.Invoke();
 			return true;
 		}
@@ -216,7 +359,7 @@ public static class ProjectManager
 		CurrentProjectFolder = "";
 		CurrentProjectFile   = "";
 		CurrentProjectName   = "Untitled";
-		IsDirty              = false;
+		ClearDirty();
 		_currentData         = new ProjectData();
 
 		ProjectClosed?.Invoke();
@@ -225,7 +368,17 @@ public static class ProjectManager
 	/// <summary>Marks the project as having unsaved changes.</summary>
 	public static void MarkDirty()
 	{
+		if (IsDirty) return; // already dirty – no need to fire again
 		IsDirty = true;
+		DirtyChanged?.Invoke(true);
+	}
+
+	/// <summary>Clears the dirty flag and fires <see cref="DirtyChanged"/>.</summary>
+	private static void ClearDirty()
+	{
+		if (!IsDirty) return;
+		IsDirty = false;
+		DirtyChanged?.Invoke(false);
 	}
 
 	/// <summary>
@@ -363,6 +516,12 @@ public static class ProjectManager
 
 	// ── Project settings accessors ────────────────────────────────────────────
 
+	/// <summary>
+	/// Returns the timeline frame number that was active when the project was last saved.
+	/// Used by the restore system to seek the timeline to the correct position after loading.
+	/// </summary>
+	public static int GetSavedCurrentFrame() => _currentData.CurrentFrame;
+
 	public static ProjectSettings GetSettings() => _currentData.Settings;
 
 	public static void UpdateSettings(ProjectSettings settings)
@@ -388,10 +547,14 @@ public static class ProjectManager
 
 	/// <summary>
 	/// Walks the live scene and serialises all SceneObjects into _currentData.SceneObjects.
+	/// Also saves the current timeline frame so it can be restored on load.
 	/// </summary>
 	private static void CollectSceneState()
 	{
 		_currentData.SceneObjects.Clear();
+
+		// Save the current timeline frame number
+		_currentData.CurrentFrame = TimelinePanel.Instance?.CurrentFrame ?? 0;
 
 		var viewport = Main.Instance?.Viewport;
 		if (viewport == null) return;
@@ -405,6 +568,12 @@ public static class ProjectManager
 
 	private static void CollectSceneObjectRecursive(SceneObject obj, string parentId)
 	{
+		// Capture the actual visual transform at the current frame (Position reflects keyframe
+		// animation applied by the timeline, whereas LocalPosition is the rest-pose value).
+		var actualPos   = obj.Position;
+		var actualRot   = obj.Rotation;
+		var actualScale = obj.Scale;
+
 		var entry = new SceneObjectEntry
 		{
 			Id         = obj.ObjectId,
@@ -415,7 +584,18 @@ public static class ProjectManager
 			Position   = new float[] { obj.LocalPosition.X, obj.LocalPosition.Y, obj.LocalPosition.Z },
 			Rotation   = new float[] { obj.LocalRotation.X, obj.LocalRotation.Y, obj.LocalRotation.Z },
 			Scale      = new float[] { obj.LocalScale.X,    obj.LocalScale.Y,    obj.LocalScale.Z    },
+			CurrentFramePosition = new float[] { actualPos.X,   actualPos.Y,   actualPos.Z   },
+			CurrentFrameRotation = new float[] { actualRot.X,   actualRot.Y,   actualRot.Z   },
+			CurrentFrameScale    = new float[] { actualScale.X, actualScale.Y, actualScale.Z },
 		};
+
+		// Store camera-specific properties
+		if (obj is CameraSceneObject cameraObj)
+		{
+			entry.ExtraData["CameraFov"]  = cameraObj.Fov.ToString(System.Globalization.CultureInfo.InvariantCulture);
+			entry.ExtraData["CameraNear"] = cameraObj.Near.ToString(System.Globalization.CultureInfo.InvariantCulture);
+			entry.ExtraData["CameraFar"]  = cameraObj.Far.ToString(System.Globalization.CultureInfo.InvariantCulture);
+		}
 
 		// Store spawn metadata so the object can be fully restored on load
 		if (!string.IsNullOrEmpty(obj.SpawnCategory))
@@ -579,6 +759,31 @@ public static class ProjectManager
 			{
 				restored = Main.Instance?.SpawnPrimitiveObject(entry.ObjectType, entry.Name);
 			}
+			// ── Camera ────────────────────────────────────────────────────────
+			else if (entry.ObjectType == "Camera" ||
+				        string.Equals(spawnCategory, "Camera", StringComparison.OrdinalIgnoreCase))
+			{
+				var cameraRestored = Main.Instance?.SpawnCameraObject(entry.Name);
+				if (cameraRestored != null)
+				{
+					// Restore camera-specific properties
+					if (entry.ExtraData.TryGetValue("CameraFov", out var fovStr) &&
+					    float.TryParse(fovStr, System.Globalization.NumberStyles.Float,
+					                  System.Globalization.CultureInfo.InvariantCulture, out var fov))
+						cameraRestored.Fov = fov;
+
+					if (entry.ExtraData.TryGetValue("CameraNear", out var nearStr) &&
+					    float.TryParse(nearStr, System.Globalization.NumberStyles.Float,
+					                  System.Globalization.CultureInfo.InvariantCulture, out var near))
+						cameraRestored.Near = near;
+
+					if (entry.ExtraData.TryGetValue("CameraFar", out var farStr) &&
+					    float.TryParse(farStr, System.Globalization.NumberStyles.Float,
+					                  System.Globalization.CultureInfo.InvariantCulture, out var far))
+						cameraRestored.Far = far;
+				}
+				restored = cameraRestored;
+			}
 			else
 			{
 				GD.Print($"ProjectManager.RestoreSceneState: skipping '{entry.Name}' (type '{entry.ObjectType}' / category '{spawnCategory}' not supported)");
@@ -590,20 +795,32 @@ public static class ProjectManager
 			{
 				// Rename to match saved name
 				restored.Name = entry.Name;
-
-				// Apply transform
-				if (entry.Position is { Length: 3 })
+	
+				// Apply the actual transform that was captured at the saved frame.
+				// For objects without keyframes this is their true visual position
+				// (e.g. a camera placed at the work-camera position).
+				// For objects with keyframes the timeline will re-apply the correct
+				// value when SetCurrentFrame is called after all objects are loaded.
+				if (entry.CurrentFramePosition is { Length: 3 })
+					restored.SetLocalPosition(new Vector3(entry.CurrentFramePosition[0], entry.CurrentFramePosition[1], entry.CurrentFramePosition[2]));
+				else if (entry.Position is { Length: 3 })
 					restored.SetLocalPosition(new Vector3(entry.Position[0], entry.Position[1], entry.Position[2]));
-				if (entry.Rotation is { Length: 3 })
+	
+				if (entry.CurrentFrameRotation is { Length: 3 })
+					restored.SetLocalRotation(new Vector3(entry.CurrentFrameRotation[0], entry.CurrentFrameRotation[1], entry.CurrentFrameRotation[2]));
+				else if (entry.Rotation is { Length: 3 })
 					restored.SetLocalRotation(new Vector3(entry.Rotation[0], entry.Rotation[1], entry.Rotation[2]));
-				if (entry.Scale is { Length: 3 })
+	
+				if (entry.CurrentFrameScale is { Length: 3 })
+					restored.SetLocalScale(new Vector3(entry.CurrentFrameScale[0], entry.CurrentFrameScale[1], entry.CurrentFrameScale[2]));
+				else if (entry.Scale is { Length: 3 })
 					restored.SetLocalScale(new Vector3(entry.Scale[0], entry.Scale[1], entry.Scale[2]));
-
+	
 				restored.SetObjectVisible(entry.Visible);
-
+	
 				// Restore keyframes for the top-level object
 				ApplyKeyframesToObject(restored, entry);
-
+	
 				// Restore keyframes for all child SceneObjects (e.g. bones of a model).
 				// When a model is spawned its child parts are re-created automatically,
 				// so we match them by name against the saved child entries.
@@ -884,6 +1101,12 @@ public class ProjectData
 	public string CreatedAt      { get; set; } = "";
 	public string LastSavedAt    { get; set; } = "";
 
+	/// <summary>
+	/// The timeline frame number that was active when the project was last saved.
+	/// Used to restore the timeline position and re-apply keyframe values on load.
+	/// </summary>
+	public int CurrentFrame { get; set; } = 0;
+
 	public ProjectSettings       Settings     { get; set; } = new ProjectSettings();
 	public List<AssetEntry>      Assets       { get; set; } = new List<AssetEntry>();
 	public List<SceneObjectEntry> SceneObjects { get; set; } = new List<SceneObjectEntry>();
@@ -921,9 +1144,25 @@ public class SceneObjectEntry
 	public string   Name       { get; set; } = "";
 	public string   ObjectType { get; set; } = "Object";
 	public bool     Visible    { get; set; } = true;
+
+	/// <summary>Rest-pose local position (before keyframe animation is applied).</summary>
 	public float[]  Position   { get; set; } = new float[3];
+	/// <summary>Rest-pose local rotation (before keyframe animation is applied).</summary>
 	public float[]  Rotation   { get; set; } = new float[3];
+	/// <summary>Rest-pose local scale (before keyframe animation is applied).</summary>
 	public float[]  Scale      { get; set; } = new float[] { 1, 1, 1 };
+
+	/// <summary>
+	/// Actual position of the object at the frame when the project was saved.
+	/// For objects without keyframes this captures transforms set via GlobalTransform
+	/// (e.g. a camera spawned at the work-camera position) that are not reflected in
+	/// the rest-pose <see cref="Position"/> field.
+	/// </summary>
+	public float[]  CurrentFramePosition { get; set; } = null;
+	/// <summary>Actual rotation at the saved frame (radians).</summary>
+	public float[]  CurrentFrameRotation { get; set; } = null;
+	/// <summary>Actual scale at the saved frame.</summary>
+	public float[]  CurrentFrameScale    { get; set; } = null;
 
 	/// <summary>Key = property path, Value = list of keyframes.</summary>
 	public Dictionary<string, List<KeyframeEntry>> Keyframes { get; set; } = new();
@@ -938,4 +1177,22 @@ public class KeyframeEntry
 	public int    Frame             { get; set; }
 	public string Value             { get; set; } = "";
 	public string InterpolationType { get; set; } = "linear";
+}
+
+/// <summary>An entry in the recently-opened projects list.</summary>
+public class RecentProjectEntry
+{
+	/// <summary>Absolute path to the .srproject file.</summary>
+	public string FilePath    { get; set; } = "";
+	/// <summary>Display name of the project.</summary>
+	public string ProjectName { get; set; } = "";
+	/// <summary>ISO-8601 UTC timestamp of when the project was last opened.</summary>
+	public string LastOpened  { get; set; } = "";
+}
+
+/// <summary>Persistent user preferences stored in user data.</summary>
+public class UserPrefs
+{
+	/// <summary>The folder path last used when creating a new project.</summary>
+	public string LastNewProjectFolder { get; set; } = "";
 }

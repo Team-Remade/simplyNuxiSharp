@@ -1725,6 +1725,9 @@ public partial class TimelinePanel : Panel
 		// Save to SceneObject
 		SaveKeyframesToObject(obj, propertyPath);
 		
+		// Any keyframe change is a scene change → mark the project dirty
+		ProjectManager.MarkDirty();
+		
 		// Refresh the track to show the new keyframe
 		RefreshTracks();
 	}

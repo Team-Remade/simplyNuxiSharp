@@ -41,6 +41,9 @@ public partial class SelectionManager : Node
     	// Don't auto-keyframe if we're just syncing the selection (not actually transforming)
     	if (_isSyncingSelection) return;
     	
+    	// Any gizmo manipulation is a scene change → mark the project dirty
+    	ProjectManager.MarkDirty();
+    	
     	// Update target position/rotation for bone objects
     	foreach (var obj in SelectedObjects)
     	{

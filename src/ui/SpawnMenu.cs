@@ -784,6 +784,17 @@ public partial class SpawnMenu : PopupPanel
 		return lightObject;
 	}
 
+	/// <summary>Creates a CameraSceneObject and adds it to the viewport.</summary>
+	public CameraSceneObject SpawnCameraObject(string objectName)
+	{
+		if (Viewport == null) return null;
+		var cameraObject = new CameraSceneObject();
+		cameraObject.Name = objectName;
+		Viewport.AddChild(cameraObject);
+		cameraObject.GlobalPosition = Vector3.Zero;
+		return cameraObject;
+	}
+
 	/// <summary>
 	/// Creates a Minecraft block SceneObject and adds it to the viewport.
 	/// <paramref name="blockName"/> is the display name (e.g. "Grass Block").

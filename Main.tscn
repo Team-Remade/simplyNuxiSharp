@@ -19,7 +19,7 @@
 [ext_resource type="Shader" uid="uid://nklr5txjs52a" path="res://assets/Shaders/BackgroundColor.gdshader" id="9_2gh4u"]
 [ext_resource type="Texture2D" uid="uid://lyvreubvsmie" path="res://assets/img/bench.png" id="9_5vvyt"]
 [ext_resource type="Texture2D" uid="uid://ds8cqt4u4ojkv" path="res://assets/img/bee_nest_front.png" id="9_c2ibq"]
-[ext_resource type="PackedScene" uid="uid://c0preview1234" path="res://src/core/PreviewViewport.tscn" id="10_preview"]
+[ext_resource type="PackedScene" uid="uid://c0preview1234" path="res://scenes/PreviewViewport.tscn" id="10_preview"]
 [ext_resource type="Shader" uid="uid://duep02bpb3va4" path="res://assets/Shaders/Background.gdshader" id="12_kjvhd"]
 
 [sub_resource type="Resource" id="Resource_3dxm6"]

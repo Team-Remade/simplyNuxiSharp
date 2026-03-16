@@ -2,6 +2,7 @@
 using Godot;
 using simplyRemadeNuxi.core;
 using simplyRemadeNuxi.ui;
+using System;
 using System.Linq;
 using SceneTree = simplyRemadeNuxi.core.SceneTree;
 using GDExtensionBindgen;
@@ -86,7 +87,10 @@ public partial class Main : Control
 		
 		SceneTreePanel.ObjectSelected += OnSceneObjectSelected;
 		SelectionManager.Instance.SelectionChanged += OnSelectionChanged;
-		ProjectManager.ProjectSaved += OnProjectSaved;
+		ProjectManager.ProjectSaved   += OnProjectSaved;
+		ProjectManager.ProjectOpened  += _ => UpdateWindowTitle();
+		ProjectManager.ProjectClosed  += UpdateWindowTitle;
+		ProjectManager.DirtyChanged   += _ => UpdateWindowTitle();
 		
 		IconEasterEgg();
 
@@ -94,6 +98,9 @@ public partial class Main : Control
 		// GLB is loaded.  Without this, the first load triggers synchronous shader
 		// compilation during rendering which can crash the application.
 		BlendFileLoader.PreWarmShader();
+		
+		// ── Step 4: Show the project screen overlay ──────────────────────────────
+		await ShowProjectScreenAndWait();
 		
 		// TEST: Create a BlockArrayGenerator with a few blocks
 		//SetupTestBlockArrayGenerator();
@@ -208,6 +215,30 @@ public partial class Main : Control
 		await ToSignal(assetDownloaderWindow, AssetDownloaderWindow.SignalName.LoadingComplete);
 	}
 	
+	/// <summary>
+	/// Instantiates the ProjectScreen as a child overlay, waits for the user to
+	/// choose or create a project (ProjectChosen signal), then removes the overlay.
+	/// </summary>
+	private async System.Threading.Tasks.Task ShowProjectScreenAndWait()
+	{
+		var projectScreenScene = GD.Load<PackedScene>("res://scenes/ProjectScreen.tscn");
+		if (projectScreenScene == null)
+		{
+			GD.PrintErr("Could not load ProjectScreen.tscn – skipping project screen");
+			return;
+		}
+
+		var projectScreen = projectScreenScene.Instantiate<ProjectScreen>();
+		AddChild(projectScreen);
+		projectScreen.Show();
+
+		// Wait until the user picks a project
+		await ToSignal(projectScreen, ProjectScreen.SignalName.ProjectChosen);
+
+		projectScreen.Hide();
+		projectScreen.QueueFree();
+	}
+
 	/// <summary>
 	/// TEMPORARY TEST: Creates a BlockArrayGenerator with a few blocks to verify the voxel pipeline.
 	/// Remove when testing is complete.
@@ -371,6 +402,18 @@ public partial class Main : Control
 		return _spawnMenu?.SpawnLightObject(objectName);
 	}
 
+	/// <summary>Creates a CameraSceneObject, adds it to the viewport, and notifies the preview viewport.</summary>
+	public CameraSceneObject SpawnCameraObject(string objectName)
+	{
+		var cameraObject = _spawnMenu?.SpawnCameraObject(objectName);
+		if (cameraObject != null)
+		{
+			PreviewViewportControl?.OnCameraSpawned(cameraObject);
+			SceneTreePanel?.Refresh();
+		}
+		return cameraObject;
+	}
+
 	/// <summary>Creates a Minecraft block SceneObject and adds it to the viewport.</summary>
 	public SceneObject SpawnBlockObject(string blockName, string variant, string objectName)
 	{
@@ -432,9 +475,13 @@ public partial class Main : Control
 
 	private void ShowNewProjectDialog()
 	{
+		var lastFolder = ProjectManager.GetLastNewProjectFolder();
 		NativeFileDialog.ShowOpenDirectory("Choose New Project Folder", (success, folderPath) =>
 		{
 			if (!success || string.IsNullOrEmpty(folderPath)) return;
+
+			// Persist the chosen folder for next time
+			ProjectManager.SaveLastNewProjectFolder(folderPath);
 
 			// Ask for a project name
 			var dlg = new ConfirmationDialog();
@@ -461,16 +508,16 @@ public partial class Main : Control
 
 				var projectFolder = System.IO.Path.Combine(folderPath, projectName);
 				if (ProjectManager.NewProject(projectFolder))
-				{
-					SetWindowTitle($"Mine Imator Simply Remade: Nuxi — {projectName}");
-				}
-				dlg.QueueFree();
+					{
+						UpdateWindowTitle();
+					}
+					dlg.QueueFree();
 			};
 			dlg.Canceled += () => dlg.QueueFree();
 
 			AddChild(dlg);
 			dlg.PopupCentered(new Vector2I(400, 120));
-		});
+		}, startDirectory: lastFolder);
 	}
 
 	private void ShowOpenProjectDialog()
@@ -483,15 +530,90 @@ public partial class Main : Control
 				if (!success || string.IsNullOrEmpty(filePath)) return;
 
 				if (ProjectManager.OpenProject(filePath))
-				{
-					SetWindowTitle($"Mine Imator Simply Remade: Nuxi — {ProjectManager.CurrentProjectName}");
-					// Restore scene objects with a progress window
-					_ = RestoreSceneWithProgressAsync();
-				}
+					{
+						UpdateWindowTitle();
+						// Restore scene objects with a progress window
+						_ = RestoreSceneWithProgressAsync();
+					}
 			});
 	}
 
-	private async System.Threading.Tasks.Task RestoreSceneWithProgressAsync()
+	// ── Project screen variants (called from ProjectScreen overlay) ───────────
+
+	/// <summary>
+	/// Shows the new-project dialog and invokes <paramref name="onSuccess"/> if a project
+	/// is successfully created.  Used by the startup project screen.
+	/// </summary>
+	public void ShowNewProjectDialogFromScreen(Action onSuccess)
+	{
+		var lastFolder = ProjectManager.GetLastNewProjectFolder();
+		NativeFileDialog.ShowOpenDirectory("Choose New Project Folder", (success, folderPath) =>
+		{
+			if (!success || string.IsNullOrEmpty(folderPath)) return;
+
+			// Persist the chosen folder for next time
+			ProjectManager.SaveLastNewProjectFolder(folderPath);
+
+			var dlg = new ConfirmationDialog();
+			dlg.Title     = "New Project";
+			dlg.Exclusive = true;
+			dlg.Transient = true;
+
+			var vbox = new VBoxContainer();
+			dlg.AddChild(vbox);
+
+			var lbl = new Label();
+			lbl.Text = "Enter a name for the new project:";
+			vbox.AddChild(lbl);
+
+			var edit = new LineEdit();
+			edit.Text = "MyProject";
+			edit.SelectAll();
+			vbox.AddChild(edit);
+
+			dlg.Confirmed += () =>
+			{
+				var projectName = edit.Text.Trim();
+				if (string.IsNullOrEmpty(projectName)) projectName = "MyProject";
+
+				var projectFolder = System.IO.Path.Combine(folderPath, projectName);
+				if (ProjectManager.NewProject(projectFolder))
+					{
+						UpdateWindowTitle();
+						onSuccess?.Invoke();
+					}
+				dlg.QueueFree();
+			};
+			dlg.Canceled += () => dlg.QueueFree();
+
+			AddChild(dlg);
+			dlg.PopupCentered(new Vector2I(400, 120));
+		}, startDirectory: lastFolder);
+	}
+
+	/// <summary>
+	/// Shows the open-project dialog and invokes <paramref name="onSuccess"/> if a project
+	/// is successfully opened.  Used by the startup project screen.
+	/// </summary>
+	public void ShowOpenProjectDialogFromScreen(Action onSuccess)
+	{
+		NativeFileDialog.ShowOpenFile(
+			"Open Project",
+			new[] { "*.srproject ; Simply Remade Project" },
+			(success, filePath) =>
+			{
+				if (!success || string.IsNullOrEmpty(filePath)) return;
+
+				if (ProjectManager.OpenProject(filePath))
+					{
+						UpdateWindowTitle();
+						_ = RestoreSceneWithProgressAsync();
+						onSuccess?.Invoke();
+					}
+			});
+	}
+
+	public async System.Threading.Tasks.Task RestoreSceneWithProgressAsync()
 	{
 		// Clear any active selection before wiping the scene so the gizmo and
 		// property panels don't hold stale references to objects about to be freed.
@@ -529,7 +651,7 @@ public partial class Main : Control
 		SceneTreePanel?.Refresh();
 
 		// Load keyframes from all restored SceneObjects into the timeline's working
-		// dictionary, then seek to the current frame so positions are applied.
+		// dictionary, then seek to the saved frame so positions are applied correctly.
 		if (TimelinePanel.Instance != null && Viewport != null)
 		{
 			var allObjects = new System.Collections.Generic.List<SceneObject>();
@@ -544,13 +666,20 @@ public partial class Main : Control
 			}
 
 			TimelinePanel.Instance.LoadKeyframesForAllObjects(allObjects);
-			TimelinePanel.Instance.SetCurrentFrame(TimelinePanel.Instance.CurrentFrame);
+
+			// Seek to the frame that was active when the project was saved.
+			// This re-applies keyframe values for animated objects so they appear
+			// at the correct position, and leaves non-animated objects untouched
+			// (their CurrentFramePosition was already applied during restore).
+			int savedFrame = ProjectManager.GetSavedCurrentFrame();
+			TimelinePanel.Instance.SetCurrentFrame(savedFrame);
 		}
 	}
 
 	private void OnProjectSaved()
 	{
 		ToastNotification.Show(this, "Project saved");
+		UpdateWindowTitle();
 	}
 
 	private void OnSaveProject()
@@ -571,7 +700,7 @@ public partial class Main : Control
 		}
 
 		ProjectManager.SaveProject();
-		SetWindowTitle($"Mine Imator Simply Remade: Nuxi — {ProjectManager.CurrentProjectName}");
+		// Title is updated via the ProjectSaved → OnProjectSaved → UpdateWindowTitle chain
 	}
 	
 	private void OnRenderMenuPressed(long id)
@@ -665,13 +794,88 @@ public partial class Main : Control
 	{
 		if (what == NotificationWMCloseRequest)
 		{
-			//TODO: Detect unsaved projects
-			
-			// Close any open native file dialogs
+			if (ProjectManager.IsDirty)
+			{
+				// Intercept the close and show a save-confirmation dialog
+				ShowUnsavedChangesDialog(onQuit: () =>
+				{
+					NativeFileDialog.CloseAllDialogs();
+					GetTree().Quit();
+				});
+				return;
+			}
+
+			// No unsaved changes – close immediately
 			NativeFileDialog.CloseAllDialogs();
-			
 			GetTree().Quit();
 		}
+	}
+
+	/// <summary>
+	/// Shows a modal dialog asking the user what to do about unsaved changes.
+	/// <paramref name="onQuit"/> is called when the application should actually quit.
+	/// </summary>
+	private void ShowUnsavedChangesDialog(Action onQuit)
+	{
+		var dlg = new ConfirmationDialog();
+		dlg.Title           = "Unsaved Changes";
+		dlg.DialogText      = $"The project \"{ProjectManager.CurrentProjectName}\" has unsaved changes.\n\nDo you want to save before closing?";
+		dlg.OkButtonText    = "Save";
+		dlg.CancelButtonText = "Close Without Saving";
+		dlg.Exclusive       = true;
+		dlg.Transient       = true;
+
+		// "Save" button
+		dlg.Confirmed += () =>
+		{
+			dlg.QueueFree();
+			ProjectManager.SaveProject();
+			onQuit?.Invoke();
+		};
+
+		// "Close Without Saving" button (the Cancel button)
+		dlg.Canceled += () =>
+		{
+			dlg.QueueFree();
+			onQuit?.Invoke();
+		};
+
+		// Add a real Cancel button so the user can abort the close entirely.
+		// Godot's ConfirmationDialog only has OK + Cancel, so we repurpose the
+		// built-in Cancel as "Close Without Saving" and add a third button for
+		// "Cancel" (abort the quit).
+		dlg.AddButton("Cancel", true, "cancel");
+		dlg.CustomAction += (action) =>
+		{
+			if (action == "cancel")
+			{
+				dlg.QueueFree();
+				// Do nothing – the user chose to stay in the app
+			}
+		};
+
+		AddChild(dlg);
+		dlg.PopupCentered(new Vector2I(460, 140));
+	}
+
+	/// <summary>
+	/// Updates the OS window title to reflect the current project name and dirty state.
+	/// Format: "Mine Imator Simply Remade: Nuxi — ProjectName*"  (asterisk when dirty)
+	/// </summary>
+	public void UpdateWindowTitle()
+	{
+		const string AppName = "Mine Imator Simply Remade: Nuxi";
+
+		if (string.IsNullOrEmpty(ProjectManager.CurrentProjectName) ||
+		    ProjectManager.CurrentProjectName == "Untitled" &&
+		    string.IsNullOrEmpty(ProjectManager.CurrentProjectFile))
+		{
+			SetWindowTitle(AppName);
+			return;
+		}
+
+		var dirty = ProjectManager.IsDirty ? "*" : "";
+		SetWindowTitle($"{AppName} — {ProjectManager.CurrentProjectName}{dirty}");
 	}
 
 	public void SetWindowTitle(string title)
