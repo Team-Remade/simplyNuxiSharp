@@ -44,6 +44,11 @@ public partial class Main : Control
 	private SpawnMenu _spawnMenu;
 	private bool _renderModeEnabled = false;
 	
+	// FFmpeg download loading UI
+	private Window _ffmpegLoadingWindow;
+	private Label _ffmpegLoadingLabel;
+	private ProgressBar _ffmpegProgressBar;
+	
 	// Debug toggle: set to true to skip the asset downloader on startup
 	private const bool DebugSkipAssetDownloader = false;
 	
@@ -184,13 +189,72 @@ public partial class Main : Control
 			
 			if (!ffmpegAvailable)
 			{
+				// Show loading UI while downloading FFmpeg
+				ShowFFmpegLoadingWindow("Downloading FFmpeg binaries...");
 				GD.Print("Downloading FFMpeg binaries...");
 				await FFMpegDownloader.DownloadBinaries();
+				CloseFFmpegLoadingWindow();
 			}
 		}
 		catch (System.Exception ex)
 		{
+			CloseFFmpegLoadingWindow();
 			GD.PrintErr($"Failed to ensure FFMpeg: {ex.Message}");
+		}
+	}
+	
+	/// <summary>
+	/// Shows a loading window with the given message during FFmpeg download.
+	/// </summary>
+	private void ShowFFmpegLoadingWindow(string message)
+	{
+		_ffmpegLoadingWindow = new Window();
+		_ffmpegLoadingWindow.Title = "Loading";
+		_ffmpegLoadingWindow.Size = new Vector2I(400, 150);
+		_ffmpegLoadingWindow.Unresizable = true;
+		_ffmpegLoadingWindow.Borderless = false;
+		_ffmpegLoadingWindow.AlwaysOnTop = true;
+		
+		var vbox = new VBoxContainer();
+		vbox.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+		vbox.AddThemeConstantOverride("separation", 20);
+		
+		var margin = new MarginContainer();
+		margin.AddThemeConstantOverride("margin_left", 20);
+		margin.AddThemeConstantOverride("margin_right", 20);
+		margin.AddThemeConstantOverride("margin_top", 20);
+		margin.AddThemeConstantOverride("margin_bottom", 20);
+		
+		_ffmpegLoadingLabel = new Label();
+		_ffmpegLoadingLabel.Text = message;
+		_ffmpegLoadingLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		_ffmpegLoadingLabel.VerticalAlignment = VerticalAlignment.Center;
+		
+		_ffmpegProgressBar = new ProgressBar();
+		_ffmpegProgressBar.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+		_ffmpegProgressBar.Indeterminate = true;
+		
+		vbox.AddChild(_ffmpegLoadingLabel);
+		vbox.AddChild(_ffmpegProgressBar);
+		margin.AddChild(vbox);
+		_ffmpegLoadingWindow.AddChild(margin);
+		
+		AddChild(_ffmpegLoadingWindow);
+		_ffmpegLoadingWindow.Position = (DisplayServer.ScreenGetSize() / 2) - (_ffmpegLoadingWindow.Size / 2);
+		_ffmpegLoadingWindow.Show();
+	}
+	
+	/// <summary>
+	/// Closes the FFmpeg loading window.
+	/// </summary>
+	private void CloseFFmpegLoadingWindow()
+	{
+		if (_ffmpegLoadingWindow != null)
+		{
+			_ffmpegLoadingWindow.QueueFree();
+			_ffmpegLoadingWindow = null;
+			_ffmpegLoadingLabel = null;
+			_ffmpegProgressBar = null;
 		}
 	}
 	
