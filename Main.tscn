@@ -10,6 +10,7 @@
 [ext_resource type="Script" uid="uid://1358ext44s8c" path="res://src/core/SceneTree.cs" id="6_3dxm6"]
 [ext_resource type="Environment" uid="uid://xn3wh5pxus5k" path="res://assets/Env.tres" id="6_20pc6"]
 [ext_resource type="Script" uid="uid://yo6sdyucm2lt" path="res://src/core/AnimatedTextureManager.cs" id="6_animtex"]
+[ext_resource type="Script" path="res://src/core/AudioTrackManager.cs" id="6_audiotracks"]
 [ext_resource type="Script" uid="uid://yk4xrjo1fpr7" path="res://src/core/WorkCamera.cs" id="6_lgr22"]
 [ext_resource type="Shader" uid="uid://btpopdqor5lee" path="res://assets/Shaders/Picking.gdshader" id="7_trn2v"]
 [ext_resource type="Texture2D" uid="uid://h6ota84sm1dg" path="res://assets/img/Untitled.png" id="8_5tuhn"]
@@ -247,6 +248,9 @@ environment = ExtResource("6_20pc6")
 
 [node name="AnimatedTextureManager" type="Node" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=1084489649]
 script = ExtResource("6_animtex")
+
+[node name="AudioTrackManager" type="Node" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=1084489650]
+script = ExtResource("6_audiotracks")
 
 [node name="Floor" type="Node3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=945913751]
 

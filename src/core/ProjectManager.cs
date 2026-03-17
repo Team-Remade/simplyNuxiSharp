@@ -497,6 +497,60 @@ public static class ProjectManager
 		return true;
 	}
 
+	// ── Audio track management ────────────────────────────────────────────────
+
+	/// <summary>Returns all audio tracks in the current project.</summary>
+	public static IReadOnlyList<AudioTrackData> GetAudioTracks() => _currentData.AudioTracks.AsReadOnly();
+
+	/// <summary>
+	/// Adds a new audio track to the project.
+	/// <paramref name="relativePath"/> should be the asset's relative path (from <see cref="AssetEntry.RelativePath"/>).
+	/// Returns the newly created <see cref="AudioTrackData"/>.
+	/// </summary>
+	public static AudioTrackData AddAudioTrack(string relativePath, string name = null, int startFrame = 0)
+	{
+		var track = new AudioTrackData
+		{
+			RelativePath = relativePath,
+			Name         = name ?? System.IO.Path.GetFileNameWithoutExtension(relativePath),
+			StartFrame   = startFrame,
+		};
+		_currentData.AudioTracks.Add(track);
+		MarkDirty();
+		AudioTracksChanged?.Invoke();
+		return track;
+	}
+
+	/// <summary>Removes an audio track by its <see cref="AudioTrackData.Id"/>.</summary>
+	public static bool RemoveAudioTrack(string trackId)
+	{
+		var track = _currentData.AudioTracks.Find(t => t.Id == trackId);
+		if (track == null) return false;
+		_currentData.AudioTracks.Remove(track);
+		MarkDirty();
+		AudioTracksChanged?.Invoke();
+		return true;
+	}
+
+	/// <summary>Fired when the audio track list changes (add / remove / modify).</summary>
+	public static event Action AudioTracksChanged;
+
+	/// <summary>Fires <see cref="AudioTracksChanged"/> from outside the class (also marks dirty).</summary>
+	public static void NotifyAudioTracksChanged()
+	{
+		MarkDirty();
+		AudioTracksChanged?.Invoke();
+	}
+
+	/// <summary>
+	/// Fires <see cref="AudioTracksChanged"/> without marking the project dirty.
+	/// Used when derived/measured data (e.g. clip duration) is updated internally.
+	/// </summary>
+	internal static void NotifyAudioTracksChangedSilent()
+	{
+		AudioTracksChanged?.Invoke();
+	}
+
 	/// <summary>Returns all registered asset entries.</summary>
 	public static IReadOnlyList<AssetEntry> GetAssets() => _currentData.Assets.AsReadOnly();
 
@@ -1110,6 +1164,7 @@ public class ProjectData
 	public ProjectSettings       Settings     { get; set; } = new ProjectSettings();
 	public List<AssetEntry>      Assets       { get; set; } = new List<AssetEntry>();
 	public List<SceneObjectEntry> SceneObjects { get; set; } = new List<SceneObjectEntry>();
+	public List<AudioTrackData>  AudioTracks  { get; set; } = new List<AudioTrackData>();
 }
 
 /// <summary>Project-level settings (resolution, framerate, background, etc.).</summary>
@@ -1195,4 +1250,44 @@ public class UserPrefs
 {
 	/// <summary>The folder path last used when creating a new project.</summary>
 	public string LastNewProjectFolder { get; set; } = "";
+}
+
+/// <summary>
+/// Represents a static audio track on the timeline.
+/// The audio file starts playing at <see cref="StartFrame"/> and plays until it ends
+/// (or the timeline loops).
+/// </summary>
+public class AudioTrackData
+{
+	/// <summary>Unique identifier for this track.</summary>
+	public string Id { get; set; } = System.Guid.NewGuid().ToString();
+
+	/// <summary>Display name shown in the timeline.</summary>
+	public string Name { get; set; } = "Audio Track";
+
+	/// <summary>
+	/// Path relative to the project root folder (matches <see cref="AssetEntry.RelativePath"/>).
+	/// </summary>
+	public string RelativePath { get; set; } = "";
+
+	/// <summary>The timeline frame at which playback of this clip begins.</summary>
+	public int StartFrame { get; set; } = 0;
+
+	/// <summary>
+	/// Duration of the audio clip in frames (at the project frame rate).
+	/// 0 means unknown / not yet measured.
+	/// Populated by <see cref="simplyRemadeNuxi.core.AudioTrackManager"/> after the
+	/// stream is loaded.
+	/// </summary>
+	public int DurationFrames { get; set; } = 0;
+
+	/// <summary>The last frame occupied by this clip (StartFrame + DurationFrames - 1).</summary>
+	[System.Text.Json.Serialization.JsonIgnore]
+	public int EndFrame => DurationFrames > 0 ? StartFrame + DurationFrames - 1 : StartFrame;
+
+	/// <summary>Playback volume in the range [0, 1].</summary>
+	public float Volume { get; set; } = 1f;
+
+	/// <summary>Whether this track is muted.</summary>
+	public bool Muted { get; set; } = false;
 }

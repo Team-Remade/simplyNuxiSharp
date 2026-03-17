@@ -155,15 +155,17 @@ public partial class ContentDrawerPanel : Panel
 		_statusLabel.AddThemeFontSizeOverride("font_size", 11);
 		_mainContainer.AddChild(_statusLabel);
 
-		// Context menu
+		// Context menu — use IdPressed so the handler receives the item ID,
+		// not the positional index (which changes when separators are present).
 		_contextMenu = new PopupMenu();
 		_contextMenu.AddItem("Spawn in Scene",      0);
+		_contextMenu.AddItem("Add to Timeline",     4);
 		_contextMenu.AddSeparator();
 		_contextMenu.AddItem("Rename Label",        1);
 		_contextMenu.AddSeparator();
 		_contextMenu.AddItem("Remove from Project", 2);
 		_contextMenu.AddItem("Delete File",         3);
-		_contextMenu.IndexPressed += OnContextMenuIndexPressed;
+		_contextMenu.IdPressed += OnContextMenuIndexPressed;
 		AddChild(_contextMenu);
 	}
 
@@ -297,6 +299,10 @@ public partial class ContentDrawerPanel : Panel
 			var asset = _displayedAssets[(int)index];
 			_contextMenu.SetItemDisabled(0, asset.AssetType != "Model");
 
+			// Show/hide "Add to Timeline" based on asset type
+			// Item index 1 is "Add to Timeline" (id=4)
+			_contextMenu.SetItemDisabled(1, asset.AssetType != "Audio");
+
 			_contextMenu.Position = (Vector2I)GetGlobalMousePosition();
 			_contextMenu.Popup();
 		}
@@ -333,6 +339,10 @@ public partial class ContentDrawerPanel : Panel
 				SpawnAsset(asset);
 				break;
 
+			case 4: // Add to Timeline
+				AddAudioAssetToTimeline(asset);
+				break;
+
 			case 1: // Rename Label
 				ShowRenameLabelDialog(asset);
 				break;
@@ -365,6 +375,27 @@ public partial class ContentDrawerPanel : Panel
 		}
 
 		Main.Instance?.SpawnModelFromPath(fullPath);
+	}
+
+	// ── Audio timeline helper ─────────────────────────────────────────────────
+
+	private void AddAudioAssetToTimeline(AssetEntry asset)
+	{
+		if (asset.AssetType != "Audio")
+		{
+			GD.PrintErr($"ContentDrawerPanel.AddAudioAssetToTimeline: asset '{asset.FileName}' is not Audio");
+			return;
+		}
+
+		if (TimelinePanel.Instance != null)
+		{
+			TimelinePanel.Instance.AddAudioTrackFromAsset(asset);
+		}
+		else
+		{
+			// Fallback: add directly via ProjectManager
+			ProjectManager.AddAudioTrack(asset.RelativePath, asset.Label ?? asset.FileName);
+		}
 	}
 
 	// ── Dialogs ───────────────────────────────────────────────────────────────

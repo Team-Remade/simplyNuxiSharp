@@ -37,6 +37,9 @@ public partial class TimelinePanel : Panel
 	private bool _isDraggingPlayhead = false;
 	private bool _isPlaying = false;
 	private int _playStartFrame = 0; // Frame when play was pressed
+
+	// Time accumulator for frame-rate-independent playback
+	private double _frameAccumulator = 0.0;
 	
 	// Drag selection state
 	private bool _isDragSelecting = false;
@@ -92,12 +95,20 @@ public partial class TimelinePanel : Panel
 	
 	// Track all single property tracks for updating
 	private List<Control> _singlePropertyTracks = new List<Control>();
+
+	// Audio track UI rows (left label + right bar)
+	private List<(Control leftRow, Control rightBar)> _audioTrackRows = new List<(Control, Control)>();
 	
 	public override void _Ready()
 	{
 		_instance = this;
 		SetupUi();
 		SelectionManager.Instance.SelectionChanged += OnSelectionChanged;
+		ProjectManager.AudioTracksChanged += OnAudioTracksChanged;
+		ProjectManager.ProjectOpened      += OnProjectOpenedForAudio;
+		ProjectManager.ProjectClosed      += OnProjectClosedForAudio;
+		// Populate audio track rows for any already-open project
+		RefreshAudioTrackRows();
 	}
 
 	public override void _ExitTree()
@@ -106,8 +117,15 @@ public partial class TimelinePanel : Panel
 		{
 			SelectionManager.Instance.SelectionChanged -= OnSelectionChanged;
 		}
+		ProjectManager.AudioTracksChanged -= OnAudioTracksChanged;
+		ProjectManager.ProjectOpened      -= OnProjectOpenedForAudio;
+		ProjectManager.ProjectClosed      -= OnProjectClosedForAudio;
 		_instance = null;
 	}
+
+	private void OnAudioTracksChanged()     => RefreshAudioTrackRows();
+	private void OnProjectOpenedForAudio(string _) => RefreshAudioTrackRows();
+	private void OnProjectClosedForAudio()  => RefreshAudioTrackRows();
 
 	public override void _Process(double delta)
 	{
@@ -115,23 +133,33 @@ public partial class TimelinePanel : Panel
 		
 		if (_isPlaying)
 		{
-			// Advance playhead when playing
-			_currentFrame++;
-			// Find the furthest keyframe to determine loop point
-			int furthestKeyframe = _maxFrames;
-			foreach (var kvp in _propertyKeyframes)
+			// Advance playhead using a time accumulator so the frame rate is
+			// independent of the render frame rate (e.g. 30fps timeline at 60fps render).
+			_frameAccumulator += delta * _frameRate;
+			int framesToAdvance = (int)_frameAccumulator;
+			_frameAccumulator -= framesToAdvance;
+
+			if (framesToAdvance > 0)
 			{
-				foreach (var keyframe in kvp.Value)
+				_currentFrame += framesToAdvance;
+
+				// Find the furthest keyframe to determine loop point
+				int furthestKeyframe = _maxFrames;
+				foreach (var kvp in _propertyKeyframes)
 				{
-					if (keyframe.Frame > furthestKeyframe)
+					foreach (var keyframe in kvp.Value)
 					{
-						furthestKeyframe = keyframe.Frame;
+						if (keyframe.Frame > furthestKeyframe)
+						{
+							furthestKeyframe = keyframe.Frame;
+						}
 					}
 				}
-			}
-			if (_currentFrame > furthestKeyframe)
-			{
-				_currentFrame = 0; // Loop back to start after furthest keyframe
+				if (_currentFrame > furthestKeyframe)
+				{
+					_currentFrame = 0; // Loop back to start after furthest keyframe
+					_frameAccumulator = 0.0; // Reset accumulator on loop
+				}
 			}
 			
 			// Update animated textures when playing
@@ -142,12 +170,23 @@ public partial class TimelinePanel : Panel
 		}
 		else
 		{
+			_frameAccumulator = 0.0; // Reset accumulator when not playing
 			// Stop animated textures when not playing
 			if (AnimatedTextureManager.Instance != null)
 			{
 				AnimatedTextureManager.Instance.Pause();
 			}
 		}
+
+		// Sync audio tracks when frame changes (not every render frame).
+		// forceSeek = false during normal playback so we never interrupt smooth audio.
+		if (AudioTrackManager.Instance != null && previousFrame != _currentFrame)
+		{
+			AudioTrackManager.Instance.SyncToFrame(_currentFrame, _frameRate, _isPlaying, forceSeek: false);
+		}
+
+		// Redraw audio track bars to update playhead indicator
+		RedrawAudioTrackBars();
 		
 		// Manually sync scroll positions every frame as backup
 		if (_keyframesScroll != null && _frameRulerScroll != null)
@@ -298,6 +337,10 @@ public partial class TimelinePanel : Panel
 		_keyframeContextMenu.Popup();
 	}
 
+	// Containers for audio track rows (outside the scroll, at the bottom)
+	private VBoxContainer _audioTracksLeftContainer;
+	private VBoxContainer _audioTracksRightContainer;
+
 	private void SetupPropertiesColumn()
 	{
 		var leftContainer = new VBoxContainer();
@@ -334,6 +377,36 @@ public partial class TimelinePanel : Panel
 		_propertiesContainer = new VBoxContainer();
 		_propertiesContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 		_propertiesScroll.AddChild(_propertiesContainer);
+
+		// ── Audio tracks section (below the scroll) ───────────────────────────
+		var audioSep = new HSeparator();
+		leftContainer.AddChild(audioSep);
+
+		// Header row: "Audio Tracks" label + "+" button
+		var audioHeader = new HBoxContainer();
+		audioHeader.CustomMinimumSize = new Vector2(0, 24);
+		leftContainer.AddChild(audioHeader);
+
+		var audioHeaderLabel = new Label();
+		audioHeaderLabel.Text = "Audio Tracks";
+		audioHeaderLabel.AddThemeFontSizeOverride("font_size", 12);
+		audioHeaderLabel.AddThemeColorOverride("font_color", new Color(0.8f, 0.8f, 0.8f));
+		audioHeaderLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		audioHeaderLabel.VerticalAlignment = VerticalAlignment.Center;
+		audioHeader.AddChild(audioHeaderLabel);
+
+		var addAudioBtn = new Button();
+		addAudioBtn.Text = "+";
+		addAudioBtn.TooltipText = "Import and add an audio track";
+		addAudioBtn.CustomMinimumSize = new Vector2(24, 20);
+		addAudioBtn.Flat = true;
+		addAudioBtn.Pressed += OnAddAudioTrackPressed;
+		audioHeader.AddChild(addAudioBtn);
+
+		// Container for individual audio track rows (left side)
+		_audioTracksLeftContainer = new VBoxContainer();
+		_audioTracksLeftContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		leftContainer.AddChild(_audioTracksLeftContainer);
 	}
 
 	private void SetupKeyframesColumn()
@@ -487,6 +560,21 @@ public partial class TimelinePanel : Panel
 				_keyframesScroll.ScrollHorizontal = (int)value;
 			}
 		};
+
+		// ── Audio tracks section (right side, mirrors left) ───────────────────
+		// Separator (mirrors the one on the left)
+		var audioSepRight = new HSeparator();
+		rightContainer.AddChild(audioSepRight);
+
+		// Spacer that matches the audio header height on the left (24 px)
+		var audioHeaderSpacer = new Control();
+		audioHeaderSpacer.CustomMinimumSize = new Vector2(0, 24);
+		rightContainer.AddChild(audioHeaderSpacer);
+
+		// Container for audio track bars (right side)
+		_audioTracksRightContainer = new VBoxContainer();
+		_audioTracksRightContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		rightContainer.AddChild(_audioTracksRightContainer);
 	}
 
 	private void AddTransportControls(HBoxContainer parent)
@@ -560,9 +648,11 @@ public partial class TimelinePanel : Panel
 	private void OnJumpToStart()
 	{
 		_currentFrame = 0;
+		_frameAccumulator = 0.0;
 		_isPlaying = false;
 		UpdatePlayPauseButton();
 		ApplyKeyframesAtCurrentFrame();
+		AudioTrackManager.Instance?.SyncToFrame(_currentFrame, _frameRate, false, forceSeek: true);
 		
 		// Stop animated textures
 		if (AnimatedTextureManager.Instance != null)
@@ -574,9 +664,11 @@ public partial class TimelinePanel : Panel
 	private void OnStepBackward()
 	{
 		_currentFrame = Mathf.Max(0, _currentFrame - 1);
+		_frameAccumulator = 0.0;
 		_isPlaying = false;
 		UpdatePlayPauseButton();
 		ApplyKeyframesAtCurrentFrame();
+		AudioTrackManager.Instance?.SyncToFrame(_currentFrame, _frameRate, false, forceSeek: true);
 		
 		// Stop animated textures when stepping
 		if (AnimatedTextureManager.Instance != null)
@@ -588,9 +680,11 @@ public partial class TimelinePanel : Panel
 	private void OnStop()
 	{
 		_currentFrame = _playStartFrame; // Return to frame when play was pressed
+		_frameAccumulator = 0.0;
 		_isPlaying = false;
 		UpdatePlayPauseButton();
 		ApplyKeyframesAtCurrentFrame();
+		AudioTrackManager.Instance?.SyncToFrame(_currentFrame, _frameRate, false, forceSeek: true);
 		
 		// Stop and reset animated textures
 		if (AnimatedTextureManager.Instance != null)
@@ -606,9 +700,13 @@ public partial class TimelinePanel : Panel
 		{
 			// Store current frame when starting playback
 			_playStartFrame = _currentFrame;
+			_frameAccumulator = 0.0;
 		}
 		_isPlaying = !_isPlaying;
 		UpdatePlayPauseButton();
+
+		// Sync audio immediately on play/pause
+		AudioTrackManager.Instance?.SyncToFrame(_currentFrame, _frameRate, _isPlaying, forceSeek: true);
 		
 		// Control animated textures playback
 		if (AnimatedTextureManager.Instance != null)
@@ -627,9 +725,11 @@ public partial class TimelinePanel : Panel
 	private void OnStepForward()
 	{
 		_currentFrame++; // No limit, allow going past max frames
+		_frameAccumulator = 0.0;
 		_isPlaying = false;
 		UpdatePlayPauseButton();
 		ApplyKeyframesAtCurrentFrame();
+		AudioTrackManager.Instance?.SyncToFrame(_currentFrame, _frameRate, false, forceSeek: true);
 		
 		// Stop animated textures when stepping
 		if (AnimatedTextureManager.Instance != null)
@@ -653,9 +753,11 @@ public partial class TimelinePanel : Panel
 			}
 		}
 		_currentFrame = furthestKeyframe;
+		_frameAccumulator = 0.0;
 		_isPlaying = false;
 		UpdatePlayPauseButton();
 		ApplyKeyframesAtCurrentFrame();
+		AudioTrackManager.Instance?.SyncToFrame(_currentFrame, _frameRate, false, forceSeek: true);
 		
 		// Stop animated textures
 		if (AnimatedTextureManager.Instance != null)
@@ -774,8 +876,10 @@ public partial class TimelinePanel : Panel
 					if (newFrame != _currentFrame)
 					{
 						_currentFrame = newFrame;
+						_frameAccumulator = 0.0;
 						UpdatePlayheadPosition();
 						ApplyKeyframesAtCurrentFrame(); // Apply animation when clicking timeline
+						AudioTrackManager.Instance?.SyncToFrame(_currentFrame, _frameRate, _isPlaying, forceSeek: true);
 					}
 					
 					// Don't start animated textures on click, only during playback/scrub
@@ -994,8 +1098,10 @@ public partial class TimelinePanel : Panel
 			if (newFrame != _currentFrame)
 			{
 				_currentFrame = newFrame;
+				_frameAccumulator = 0.0;
 				UpdatePlayheadPosition();
 				ApplyKeyframesAtCurrentFrame(); // Apply animation when dragging playhead
+				AudioTrackManager.Instance?.SyncToFrame(_currentFrame, _frameRate, _isPlaying, forceSeek: true);
 				
 				// Update animated textures time when scrubbing
 				if (AnimatedTextureManager.Instance != null)
@@ -1626,26 +1732,35 @@ public partial class TimelinePanel : Panel
 	}
 
 	/// <summary>
-	/// Recalculate timeline length based on the furthest keyframe
+	/// Recalculate timeline length based on the furthest keyframe or audio track end.
 	/// </summary>
 	private void RecalculateTimelineLength()
 	{
-		int maxKeyframeFrame = 300; // Default minimum
+		int maxFrame = 300; // Default minimum
 		
 		foreach (var kvp in _propertyKeyframes)
 		{
 			foreach (var keyframe in kvp.Value)
 			{
-				if (keyframe.Frame > maxKeyframeFrame)
-				{
-					maxKeyframeFrame = keyframe.Frame;
-				}
+				if (keyframe.Frame > maxFrame)
+					maxFrame = keyframe.Frame;
+			}
+		}
+
+		// Also consider audio track end frames
+		foreach (var track in ProjectManager.GetAudioTracks())
+		{
+			if (track.DurationFrames > 0)
+			{
+				int endFrame = track.StartFrame + track.DurationFrames;
+				if (endFrame > maxFrame)
+					maxFrame = endFrame;
 			}
 		}
 		
-		if (maxKeyframeFrame > _maxFrames)
+		if (maxFrame > _maxFrames)
 		{
-			ExtendTimeline(maxKeyframeFrame);
+			ExtendTimeline(maxFrame);
 		}
 	}
 	
@@ -2271,6 +2386,293 @@ public partial class TimelinePanel : Panel
 				lightColorObj.LightColor = col;
 			}
 		}
+	}
+
+	// ── Audio track UI ────────────────────────────────────────────────────────
+
+	/// <summary>
+	/// Opens a file dialog so the user can pick an audio file, imports it into
+	/// the project, and adds it as a new audio track on the timeline.
+	/// </summary>
+	private void OnAddAudioTrackPressed()
+	{
+		if (string.IsNullOrEmpty(ProjectManager.CurrentProjectFolder))
+		{
+			// Show a simple dialog if no project is open
+			var dlg = new AcceptDialog();
+			dlg.Title      = "No Project Open";
+			dlg.DialogText = "Please create or open a project first.";
+			dlg.OkButtonText = "OK";
+			dlg.Exclusive  = true;
+			dlg.Transient  = true;
+			dlg.CloseRequested += () => { dlg.Hide(); dlg.QueueFree(); };
+			AddChild(dlg);
+			dlg.PopupCentered();
+			return;
+		}
+
+		var filters = new[] { "*.wav,*.mp3,*.ogg ; Audio Files" };
+
+		NativeFileDialog.ShowOpenFiles("Import Audio", filters, (success, paths) =>
+		{
+			if (!success || paths == null) return;
+			foreach (var path in paths)
+			{
+				// Import the file into the project assets folder
+				var destPath = ProjectManager.ImportAsset(path);
+				if (string.IsNullOrEmpty(destPath)) continue;
+
+				// Build the relative path from the project root
+				var relPath = System.IO.Path.GetRelativePath(
+					ProjectManager.CurrentProjectFolder, destPath);
+
+				// Add the audio track
+				ProjectManager.AddAudioTrack(relPath);
+			}
+		});
+	}
+
+	/// <summary>
+	/// Adds an audio track directly from an already-imported asset entry.
+	/// Called from <see cref="ContentDrawerPanel"/> when the user right-clicks
+	/// an Audio asset and chooses "Add to Timeline".
+	/// </summary>
+	public void AddAudioTrackFromAsset(AssetEntry asset)
+	{
+		if (asset == null || asset.AssetType != "Audio") return;
+		ProjectManager.AddAudioTrack(asset.RelativePath, asset.Label ?? asset.FileName);
+	}
+
+	/// <summary>
+	/// Rebuilds the audio track rows in both the left and right columns to
+	/// match the current list of <see cref="AudioTrackData"/> in the project.
+	/// Also extends the timeline if any audio track ends beyond the current max frame.
+	/// </summary>
+	private void RefreshAudioTrackRows()
+	{
+		if (_audioTracksLeftContainer == null || _audioTracksRightContainer == null) return;
+
+		// Remove old rows
+		foreach (var child in _audioTracksLeftContainer.GetChildren())
+			child.QueueFree();
+		foreach (var child in _audioTracksRightContainer.GetChildren())
+			child.QueueFree();
+		_audioTrackRows.Clear();
+
+		var tracks = ProjectManager.GetAudioTracks();
+		foreach (var track in tracks)
+		{
+			AddAudioTrackRow(track);
+		}
+
+		// Extend the timeline if any audio track ends beyond the current max frame
+		int maxAudioEndFrame = 0;
+		foreach (var track in tracks)
+		{
+			if (track.DurationFrames > 0)
+			{
+				int endFrame = track.StartFrame + track.DurationFrames;
+				if (endFrame > maxAudioEndFrame)
+					maxAudioEndFrame = endFrame;
+			}
+		}
+		if (maxAudioEndFrame > _maxFrames)
+		{
+			ExtendTimeline(maxAudioEndFrame);
+		}
+	}
+
+	private void AddAudioTrackRow(AudioTrackData track)
+	{
+		const float rowHeight = 32f;
+		var scrollableWidth = _maxFrames * _pixelsPerFrame * 1.5f;
+
+		// ── Left side row ─────────────────────────────────────────────────────
+		var leftRow = new HBoxContainer();
+		leftRow.CustomMinimumSize = new Vector2(0, rowHeight);
+		leftRow.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_audioTracksLeftContainer.AddChild(leftRow);
+
+		// Mute button
+		var muteBtn = new Button();
+		muteBtn.Text = track.Muted ? "🔇" : "🔊";
+		muteBtn.TooltipText = track.Muted ? "Unmute" : "Mute";
+		muteBtn.CustomMinimumSize = new Vector2(28, 24);
+		muteBtn.Flat = true;
+		muteBtn.Pressed += () =>
+		{
+			track.Muted = !track.Muted;
+			muteBtn.Text = track.Muted ? "🔇" : "🔊";
+			muteBtn.TooltipText = track.Muted ? "Unmute" : "Mute";
+			AudioTrackManager.Instance?.UpdateTrackMute(track.Id, track.Muted);
+			ProjectManager.NotifyAudioTracksChanged();
+		};
+		leftRow.AddChild(muteBtn);
+
+		// Track name label (truncated)
+		var nameLabel = new Label();
+		nameLabel.Text = track.Name;
+		nameLabel.VerticalAlignment = VerticalAlignment.Center;
+		nameLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		nameLabel.ClipText = true;
+		nameLabel.TooltipText = track.Name;
+		leftRow.AddChild(nameLabel);
+
+		// Remove button
+		var removeBtn = new Button();
+		removeBtn.Text = "✕";
+		removeBtn.TooltipText = "Remove audio track";
+		removeBtn.CustomMinimumSize = new Vector2(24, 24);
+		removeBtn.Flat = true;
+		removeBtn.Pressed += () => ProjectManager.RemoveAudioTrack(track.Id);
+		leftRow.AddChild(removeBtn);
+
+		// ── Right side bar ────────────────────────────────────────────────────
+		// Do NOT set a large CustomMinimumSize here — the bar lives outside the
+		// keyframes scroll container, so a large minimum width would push the
+		// entire panel wider.  Instead we let it fill the available space and
+		// clip the drawn clip-bar rectangle to the bar's actual size.
+		var rightBar = new Control();
+		rightBar.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		rightBar.CustomMinimumSize = new Vector2(0, rowHeight);
+		rightBar.ClipContents = true;
+		_audioTracksRightContainer.AddChild(rightBar);
+
+		// Draw the audio clip bar
+		rightBar.Draw += () => DrawAudioTrackBar(rightBar, track);
+
+		// Allow dragging the clip bar to change StartFrame
+		bool isDraggingBar = false;
+		float dragStartX = 0f;
+		int dragStartFrame = 0;
+
+		rightBar.GuiInput += (inputEvent) =>
+		{
+			if (inputEvent is InputEventMouseButton mb)
+			{
+				if (mb.ButtonIndex == MouseButton.Left)
+				{
+					if (mb.Pressed)
+					{
+						float localX = mb.Position.X;
+						float barStartX = track.StartFrame * _pixelsPerFrame;
+						// Only start drag if clicking on the bar itself
+						if (localX >= barStartX)
+						{
+							isDraggingBar = true;
+							dragStartX = localX;
+							dragStartFrame = track.StartFrame;
+							rightBar.AcceptEvent();
+						}
+					}
+					else
+					{
+						if (isDraggingBar)
+						{
+							isDraggingBar = false;
+							ProjectManager.NotifyAudioTracksChanged();
+							rightBar.AcceptEvent();
+						}
+					}
+				}
+			}
+			else if (inputEvent is InputEventMouseMotion mm && isDraggingBar)
+			{
+				float delta = mm.Position.X - dragStartX;
+				int frameDelta = Mathf.RoundToInt(delta / _pixelsPerFrame);
+				int newStart = Mathf.Max(0, dragStartFrame + frameDelta);
+				if (newStart != track.StartFrame)
+				{
+					track.StartFrame = newStart;
+					rightBar.QueueRedraw();
+				}
+				rightBar.AcceptEvent();
+			}
+		};
+
+		_audioTrackRows.Add((leftRow, rightBar));
+	}
+
+	private void DrawAudioTrackBar(Control bar, AudioTrackData track)
+	{
+		float barWidth = bar.Size.X;
+		if (barWidth <= 0) return;
+
+		// Background
+		bar.DrawRect(new Rect2(Vector2.Zero, bar.Size), new Color(0.1f, 0.1f, 0.1f), true);
+
+		// Grid lines every 10 frames (only within the visible bar width)
+		for (int frame = 0; frame <= _maxFrames; frame += 10)
+		{
+			float x = frame * _pixelsPerFrame;
+			if (x > barWidth) break;
+			bar.DrawLine(
+				new Vector2(x, 0),
+				new Vector2(x, bar.Size.Y),
+				new Color(0.25f, 0.25f, 0.25f, 0.5f),
+				1.0f
+			);
+		}
+
+		// Clip bar — clamped to the bar's visible width so it never extends the panel
+		float startX = track.StartFrame * _pixelsPerFrame;
+		if (startX >= barWidth) return; // Clip starts beyond visible area
+
+		// Width: fill from startX to the right edge of the bar
+		float clipWidth = barWidth - startX;
+		if (clipWidth <= 0) return;
+
+		var clipColor = track.Muted
+			? new Color(0.35f, 0.35f, 0.35f, 0.7f)
+			: new Color(0.2f, 0.55f, 0.85f, 0.8f);
+
+		var clipRect = new Rect2(startX, 4f, clipWidth, bar.Size.Y - 8f);
+		bar.DrawRect(clipRect, clipColor, true);
+
+		// Clip border (only left + top + bottom edges; right edge is clipped by the bar)
+		// Left edge
+		bar.DrawLine(new Vector2(startX, 4f), new Vector2(startX, bar.Size.Y - 4f),
+			new Color(0.4f, 0.7f, 1f, 0.9f), 1.5f);
+		// Top edge
+		bar.DrawLine(new Vector2(startX, 4f), new Vector2(barWidth, 4f),
+			new Color(0.4f, 0.7f, 1f, 0.9f), 1.5f);
+		// Bottom edge
+		bar.DrawLine(new Vector2(startX, bar.Size.Y - 4f), new Vector2(barWidth, bar.Size.Y - 4f),
+			new Color(0.4f, 0.7f, 1f, 0.9f), 1.5f);
+
+		// Track name inside the bar (clipped to bar width)
+		var font = ThemeDB.FallbackFont;
+		var fontSize = 11;
+		var textColor = new Color(1f, 1f, 1f, 0.9f);
+		var textPos = new Vector2(startX + 6f, bar.Size.Y / 2f + fontSize / 2f - 1f);
+		float maxTextWidth = barWidth - startX - 8f;
+		if (maxTextWidth > 0)
+		{
+			bar.DrawString(font, textPos, track.Name, HorizontalAlignment.Left,
+				(int)maxTextWidth, fontSize, textColor);
+		}
+
+		// Playhead indicator (thin vertical line at current frame)
+		float playheadX = _currentFrame * _pixelsPerFrame;
+		if (playheadX >= startX && playheadX <= barWidth)
+		{
+			bar.DrawLine(
+				new Vector2(playheadX, 0),
+				new Vector2(playheadX, bar.Size.Y),
+				new Color(1f, 0.3f, 0.3f, 0.6f),
+				1.5f
+			);
+		}
+	}
+
+	/// <summary>
+	/// Queues a redraw on all audio track bars (called each frame to update
+	/// the playhead indicator inside each bar).
+	/// </summary>
+	private void RedrawAudioTrackBars()
+	{
+		foreach (var (_, rightBar) in _audioTrackRows)
+			rightBar?.QueueRedraw();
 	}
 }
 
