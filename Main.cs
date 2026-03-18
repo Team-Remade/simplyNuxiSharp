@@ -50,7 +50,7 @@ public partial class Main : Control
 	private ProgressBar _ffmpegProgressBar;
 	
 	// Debug toggle: set to true to skip the asset downloader on startup
-	private const bool DebugSkipAssetDownloader = false;
+	private const bool DebugSkipAssetDownloader = true;
 	
 	public override void _EnterTree()
 	{
