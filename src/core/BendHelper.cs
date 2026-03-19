@@ -241,13 +241,6 @@ public static class BendHelper
 		if (bendVec.X == 0 && bendVec.Y == 0 && bendVec.Z == 0)
 			return Transform3D.Identity;
 		
-		// DEBUG: Print bend parameters
-		GD.Print($"[BendHelper] GetBendMatrix called:");
-		GD.Print($"  bendVec: {bendVec}");
-		GD.Print($"  shapePosition: {shapePosition}");
-		GD.Print($"  BendOffset: {b.BendOffset}, BendSize: {b.BendSize}, Part: {b.Part}");
-		GD.Print($"  AxisX: {b.AxisX}, AxisY: {b.AxisY}, AxisZ: {b.AxisZ}");
-		
 		// Convert from Modelbench Z-up to Godot Y-up coordinate system:
 		// Modelbench X (left/right) -> Godot X (same)
 		// Modelbench Y (front/back in Z-up) -> Godot Z (front/back)
@@ -256,8 +249,6 @@ public static class BendHelper
 		float godotX = bendVec.X;  // Modelbench X -> Godot X
 		float godotY = bendVec.Z;  // Modelbench Z (up/down in Z-up) -> Godot Y
 		float godotZ = bendVec.Y;  // Modelbench Y (front/back in Z-up) -> Godot Z
-		
-		GD.Print($"  godotX: {godotX}, godotY: {godotY}, godotZ: {godotZ}");
 		
 		// Build rotation from bend angles (in degrees -> radians).
 		// Modelbench's matrix_build(pos, rotX, rotY, rotZ, scale) applies rotations in YXZ order.
@@ -269,15 +260,12 @@ public static class BendHelper
 		// So bendVec = (rotX, rotY, rotZ) becomes Godot euler = (godotY, godotX, godotZ)
 		// But the rotations are applied as: Y first, then X, then Z.
 		Vector3 godotEuler = new Vector3(godotY, godotX, godotZ);
-		GD.Print($"  godotEuler (YXZ order): {godotEuler}");
 		
 		// Apply rotations in YXZ order to match matrix_build
 		var transform = Transform3D.Identity;
 		transform = transform.Rotated(Vector3.Up, Mathf.DegToRad(godotEuler.X));   // Y first
 		transform = transform.Rotated(Vector3.Right, Mathf.DegToRad(godotEuler.Y)); // Then X
 		transform = transform.Rotated(Vector3.Forward, Mathf.DegToRad(godotEuler.Z));  // Then Z
-		
-		GD.Print($"  Rotation Basis:\n{transform.Basis}");
 		
 		// Calculate the bend pivot position in part-local space
 		// This matches the GML logic: pos = bend_offset - shape_position_along_axis
@@ -303,8 +291,6 @@ public static class BendHelper
 				break;
 		}
 		
-		GD.Print($"  pivotPos: {pivotPos}");
-		
 		// Apply the transformation: translate(pivot) * rotate * translate(-pivot)
 		var translateBack = Transform3D.Identity;
 		translateBack.Origin = -pivotPos;
@@ -313,7 +299,6 @@ public static class BendHelper
 		
 		// Final transform: translate(pivot) * rotate * translate(-pivot)
 		var result = translateForward * transform * translateBack;
-		GD.Print($"  Final Transform:\n{result}");
 		
 		return result;
 	}
