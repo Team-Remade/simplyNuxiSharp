@@ -363,11 +363,19 @@ public class MineImatorLoader
 			if (shape.ThreeD)
 			{
 				// Create an extruded item-like plane with per-pixel hull mesh
+				// (3D planes do not support bending in Modelbench either)
 				meshInstance = CreateExtrudedPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, texture, shape.TextureMirror, shape.Invert, inflate);
+			}
+			else if (effectiveBend.HasValue && (
+				effectiveBend.Value.Angle.X != 0 || effectiveBend.Value.Angle.Y != 0 || effectiveBend.Value.Angle.Z != 0))
+			{
+				// Bent 2D plane: segmented geometry matching Modelbench's algorithm
+				meshInstance = CreateBentPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight,
+					shape.TextureMirror, shape.Invert, inflate, effectiveBend.Value, shapePosition);
 			}
 			else
 			{
-				// Regular 2D plane
+				// Regular 2D plane (no bending)
 				meshInstance = CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, shape.TextureMirror, shape.Invert, inflate);
 			}
 		}
@@ -1000,6 +1008,285 @@ public class MineImatorLoader
 	       return meshInstance;
 	}
 	
+	/// <summary>
+	/// Creates a bent plane mesh, segmented along the bend axis.
+	/// Matches Modelbench's model_shape_generate_plane() algorithm exactly.
+	///
+	/// Coordinate system notes:
+	///   In Godot Y-up (same as the JSON format):
+	///     - A plane is flat on Z (thin in Z, extends in X and Y).
+	///     - The existing CreatePlaneMesh() creates faces at min.Z and max.Z.
+	///   In Modelbench Z-up (internal):
+	///     - A plane is flat on Y (depth), extends in X and Z.
+	///     - GML segaxis=X for RIGHT/LEFT, segaxis=Z for FRONT/BACK/UPPER/LOWER.
+	///     - Modelbench Z (height) maps to Godot Y, so GML segaxis=Z → Godot segAxis=Y (1).
+	///
+	/// So in Godot:
+	///   - segAxis=0 (X) for RIGHT/LEFT
+	///   - segAxis=1 (Y) for FRONT/BACK/UPPER/LOWER
+	///   - The plane is always flat on Z (z1 ≈ z2 for a true plane, or thin in Z).
+	/// </summary>
+	/// <param name="shapePosition">Shape position in part-local space (Godot units), used for bend pivot</param>
+	private MeshInstance3D CreateBentPlaneMesh(Vector3 from, Vector3 to, float uvU, float uvV,
+		float sizeX, float sizeY, int texWidth, int texHeight,
+		bool textureMirror, bool invert, float inflate, BendParams bend, Vector3 shapePosition)
+	{
+		var vertices = new List<Vector3>();
+		var normals  = new List<Vector3>();
+		var uvs      = new List<Vector2>();
+		var indices  = new List<int>();
+
+		// Ensure proper ordering
+		float x1 = Math.Min(from.X, to.X);
+		float x2 = Math.Max(from.X, to.X);
+		float y1 = Math.Min(from.Y, to.Y);
+		float y2 = Math.Max(from.Y, to.Y);
+		float z1 = from.Z; // plane is flat on Z – use the Z from 'from' as the plane's Z position
+
+		// Apply inflate (expand X and Y extents; Z is the flat axis so we don't expand it)
+		if (inflate != 0.0f)
+		{
+			x1 -= inflate; x2 += inflate;
+			y1 -= inflate; y2 += inflate;
+		}
+
+		// ── UV setup ──────────────────────────────────────────────────────────
+		// Matches model_shape_generate_plane.gml:
+		//   texsize[X] = width in pixels / texture width
+		//   texsize[Z] = height in pixels / texture height  (GML Z = Godot Y = height)
+		float texU = uvU / texWidth;
+		float texV = uvV / texHeight;
+		float texSizeX = sizeX / texWidth;
+		float texSizeY = sizeY / texHeight; // sizeY = height dimension (Godot Y = Modelbench Z)
+
+		// tex1 = top-left, tex2 = top-right, tex3 = bottom-right, tex4 = bottom-left
+		var tex1 = new Vector2(texU,           texV);
+		var tex2 = new Vector2(texU + texSizeX, texV);
+		var tex3 = new Vector2(texU + texSizeX, texV + texSizeY);
+		var tex4 = new Vector2(texU,            texV + texSizeY);
+
+		if (textureMirror)
+		{
+			(tex1, tex2) = (tex2, tex1);
+			(tex3, tex4) = (tex4, tex3);
+		}
+
+		// ── Bend parameters ───────────────────────────────────────────────────
+		var b = bend;
+
+		// Segment axis in Godot Y-up:
+		//   RIGHT/LEFT  → X (0)  [same as blocks]
+		//   FRONT/BACK/UPPER/LOWER → Y (1)  [GML uses Z=height, Godot Y=height]
+		int segAxis; // 0=X, 1=Y
+		switch (b.Part)
+		{
+			case BendPart.Right: case BendPart.Left:
+				segAxis = 0; break;
+			default: // Front, Back, Upper, Lower
+				segAxis = 1; break;
+		}
+
+		float bendSize   = b.BendSize   / 16.0f;
+		float bendOffset = b.BendOffset / 16.0f;
+
+		float detail  = Math.Max(b.BendSize, 2);
+		float segSize = bendSize / detail;
+
+		bool invAngle = (b.Part == BendPart.Lower || b.Part == BendPart.Back || b.Part == BendPart.Left);
+
+		// Total size along the segment axis
+		float totalSize = (segAxis == 0) ? (x2 - x1) : (y2 - y1);
+
+		// Bend region start/end relative to the shape's local origin
+		float bendStart, bendEnd;
+		if (segAxis == 0)
+		{
+			bendStart = (bendOffset - (shapePosition.X + x1)) - bendSize / 2.0f;
+			bendEnd   = (bendOffset - (shapePosition.X + x1)) + bendSize / 2.0f;
+		}
+		else // Y axis
+		{
+			bendStart = (bendOffset - (shapePosition.Y + y1)) - bendSize / 2.0f;
+			bendEnd   = (bendOffset - (shapePosition.Y + y1)) + bendSize / 2.0f;
+		}
+
+		// ── Starting edge points ──────────────────────────────────────────────
+		// The plane is flat on Z (at z1). Normals point along Z (forward/backward).
+		// For segAxis=X: left edge (x=x1), two points along Y
+		//   GML: p1=(x1,y1,z2), p2=(x1,y1,z1) → Godot: p1=(x1,y2,z1), p2=(x1,y1,z1)
+		// For segAxis=Y: bottom edge (y=y1), two points along X
+		//   GML: p1=(x1,y1,z1), p2=(x2,y1,z1) → Godot: p1=(x1,y1,z1), p2=(x2,y1,z1)
+		Vector3 p1, p2;
+		float texp1; // sliding UV coordinate
+
+		if (segAxis == 0)
+		{
+			// Left edge: p1 = top-left, p2 = bottom-left
+			p1 = new Vector3(x1, y2, z1);
+			p2 = new Vector3(x1, y1, z1);
+			texp1 = tex1.X;
+		}
+		else
+		{
+			// Bottom edge: p1 = bottom-left, p2 = bottom-right
+			p1 = new Vector3(x1, y1, z1);
+			p2 = new Vector3(x2, y1, z1);
+			texp1 = tex3.Y; // bottom V (slides upward as Y increases)
+		}
+
+		// ── Apply initial bend transform to starting edge ─────────────────────
+		float startP;
+		if (bendStart > 0)
+			startP = 0.0f;
+		else if (bendEnd < 0)
+			startP = 1.0f;
+		else
+			startP = 1.0f - bendEnd / bendSize;
+
+		if (invAngle) startP = 1.0f - startP;
+
+		Vector3 startBendVec = BendHelper.GetBendVector(b.Angle, startP);
+		Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition);
+
+		p1 = startMat * p1;
+		p2 = startMat * p2;
+		// Plane normals point along Z (forward = -Z in Godot, backward = +Z)
+		var n1 = (startMat.Basis * Vector3.Forward).Normalized(); // front-face normal (toward -Z)
+		var n2 = (startMat.Basis * Vector3.Back).Normalized();    // back-face normal (toward +Z)
+
+		// ── Segment loop ──────────────────────────────────────────────────────
+		float segPos = 0.0f;
+		while (segPos < totalSize)
+		{
+			// Determine segment size
+			float curSegSize;
+			if (segPos >= bendEnd) // Past bend: one big segment to the end
+				curSegSize = totalSize - segPos;
+			else if (segPos < bendStart) // Before bend: one segment up to bend start
+				curSegSize = Math.Min(totalSize - segPos, bendStart - segPos);
+			else // Within bend: use segSize
+			{
+				curSegSize = segSize;
+				if (segPos == 0.0f)
+				{
+					float fromCoord = (segAxis == 0)
+						? (x1 + shapePosition.X)
+						: (y1 + shapePosition.Y);
+					curSegSize -= (fromCoord - bendStart) % segSize;
+				}
+				curSegSize = Math.Min(totalSize - segPos, curSegSize);
+			}
+
+			segPos += Math.Max(curSegSize, 0.005f);
+
+			// Next edge points
+			Vector3 np1, np2;
+			float ntexp1;
+
+			if (segAxis == 0)
+			{
+				// Right edge at x1+segPos
+				np1 = new Vector3(x1 + segPos, y2, z1);
+				np2 = new Vector3(x1 + segPos, y1, z1);
+				float toff = (segPos / totalSize) * texSizeX * (textureMirror ? -1.0f : 1.0f);
+				ntexp1 = tex1.X + toff;
+			}
+			else
+			{
+				// Top edge at y1+segPos
+				np1 = new Vector3(x1, y1 + segPos, z1);
+				np2 = new Vector3(x2, y1 + segPos, z1);
+				float toff = (segPos / totalSize) * texSizeY;
+				ntexp1 = tex3.Y - toff; // V slides from bottom toward top
+			}
+
+			// Compute bend weight for this segment's far edge
+			float segP;
+			if (segPos < bendStart)
+				segP = 0.0f;
+			else if (segPos >= bendEnd)
+				segP = 1.0f;
+			else
+				segP = 1.0f - (bendEnd - segPos) / bendSize;
+
+			if (invAngle) segP = 1.0f - segP;
+
+			Vector3 segBendVec = BendHelper.GetBendVector(b.Angle, segP);
+			Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition);
+
+			np1 = segMat * np1;
+			np2 = segMat * np2;
+			var nn1 = (segMat.Basis * Vector3.Forward).Normalized();
+			var nn2 = (segMat.Basis * Vector3.Back).Normalized();
+
+			// ── Add quad faces for this segment ───────────────────────────────
+			// Each segment is a quad strip: p1/p2 = near edge, np1/np2 = far edge
+			// For segAxis=X: p1=top-near, p2=bottom-near, np1=top-far, np2=bottom-far
+			// For segAxis=Y: p1=left-near, p2=right-near, np1=left-far, np2=right-far
+			Vector2 t1, t2, t3, t4;
+
+			if (segAxis == 0)
+			{
+				// X-axis: UV slides horizontally (U changes, V stays)
+				// p1=top-left, np1=top-right, np2=bottom-right, p2=bottom-left
+				t1 = new Vector2(texp1,  tex1.Y);
+				t2 = new Vector2(ntexp1, tex1.Y);
+				t3 = new Vector2(ntexp1, tex3.Y);
+				t4 = new Vector2(texp1,  tex3.Y);
+
+				// Front face (normal toward -Z / Vector3.Forward)
+				// GML: vbuffer_add_triangle(p1, np1, np2, t1, t2, t3, ...)
+				//      vbuffer_add_triangle(np2, p2, p1, t3, t4, t1, ...)
+				AddFaceWithUVs(vertices, normals, uvs, indices,
+					p1, np1, np2, p2, n1, nn1, nn1, n1, t1, t2, t3, t4, invert);
+
+				// Back face (normal toward +Z / Vector3.Back)
+				// GML: vbuffer_add_triangle(np1, p1, np2, t2, t1, t3, ...)
+				//      vbuffer_add_triangle(p2, np2, p1, t4, t3, t1, ...)
+				AddFaceWithUVs(vertices, normals, uvs, indices,
+					np1, p1, p2, np2, nn2, n2, n2, nn2, t2, t1, t4, t3, invert);
+			}
+			else
+			{
+				// Y-axis: UV slides vertically (V changes, U stays)
+				// p1=bottom-left, p2=bottom-right, np1=top-left, np2=top-right
+				t1 = new Vector2(tex1.X, ntexp1);
+				t2 = new Vector2(tex2.X, ntexp1);
+				t3 = new Vector2(tex2.X, texp1);
+				t4 = new Vector2(tex1.X, texp1);
+
+				// Front face
+				// GML: vbuffer_add_triangle(np1, np2, p2, t1, t2, t3, ...)
+				//      vbuffer_add_triangle(p2, p1, np1, t3, t4, t1, ...)
+				AddFaceWithUVs(vertices, normals, uvs, indices,
+					np1, np2, p2, p1, nn1, nn1, n1, n1, t1, t2, t3, t4, invert);
+
+				// Back face
+				// GML: vbuffer_add_triangle(np2, np1, p2, t2, t1, t3, ...)
+				//      vbuffer_add_triangle(p1, p2, np1, t4, t3, t1, ...)
+				AddFaceWithUVs(vertices, normals, uvs, indices,
+					np2, np1, p1, p2, nn2, nn2, n2, n2, t2, t1, t4, t3, invert);
+			}
+
+			p1 = np1; p2 = np2;
+			n1 = nn1; n2 = nn2;
+			texp1 = ntexp1;
+		}
+
+		// Build mesh
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
+		arrays[(int)Mesh.ArrayType.Normal] = normals.ToArray();
+		arrays[(int)Mesh.ArrayType.TexUV]  = uvs.ToArray();
+		arrays[(int)Mesh.ArrayType.Index]  = indices.ToArray();
+
+		var arrayMesh = new ArrayMesh();
+		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+
+		return new MeshInstance3D { Mesh = arrayMesh };
+	}
+
 	/// <summary>
 	/// Creates a plane mesh (single face with both front and back for proper two-sided rendering)
 	/// </summary>
