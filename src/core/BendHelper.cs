@@ -303,7 +303,9 @@ public static class BendHelper
 		
 		// Apply shape rotation if present (second matrix multiplication from Modelbench)
 		// Modelbench: mat = matrix_multiply(matrix_build(-pos, rotation, 1), mat)
-		// This applies the shape's rotation BEFORE the bend (rotation * bend order)
+		// This applies the bend first, then the rotation.
+		// Combined: v2 = R_rot * (R_bend * (v - pivot) + pivot) - pivot
+		//            = R_rot*R_bend*v - R_rot*R_bend*pivot + R_rot*pivot - pivot
 		if (shapeRotation != Vector3.Zero)
 		{
 			// Build rotation transform from shape's Euler angles (already in radians, Godot Y-up)
@@ -312,18 +314,13 @@ public static class BendHelper
 			shapeRotTransform = shapeRotTransform.Rotated(Vector3.Right, shapeRotation.X);  // Then X
 			shapeRotTransform = shapeRotTransform.Rotated(Vector3.Forward, shapeRotation.Z); // Then Z
 			
-			// Build the translation to negative pivot: matrix_build(-pos, rotation, 1)
+			// Build the matrix_build(pos, rotation, 1) transform
 			var translateNegPivot = Transform3D.Identity;
-			translateNegPivot.Origin = -pivotPos;
+			translateNegPivot.Origin = pivotPos;
 			
-			// The correct formula for rotation around a pivot combined with bend is:
-			// T(-pivot) * R(rotation) * R(bend) * T(pivot)
-			// This rotates the shape around the pivot BEFORE applying the bend.
-			// Note: In Godot, matrix multiplication is right-to-left, so:
-			// "A * B * v" means "first B, then A" (B applied to v, then A applied to result)
-			// We want: T(pivot) * bend * rotation * T(-pivot)
-			// So the expression is: translateForward * transform * shapeRotTransform * translateNegPivot
-			result = translateForward * transform * shapeRotTransform * translateNegPivot;
+			// The correct formula is: matrix_build(-pos, rotation, 1) * matrix_build(pos, bend, 1)
+			// Which translates to: translate(-pivot) * R(shape) * translate(pivot) * R(bend) * translate(-pivot)
+			result = translateNegPivot * shapeRotTransform * translateForward * transform * translateBack;
 		}
 		
 		return result;
