@@ -235,7 +235,8 @@ public static class BendHelper
 	/// <param name="b">Bend parameters</param>
 	/// <param name="bendVec">Bend angle vector in degrees (Modelbench internal Z-up axes)</param>
 	/// <param name="shapePosition">Shape position in part-local space (Godot units) - unused for zero-rotation shapes</param>
-	public static Transform3D GetBendMatrix(BendParams b, Vector3 bendVec, Vector3 shapePosition)
+	/// <param name="shapeRotation">Shape rotation in radians (Godot Y-up Euler angles) - applied when non-zero</param>
+	public static Transform3D GetBendMatrix(BendParams b, Vector3 bendVec, Vector3 shapePosition, Vector3 shapeRotation = default)
 	{
 		// If no rotation, return identity
 		if (bendVec.X == 0 && bendVec.Y == 0 && bendVec.Z == 0)
@@ -299,6 +300,31 @@ public static class BendHelper
 		
 		// Final transform: translate(pivot) * rotate * translate(-pivot)
 		var result = translateForward * transform * translateBack;
+		
+		// Apply shape rotation if present (second matrix multiplication from Modelbench)
+		// Modelbench: mat = matrix_multiply(matrix_build(-pos, rotation, 1), mat)
+		// This applies the shape's rotation BEFORE the bend (rotation * bend order)
+		if (shapeRotation != Vector3.Zero)
+		{
+			// Build rotation transform from shape's Euler angles (already in radians, Godot Y-up)
+			var shapeRotTransform = Transform3D.Identity;
+			shapeRotTransform = shapeRotTransform.Rotated(Vector3.Up, shapeRotation.Y);      // Y first
+			shapeRotTransform = shapeRotTransform.Rotated(Vector3.Right, shapeRotation.X);  // Then X
+			shapeRotTransform = shapeRotTransform.Rotated(Vector3.Forward, shapeRotation.Z); // Then Z
+			
+			// Build the translation to negative pivot: matrix_build(-pos, rotation, 1)
+			var translateNegPivot = Transform3D.Identity;
+			translateNegPivot.Origin = -pivotPos;
+			
+			// The correct formula for rotation around a pivot combined with bend is:
+			// T(-pivot) * R(rotation) * R(bend) * T(pivot)
+			// This rotates the shape around the pivot BEFORE applying the bend.
+			// Note: In Godot, matrix multiplication is right-to-left, so:
+			// "A * B * v" means "first B, then A" (B applied to v, then A applied to result)
+			// We want: T(pivot) * bend * rotation * T(-pivot)
+			// So the expression is: translateForward * transform * shapeRotTransform * translateNegPivot
+			result = translateForward * transform * shapeRotTransform * translateNegPivot;
+		}
 		
 		return result;
 	}

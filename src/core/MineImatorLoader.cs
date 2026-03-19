@@ -334,10 +334,17 @@ public class MineImatorLoader
 		}
 		
 		// Apply shape rotation if present
+		// Convert from Mine Imator Y-up to Godot Y-up Euler angles:
+		// Mine Imator: X=left/right, Y=up/down, Z=front/back
+		// Godot:      X=left/right, Y=up/down,    Z=front/back
+		// So: godotX = rotX, godotY = rotY, godotZ = -rotZ   (negate Z to match part rotation conversion)
 		Vector3 shapeRotation = Vector3.Zero;
 		if (shape.Rotation != null && shape.Rotation.Length >= 3)
 		{
-			shapeRotation = new Vector3(Mathf.DegToRad(shape.Rotation[0]), Mathf.DegToRad(shape.Rotation[1]), Mathf.DegToRad(shape.Rotation[2]));
+			float rotX = Mathf.DegToRad(shape.Rotation[0]);
+			float rotY = Mathf.DegToRad(shape.Rotation[1]);
+			float rotZ = -Mathf.DegToRad(shape.Rotation[2]); // Negate Z as in part rotation
+			shapeRotation = new Vector3(rotX, rotY, rotZ);
 		}
 		
 		// Apply shape scale if present, then multiply by the accumulated parent scale from the hierarchy
@@ -368,7 +375,7 @@ public class MineImatorLoader
 				{
 					// Bent 3D plane: per-pixel extruded geometry with bend deformation
 					meshInstance = CreateBentExtrudedPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight,
-						texture, shape.TextureMirror, shape.Invert, inflate, effectiveBend.Value, shapePosition);
+						texture, shape.TextureMirror, shape.Invert, inflate, effectiveBend.Value, shapePosition, shapeRotation);
 				}
 				else
 				{
@@ -380,7 +387,7 @@ public class MineImatorLoader
 			{
 				// Bent 2D plane: segmented geometry matching Modelbench's algorithm
 				meshInstance = CreateBentPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight,
-					shape.TextureMirror, shape.Invert, inflate, effectiveBend.Value, shapePosition);
+					shape.TextureMirror, shape.Invert, inflate, effectiveBend.Value, shapePosition, shapeRotation);
 			}
 			else
 			{
@@ -390,14 +397,23 @@ public class MineImatorLoader
 		}
 		else // "block" or default
 		{
-			meshInstance = CreateBlockMesh(partName, shapeIndex, from, to, uvU, uvV, sizeX, sizeY, sizeZ, texWidth, texHeight, shape.TextureMirror, shape.Invert, inflate, effectiveBend, shapePosition);
+			meshInstance = CreateBlockMesh(partName, shapeIndex, from, to, uvU, uvV, sizeX, sizeY, sizeZ, texWidth, texHeight, shape.TextureMirror, shape.Invert, inflate, effectiveBend, shapePosition, shapeRotation);
 		}
 		
 		// Apply shape scale to the mesh instance
+		// NOTE: When bending is applied, the rotation AND position are baked into the mesh vertices via
+		// GetBendMatrix(). The vertices already include T(pivot), so we do NOT set meshInstance.Position
+		// in that case. Only set rotation on mesh instance when NOT bent.
 		if (meshInstance != null)
 		{
-			meshInstance.Position = shapePosition;
-			meshInstance.Rotation = shapeRotation;
+			// When bent, position is baked into vertices (via T(pivot) in GetBendMatrix)
+			// When not bent, position needs to be set normally
+			if (!effectiveBend.HasValue)
+			{
+				meshInstance.Position = shapePosition;
+				meshInstance.Rotation = shapeRotation;
+			}
+			
 			meshInstance.Scale = shapeScale;
 		}
 		
@@ -431,9 +447,10 @@ public class MineImatorLoader
 	/// and each segment is progressively rotated using the Modelbench easing algorithm.
 	/// </summary>
 	/// <param name="shapePosition">The shape's position in part-local space (Godot units), used for bend pivot calculation</param>
+	/// <param name="shapeRotation">The shape's rotation in radians (Godot Y-up Euler angles), applied during bend deformation</param>
 	private MeshInstance3D CreateBlockMesh(string partName, int shapeIndex, Vector3 from, Vector3 to, float uvU, float uvV,
 		float sizeX, float sizeY, float sizeZ, int texWidth, int texHeight,
-		bool textureMirror, bool invert, float inflate = 0.0f, BendParams? bend = null, Vector3 shapePosition = default)
+		bool textureMirror, bool invert, float inflate = 0.0f, BendParams? bend = null, Vector3 shapePosition = default, Vector3 shapeRotation = default)
 	{
 		var vertices = new List<Vector3>();
 		var normals = new List<Vector3>();
@@ -738,7 +755,7 @@ public class MineImatorLoader
 			if (invAngle) startP = 1.0f - startP;
 			
 			Vector3 startBendVec = BendHelper.GetBendVector(b.Angle, startP);
-			Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition);
+			Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition, shapeRotation);
 				
 			p1 = startMat * p1;
 			p2 = startMat * p2;
@@ -890,7 +907,7 @@ public class MineImatorLoader
 				if (invAngle) segP = 1.0f - segP;
 				
 				Vector3 segBendVec = BendHelper.GetBendVector(b.Angle, segP);
-				Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition);
+				Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition, shapeRotation);
 				
 				np1 = segMat * np1;
 				np2 = segMat * np2;
@@ -1036,9 +1053,10 @@ public class MineImatorLoader
 	///   - The plane is always flat on Z (z1 ≈ z2 for a true plane, or thin in Z).
 	/// </summary>
 	/// <param name="shapePosition">Shape position in part-local space (Godot units), used for bend pivot</param>
+	/// <param name="shapeRotation">Shape rotation in radians (Godot Y-up Euler angles), applied during bend deformation</param>
 	private MeshInstance3D CreateBentPlaneMesh(Vector3 from, Vector3 to, float uvU, float uvV,
 		float sizeX, float sizeY, int texWidth, int texHeight,
-		bool textureMirror, bool invert, float inflate, BendParams bend, Vector3 shapePosition)
+		bool textureMirror, bool invert, float inflate, BendParams bend, Vector3 shapePosition, Vector3 shapeRotation = default)
 	{
 		var vertices = new List<Vector3>();
 		var normals  = new List<Vector3>();
@@ -1155,7 +1173,7 @@ public class MineImatorLoader
 		if (invAngle) startP = 1.0f - startP;
 
 		Vector3 startBendVec = BendHelper.GetBendVector(b.Angle, startP);
-		Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition);
+		Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition, shapeRotation);
 
 		p1 = startMat * p1;
 		p2 = startMat * p2;
@@ -1221,7 +1239,7 @@ public class MineImatorLoader
 			if (invAngle) segP = 1.0f - segP;
 
 			Vector3 segBendVec = BendHelper.GetBendVector(b.Angle, segP);
-			Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition);
+			Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition, shapeRotation);
 
 			np1 = segMat * np1;
 			np2 = segMat * np2;
@@ -1309,16 +1327,16 @@ public class MineImatorLoader
 	/// </summary>
 	private MeshInstance3D CreateBentExtrudedPlaneMesh(Vector3 from, Vector3 to, float uvU, float uvV,
 		float sizeX, float sizeY, int texWidth, int texHeight, ImageTexture texture,
-		bool textureMirror, bool invert, float inflate, BendParams bend, Vector3 shapePosition)
+		bool textureMirror, bool invert, float inflate, BendParams bend, Vector3 shapePosition, Vector3 shapeRotation = default)
 	{
 		if (texture == null)
 			return CreateBentPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight,
-				textureMirror, invert, inflate, bend, shapePosition);
+				textureMirror, invert, inflate, bend, shapePosition, shapeRotation);
 
 		var image = texture.GetImage();
 		if (image == null)
 			return CreateBentPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight,
-				textureMirror, invert, inflate, bend, shapePosition);
+				textureMirror, invert, inflate, bend, shapePosition, shapeRotation);
 
 		// ── UV region ─────────────────────────────────────────────────────────
 		int uvStartX = (int)uvU;
@@ -1336,7 +1354,7 @@ public class MineImatorLoader
 
 		if (regionW <= 0 || regionH <= 0)
 			return CreateBentPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight,
-				textureMirror, invert, inflate, bend, shapePosition);
+				textureMirror, invert, inflate, bend, shapePosition, shapeRotation);
 
 		// ── Geometry extents ──────────────────────────────────────────────────
 		float x1 = Math.Min(from.X, to.X);
@@ -1431,7 +1449,7 @@ public class MineImatorLoader
 				if (invAngle) segP = 1.0f - segP;
 
 				Vector3 bendVec = BendHelper.GetBendVector(b.Angle, segP);
-				Transform3D mat = BendHelper.GetBendMatrix(b, bendVec, shapePosition);
+				Transform3D mat = BendHelper.GetBendMatrix(b, bendVec, shapePosition, shapeRotation);
 
 				gridBot[outer, inner] = mat * pBot;
 				gridTop[outer, inner] = mat * pTop;
@@ -1563,7 +1581,7 @@ public class MineImatorLoader
 
 		if (vertices.Count == 0)
 			return CreateBentPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight,
-				textureMirror, invert, inflate, bend, shapePosition);
+				textureMirror, invert, inflate, bend, shapePosition, shapeRotation);
 
 		var arrays = new Godot.Collections.Array();
 		arrays.Resize((int)Mesh.ArrayType.Max);
