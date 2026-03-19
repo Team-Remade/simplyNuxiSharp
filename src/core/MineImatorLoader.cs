@@ -357,17 +357,26 @@ public class MineImatorLoader
 		
 		MeshInstance3D meshInstance;
 		
+		bool planeBent = effectiveBend.HasValue && (
+			effectiveBend.Value.Angle.X != 0 || effectiveBend.Value.Angle.Y != 0 || effectiveBend.Value.Angle.Z != 0);
+		
 		if (shape.Type == "plane")
 		{
-			// Treat 3D planes like items - as extruded planes with per-pixel extrusion
 			if (shape.ThreeD)
 			{
-				// Create an extruded item-like plane with per-pixel hull mesh
-				// (3D planes do not support bending in Modelbench either)
-				meshInstance = CreateExtrudedPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, texture, shape.TextureMirror, shape.Invert, inflate);
+				if (planeBent)
+				{
+					// Bent 3D plane: per-pixel extruded geometry with bend deformation
+					meshInstance = CreateBentExtrudedPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight,
+						texture, shape.TextureMirror, shape.Invert, inflate, effectiveBend.Value, shapePosition);
+				}
+				else
+				{
+					// Regular extruded item-like plane with per-pixel hull mesh
+					meshInstance = CreateExtrudedPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight, texture, shape.TextureMirror, shape.Invert, inflate);
+				}
 			}
-			else if (effectiveBend.HasValue && (
-				effectiveBend.Value.Angle.X != 0 || effectiveBend.Value.Angle.Y != 0 || effectiveBend.Value.Angle.Z != 0))
+			else if (planeBent)
 			{
 				// Bent 2D plane: segmented geometry matching Modelbench's algorithm
 				meshInstance = CreateBentPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight,
@@ -1285,6 +1294,323 @@ public class MineImatorLoader
 		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
 
 		return new MeshInstance3D { Mesh = arrayMesh };
+	}
+
+	/// <summary>
+	/// Creates a bent extruded (3D) plane mesh with per-pixel alpha-based geometry and bend deformation.
+	/// Matches Modelbench's model_shape_generate_plane_3d() algorithm.
+	///
+	/// The algorithm pre-computes a 2D grid of bent vertex positions (one column per pixel along the
+	/// bend axis), then generates up to 6 faces per opaque pixel using those bent positions.
+	///
+	/// Coordinate mapping (Modelbench Z-up → Godot Y-up):
+	///   LEFT/RIGHT  → bend along X: outer=Y, inner=X
+	///   Others      → bend along Y: outer=X, inner=Y
+	/// </summary>
+	private MeshInstance3D CreateBentExtrudedPlaneMesh(Vector3 from, Vector3 to, float uvU, float uvV,
+		float sizeX, float sizeY, int texWidth, int texHeight, ImageTexture texture,
+		bool textureMirror, bool invert, float inflate, BendParams bend, Vector3 shapePosition)
+	{
+		if (texture == null)
+			return CreateBentPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight,
+				textureMirror, invert, inflate, bend, shapePosition);
+
+		var image = texture.GetImage();
+		if (image == null)
+			return CreateBentPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight,
+				textureMirror, invert, inflate, bend, shapePosition);
+
+		// ── UV region ─────────────────────────────────────────────────────────
+		int uvStartX = (int)uvU;
+		int uvStartY = (int)uvV;
+		int uvEndX   = (int)(uvU + sizeX);
+		int uvEndY   = (int)(uvV + sizeY);
+
+		uvStartX = Math.Max(0, Math.Min(uvStartX, texWidth  - 1));
+		uvStartY = Math.Max(0, Math.Min(uvStartY, texHeight - 1));
+		uvEndX   = Math.Max(0, Math.Min(uvEndX,   texWidth));
+		uvEndY   = Math.Max(0, Math.Min(uvEndY,   texHeight));
+
+		int regionW = uvEndX - uvStartX; // pixel columns (X)
+		int regionH = uvEndY - uvStartY; // pixel rows    (Y in texture = height in 3D)
+
+		if (regionW <= 0 || regionH <= 0)
+			return CreateBentPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight,
+				textureMirror, invert, inflate, bend, shapePosition);
+
+		// ── Geometry extents ──────────────────────────────────────────────────
+		float x1 = Math.Min(from.X, to.X);
+		float x2 = Math.Max(from.X, to.X);
+		float y1 = Math.Min(from.Y, to.Y);
+		float y2 = Math.Max(from.Y, to.Y);
+		float z1 = from.Z; // plane is flat on Z
+
+		// Pixel scale in Godot units
+		float pixScaleX = (x2 - x1) / regionW;
+		float pixScaleY = (y2 - y1) / regionH;
+
+		// Extrusion half-thickness (1 pixel = 1/16 block)
+		const float thickness = 1.0f / 16.0f;
+		float halfT = thickness / 2.0f + inflate;
+
+		// ── Bend parameters ───────────────────────────────────────────────────
+		var b = bend;
+
+		// Segment axis in Godot Y-up:
+		//   LEFT/RIGHT  → inner=X (0), outer=Y (1)
+		//   Others      → inner=Y (1), outer=X (0)
+		bool bendAlongX = (b.Part == BendPart.Left || b.Part == BendPart.Right);
+		// innerAxis = axis along which bend is applied (columns)
+		// outerAxis = axis perpendicular to bend (rows)
+
+		float bendSize   = b.BendSize   / 16.0f;
+		float bendOffset = b.BendOffset / 16.0f;
+		bool invAngle = (b.Part == BendPart.Lower || b.Part == BendPart.Back || b.Part == BendPart.Left);
+
+		// Bend region start/end
+		float bendStart, bendEnd;
+		if (bendAlongX)
+		{
+			bendStart = (bendOffset - (shapePosition.X + x1)) - bendSize / 2.0f;
+			bendEnd   = (bendOffset - (shapePosition.X + x1)) + bendSize / 2.0f;
+		}
+		else
+		{
+			bendStart = (bendOffset - (shapePosition.Y + y1)) - bendSize / 2.0f;
+			bendEnd   = (bendOffset - (shapePosition.Y + y1)) + bendSize / 2.0f;
+		}
+
+		// ── Pre-compute bent vertex grid ──────────────────────────────────────
+		// Grid dimensions: (outerCount+1) × (innerCount+1) vertex positions
+		// Each grid point has a "bottom" (y1) and "top" (y2) position in 3D.
+		// For bendAlongX: outer=Y rows (regionH+1), inner=X cols (regionW+1)
+		// For bendAlongY: outer=X cols (regionW+1), inner=Y rows (regionH+1)
+		int outerCount = bendAlongX ? regionH : regionW;
+		int innerCount = bendAlongX ? regionW : regionH;
+
+		// gridBot[outer, inner] = bottom vertex (y1 side)
+		// gridTop[outer, inner] = top vertex    (y2 side)
+		var gridBot = new Vector3[outerCount + 1, innerCount + 1];
+		var gridTop = new Vector3[outerCount + 1, innerCount + 1];
+
+		for (int outer = 0; outer <= outerCount; outer++)
+		{
+			for (int inner = 0; inner <= innerCount; inner++)
+			{
+				Vector3 pBot, pTop;
+				if (bendAlongX)
+				{
+					// inner=X, outer=Y
+					float px = x1 + inner * pixScaleX;
+					float pyBot = y1 + outer * pixScaleY;
+					float pyTop = y1 + outer * pixScaleY; // same Y for both (plane is flat on Z)
+					// "bot" = z1-halfT side, "top" = z1+halfT side
+					pBot = new Vector3(px, pyBot, z1 - halfT);
+					pTop = new Vector3(px, pyTop, z1 + halfT);
+				}
+				else
+				{
+					// inner=Y, outer=X
+					float px = x1 + outer * pixScaleX;
+					float pyBot = y1 + inner * pixScaleY;
+					float pyTop = y1 + inner * pixScaleY;
+					pBot = new Vector3(px, pyBot, z1 - halfT);
+					pTop = new Vector3(px, pyTop, z1 + halfT);
+				}
+
+				// Apply bend transform based on inner position (along bend axis)
+				float innerPos = inner * (bendAlongX ? pixScaleX : pixScaleY);
+				float segP;
+				if (innerPos < bendStart)
+					segP = 0.0f;
+				else if (innerPos >= bendEnd)
+					segP = 1.0f;
+				else
+					segP = 1.0f - (bendEnd - innerPos) / bendSize;
+
+				if (invAngle) segP = 1.0f - segP;
+
+				Vector3 bendVec = BendHelper.GetBendVector(b.Angle, segP);
+				Transform3D mat = BendHelper.GetBendMatrix(b, bendVec, shapePosition);
+
+				gridBot[outer, inner] = mat * pBot;
+				gridTop[outer, inner] = mat * pTop;
+			}
+		}
+
+		// ── Generate per-pixel faces ──────────────────────────────────────────
+		var vertices = new List<Vector3>();
+		var normals  = new List<Vector3>();
+		var uvs      = new List<Vector2>();
+		var indices  = new List<int>();
+
+		float texNormW = 1.0f / texWidth;
+		float texNormH = 1.0f / texHeight;
+		float ptexSizeX = (1.0f - 1.0f / 256.0f) / (texWidth  / (sizeX / regionW));
+		float ptexSizeY = (1.0f - 1.0f / 256.0f) / (texHeight / (sizeY / regionH));
+
+		for (int outer = 0; outer < outerCount; outer++)
+		{
+			for (int inner = 0; inner < innerCount; inner++)
+			{
+				// Map (outer, inner) to texture pixel (ax, ay)
+				int ax, ay;
+				if (bendAlongX)
+				{
+					// inner=X, outer=Y; texture row 0 = top of image = top of 3D (high Y)
+					ax = textureMirror ? (regionW - 1 - inner) : inner;
+					ay = regionH - 1 - outer; // flip Y: outer=0 → bottom of 3D → last row of texture
+				}
+				else
+				{
+					// inner=Y, outer=X
+					ax = textureMirror ? (regionW - 1 - outer) : outer;
+					ay = regionH - 1 - inner;
+				}
+
+				int texX = uvStartX + ax;
+				int texY = uvStartY + ay;
+
+				if (texX >= image.GetWidth() || texY >= image.GetHeight()) continue;
+				var color = image.GetPixel(texX, texY);
+				if (color.A <= 0.5f) continue;
+
+				// UV for this pixel
+				float uvX = (texX + 0.5f) * texNormW;
+				float uvY = (texY + 0.5f) * texNormH;
+				var pixUV = new Vector2(uvX, uvY);
+
+				// The 8 corners of this pixel's bent box
+				// p1..p4 = near edge (inner), np1..np4 = far edge (inner+1)
+				// Bot = z1-halfT side, Top = z1+halfT side
+				Vector3 p1, p2, p3, p4, np1, np2, np3, np4;
+
+				if (bendAlongX)
+				{
+					// seginneraxis=X in GML
+					// p1=gridBot[outer+1, inner],  p2=gridTop[outer+1, inner]
+					// p3=gridTop[outer,   inner],  p4=gridBot[outer,   inner]
+					// np1=gridBot[outer+1, inner+1], np2=gridTop[outer+1, inner+1]
+					// np3=gridTop[outer,   inner+1], np4=gridBot[outer,   inner+1]
+					p1  = gridBot[outer + 1, inner];
+					p2  = gridTop[outer + 1, inner];
+					p3  = gridTop[outer,     inner];
+					p4  = gridBot[outer,     inner];
+					np1 = gridBot[outer + 1, inner + 1];
+					np2 = gridTop[outer + 1, inner + 1];
+					np3 = gridTop[outer,     inner + 1];
+					np4 = gridBot[outer,     inner + 1];
+				}
+				else
+				{
+					// seginneraxis=Z in GML (→ Y in Godot)
+					// p1=gridBot[outer,   inner],  p2=gridBot[outer+1, inner]
+					// p3=gridTop[outer+1, inner],  p4=gridTop[outer,   inner]
+					// np1=gridBot[outer,   inner+1], np2=gridBot[outer+1, inner+1]
+					// np3=gridTop[outer+1, inner+1], np4=gridTop[outer,   inner+1]
+					p1  = gridBot[outer,     inner];
+					p2  = gridBot[outer + 1, inner];
+					p3  = gridTop[outer + 1, inner];
+					p4  = gridTop[outer,     inner];
+					np1 = gridBot[outer,     inner + 1];
+					np2 = gridBot[outer + 1, inner + 1];
+					np3 = gridTop[outer + 1, inner + 1];
+					np4 = gridTop[outer,     inner + 1];
+				}
+
+				// Determine which edge faces to add (based on adjacent pixel alpha)
+				bool leftEmpty   = (ax == 0)           || image.GetPixel(uvStartX + ax - 1, texY).A <= 0.5f;
+				bool rightEmpty  = (ax == regionW - 1) || image.GetPixel(uvStartX + ax + 1, texY).A <= 0.5f;
+				bool topEmpty    = (ay == 0)           || image.GetPixel(texX, uvStartY + ay - 1).A <= 0.5f;
+				bool bottomEmpty = (ay == regionH - 1) || image.GetPixel(texX, uvStartY + ay + 1).A <= 0.5f;
+
+				// In GML: wface = left in texture, eface = right in texture
+				// When mirrored, east/west are swapped
+				bool wface = textureMirror ? rightEmpty : leftEmpty;
+				bool eface = textureMirror ? leftEmpty  : rightEmpty;
+				bool aface = topEmpty;    // "above" in texture = top of image = high Y in 3D
+				bool bface = bottomEmpty; // "below" in texture = bottom of image = low Y in 3D
+
+				// NOTE: GameMaker uses a left-handed coordinate system; Godot uses right-handed.
+				// This means the winding order is reversed: GML CCW → Godot CW (back face),
+				// so we reverse all vertex orders from the GML to get correct Godot front faces.
+				if (bendAlongX)
+				{
+					// seginneraxis=X in GML (reversed for Godot right-hand coords):
+					if (eface) AddSimpleQuad(vertices, normals, uvs, indices, np3, np4, np1, np2, pixUV, invert);
+					if (wface) AddSimpleQuad(vertices, normals, uvs, indices, p4,  p3,  p2,  p1,  pixUV, invert);
+					// South (front, Z+ = gridTop): reversed from GML p2,np2,np3,p3
+					AddSimpleQuad(vertices, normals, uvs, indices, p3,  np3, np2, p2,  pixUV, invert);
+					// North (back, Z- = gridBot): reversed from GML np1,p1,p4,np4
+					AddSimpleQuad(vertices, normals, uvs, indices, np4, p4,  p1,  np1, pixUV, invert);
+					if (aface) AddSimpleQuad(vertices, normals, uvs, indices, p2,  np2, np1, p1,  pixUV, invert);
+					if (bface) AddSimpleQuad(vertices, normals, uvs, indices, p4,  np4, np3, p3,  pixUV, invert);
+				}
+				else
+				{
+					// seginneraxis=Z (→Y in Godot) in GML (reversed for Godot right-hand coords):
+					if (eface) AddSimpleQuad(vertices, normals, uvs, indices, p3,  p2,  np2, np3, pixUV, invert);
+					if (wface) AddSimpleQuad(vertices, normals, uvs, indices, p1,  p4,  np4, np1, pixUV, invert);
+					// South (front, Z+ = gridTop): reversed from GML np4,np3,p3,p4
+					AddSimpleQuad(vertices, normals, uvs, indices, p4,  p3,  np3, np4, pixUV, invert);
+					// North (back, Z- = gridBot): reversed from GML np2,np1,p1,p2
+					AddSimpleQuad(vertices, normals, uvs, indices, p2,  p1,  np1, np2, pixUV, invert);
+					if (aface) AddSimpleQuad(vertices, normals, uvs, indices, np4, np3, np2, np1, pixUV, invert);
+					if (bface) AddSimpleQuad(vertices, normals, uvs, indices, p1,  p2,  p3,  p4,  pixUV, invert);
+				}
+			}
+		}
+
+		if (vertices.Count == 0)
+			return CreateBentPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight,
+				textureMirror, invert, inflate, bend, shapePosition);
+
+		var arrays = new Godot.Collections.Array();
+		arrays.Resize((int)Mesh.ArrayType.Max);
+		arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
+		arrays[(int)Mesh.ArrayType.Normal] = normals.ToArray();
+		arrays[(int)Mesh.ArrayType.TexUV]  = uvs.ToArray();
+		arrays[(int)Mesh.ArrayType.Index]  = indices.ToArray();
+
+		var arrayMesh = new ArrayMesh();
+		arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+		return new MeshInstance3D { Mesh = arrayMesh };
+	}
+
+	/// <summary>
+	/// Adds a simple quad (4 vertices, 2 triangles) with a single UV coordinate for all vertices.
+	/// Used by CreateBentExtrudedPlaneMesh for per-pixel face generation.
+	/// Uses the same winding convention as AddFaceWithUVs (indices 0,2,1 and 0,3,2 for normal,
+	/// reversed when invert=true).
+	/// The normal is computed from the cross product of edges (v2-v0) × (v1-v0).
+	/// </summary>
+	private void AddSimpleQuad(List<Vector3> vertices, List<Vector3> normals, List<Vector2> uvs,
+		List<int> indices, Vector3 v0, Vector3 v1, Vector3 v2, Vector3 v3, Vector2 uv, bool invert)
+	{
+		// Compute face normal matching the winding convention used by AddFaceWithUVs.
+		// Indices 0,2,1 means the rendered triangle is v0,v2,v1.
+		// For that winding, the outward normal = (v1-v0) × (v2-v0) (negated from the triangle order).
+		var edge1 = v1 - v0;
+		var edge2 = v2 - v0;
+		var normal = edge1.Cross(edge2).Normalized();
+		if (normal == Vector3.Zero) normal = Vector3.Up;
+
+		int baseVertex = vertices.Count;
+		vertices.Add(v0); vertices.Add(v1); vertices.Add(v2); vertices.Add(v3);
+		normals.Add(normal); normals.Add(normal); normals.Add(normal); normals.Add(normal);
+		uvs.Add(uv); uvs.Add(uv); uvs.Add(uv); uvs.Add(uv);
+
+		// Match AddFaceWithUVs winding: 0,2,1 and 0,3,2 (normal), 0,1,2 and 0,2,3 (inverted)
+		if (invert)
+		{
+			indices.Add(baseVertex + 0); indices.Add(baseVertex + 1); indices.Add(baseVertex + 2);
+			indices.Add(baseVertex + 0); indices.Add(baseVertex + 2); indices.Add(baseVertex + 3);
+		}
+		else
+		{
+			indices.Add(baseVertex + 0); indices.Add(baseVertex + 2); indices.Add(baseVertex + 1);
+			indices.Add(baseVertex + 0); indices.Add(baseVertex + 3); indices.Add(baseVertex + 2);
+		}
 	}
 
 	/// <summary>
