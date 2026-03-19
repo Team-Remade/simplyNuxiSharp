@@ -260,15 +260,22 @@ public static class BendHelper
 		GD.Print($"  godotX: {godotX}, godotY: {godotY}, godotZ: {godotZ}");
 		
 		// Build rotation from bend angles (in degrees -> radians).
-		// Use Godot's Transform3D with Euler angles in YXZ order (default for matrix_build).
-		// The euler order in Godot is YXZ: rotation around Y first, then X, then Z.
-		Vector3 eulerDegrees = new Vector3(godotY, godotX, godotZ);
-		GD.Print($"  eulerDegrees: {eulerDegrees}");
+		// Modelbench's matrix_build(pos, rotX, rotY, rotZ, scale) applies rotations in YXZ order.
+		// The bendVec contains (Modelbench X rot, Modelbench Y rot, Modelbench Z rot).
+		// In Godot Y-up:
+		//   - Modelbench X (left/right) -> Godot X axis
+		//   - Modelbench Y (front/back in Z-up) -> Godot Z axis
+		//   - Modelbench Z (up/down in Z-up) -> Godot Y axis
+		// So bendVec = (rotX, rotY, rotZ) becomes Godot euler = (godotY, godotX, godotZ)
+		// But the rotations are applied as: Y first, then X, then Z.
+		Vector3 godotEuler = new Vector3(godotY, godotX, godotZ);
+		GD.Print($"  godotEuler (YXZ order): {godotEuler}");
 		
+		// Apply rotations in YXZ order to match matrix_build
 		var transform = Transform3D.Identity;
-		transform = transform.Rotated(Vector3.Up, Mathf.DegToRad(eulerDegrees.X));
-		transform = transform.Rotated(Vector3.Right, Mathf.DegToRad(eulerDegrees.Y));
-		transform = transform.Rotated(Vector3.Back, Mathf.DegToRad(eulerDegrees.Z));
+		transform = transform.Rotated(Vector3.Up, Mathf.DegToRad(godotEuler.X));   // Y first
+		transform = transform.Rotated(Vector3.Right, Mathf.DegToRad(godotEuler.Y)); // Then X
+		transform = transform.Rotated(Vector3.Forward, Mathf.DegToRad(godotEuler.Z));  // Then Z
 		
 		GD.Print($"  Rotation Basis:\n{transform.Basis}");
 		
@@ -298,7 +305,7 @@ public static class BendHelper
 		
 		GD.Print($"  pivotPos: {pivotPos}");
 		
-		// Apply the transformation: translate to pivot, rotate, translate back
+		// Apply the transformation: translate(pivot) * rotate * translate(-pivot)
 		var translateBack = Transform3D.Identity;
 		translateBack.Origin = -pivotPos;
 		var translateForward = Transform3D.Identity;
@@ -319,12 +326,22 @@ public static class BendHelper
 	/// </summary>
 	public static float EaseInOutQuint(float t)
 	{
+		float xx2 = t * 2.0f;
 		
-		if (t < 1f)
-			return 0.5f * t * t * t * t * t;
+		if (t <= 0.0f)
+			return 0.0f;
+		if (t >= 1.0f)
+			return 1.0f;
+		
+		if (xx2 < 1.0f)
+		{
+			// Ease-in for the first half: 1/2 * (2t)^5
+			return 0.5f * xx2 * xx2 * xx2 * xx2 * xx2;
+		}
 		else
 		{
-			return 0.5f * ((t - 2) * (t - 2) * (t - 2) * (t - 2) * (t - 2) + 2);
+			// Ease-out for the second half: 1/2 * ((2t-2)^5 + 2)
+			return 0.5f * ((xx2 - 2.0f) * (xx2 - 2.0f) * (xx2 - 2.0f) * (xx2 - 2.0f) * (xx2 - 2.0f) + 2.0f);
 		}
 	}
 	

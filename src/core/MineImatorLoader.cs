@@ -308,6 +308,7 @@ public class MineImatorLoader
 		float uvV = shape.Uv?[1] ?? 0;
 		
 		// Convert coordinates from pixels to blocks (divide by 16)
+		// JSON uses Y-up (Y=height, Z=depth), same as Godot
 		Vector3 from = new Vector3(
 			shape.From[0] / 16.0f,
 			shape.From[1] / 16.0f,
@@ -319,6 +320,10 @@ public class MineImatorLoader
 			shape.To[1] / 16.0f,
 			shape.To[2] / 16.0f
 		);
+		
+		// DEBUG: Print raw shape coordinates
+		GD.Print($"[MineImatorLoader] Shape bounds (pixels): from=({shape.From[0]}, {shape.From[1]}, {shape.From[2]}) to=({shape.To[0]}, {shape.To[1]}, {shape.To[2]})");
+		GD.Print($"[MineImatorLoader] Shape bounds (Godot): from={from} to={to}");
 		
 		// Calculate size in pixels for UV mapping
 		float sizeX = Math.Abs(shape.To[0] - shape.From[0]);
@@ -726,7 +731,7 @@ public class MineImatorLoader
 			
 			Vector3 startBendVec = BendHelper.GetBendVector(b.Angle, startP);
 			GD.Print($"  startBendVec: {startBendVec}");
-				Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition);
+			Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition);
 				
 				GD.Print($"  startMat transform applied to vertices:");
 				GD.Print($"    p1: {p1} -> {startMat * p1}");
@@ -818,6 +823,12 @@ public class MineImatorLoader
 				Vector3 nn1, nn2, nn3, nn4;
 				float ntexpSide1, ntexpSide2, ntexpSide3;
 				
+				// DEBUG: Print raw segment position before transform
+				if (segPos < 0.1f || Math.Abs(segPos - bendSize * 0.5f) < 0.01f)
+				{
+					GD.Print($"[MineImatorLoader] SEG RAW: segAxis={segAxis} segPos={segPos}");
+				}
+				
 				switch (segAxis)
 				{
 					case 0: // X axis
@@ -883,6 +894,13 @@ public class MineImatorLoader
 				
 				Vector3 segBendVec = BendHelper.GetBendVector(b.Angle, segP);
 					Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition);
+				
+				// DEBUG: Print segment-specific bend data for comparison with Modelbench
+				if (segPos < 0.1f || Math.Abs(segPos - bendSize * 0.5f) < 0.01f)
+				{
+					GD.Print($"[MineImatorLoader] SEG: segPos={segPos:F6} segP={segP:F6} segBendVec={segBendVec}");
+					GD.Print($"[MineImatorLoader] SEG: np1={np1} np2={np2} np3={np3} np4={np4}");
+				}
 				
 				np1 = segMat * np1;
 				np2 = segMat * np2;
@@ -988,6 +1006,27 @@ public class MineImatorLoader
 				p1 = np1; p2 = np2; p3 = np3; p4 = np4;
 				n1 = nn1; n2 = nn2; n3 = nn3; n4 = nn4;
 			}
+		}
+		
+		// DEBUG: Output vertex data for comparison with Modelbench
+		if (bend.HasValue && (bend.Value.Angle.X != 0 || bend.Value.Angle.Y != 0 || bend.Value.Angle.Z != 0))
+		{
+			GD.Print($"[MineImatorLoader] === BENT BLOCK DEBUG ===");
+			GD.Print($"[MineImatorLoader] Part: {partName}, Shape: {shapeIndex}");
+			GD.Print($"[MineImatorLoader] BendParams: Angle=({bend.Value.Angle.X}, {bend.Value.Angle.Y}, {bend.Value.Angle.Z}), Offset={bend.Value.BendOffset}, Size={bend.Value.BendSize}, Part={bend.Value.Part}");
+			GD.Print($"[MineImatorLoader] AxisX={bend.Value.AxisX}, AxisY={bend.Value.AxisY}, AxisZ={bend.Value.AxisZ}");
+			GD.Print($"[MineImatorLoader] ShapePosition: {shapePosition}");
+			GD.Print($"[MineImatorLoader] Vertex count: {vertices.Count}, Index count: {indices.Count}");
+			
+			// Output first few vertices for comparison
+			int maxVertsToPrint = Math.Min(vertices.Count, 30);
+			for (int i = 0; i < maxVertsToPrint; i++)
+			{
+				GD.Print($"[MineImatorLoader] V{i}: ({vertices[i].X:F6}, {vertices[i].Y:F6}, {vertices[i].Z:F6}) N: ({normals[i].X:F6}, {normals[i].Y:F6}, {normals[i].Z:F6}) UV: ({uvs[i].X:F6}, {uvs[i].Y:F6})");
+			}
+			if (vertices.Count > 30)
+				GD.Print($"[MineImatorLoader] ... and {vertices.Count - 30} more vertices");
+			GD.Print("[MineImatorLoader] ========================");
 		}
 		
 		// Create the mesh
