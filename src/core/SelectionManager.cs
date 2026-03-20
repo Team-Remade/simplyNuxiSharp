@@ -1,6 +1,7 @@
 ﻿using Gizmo3DPlugin;
 using Godot;
 using Godot.Collections;
+using simplyRemadeNuxi.core.commands;
 
 namespace simplyRemadeNuxi.core;
 
@@ -21,6 +22,10 @@ public partial class SelectionManager : Node
     
     // Track if we're syncing selection (to prevent auto-keyframing during selection changes)
     private bool _isSyncingSelection = false;
+
+    // Pre-transform state captured when the gizmo starts a drag (for undo/redo)
+    private System.Collections.Generic.Dictionary<SceneObject, (Vector3 pos, Vector3 rot, Vector3 scale)>
+        _preGizmoTransforms = new();
     
     [Export] public ShaderMaterial SelectionMaterial;
 
@@ -32,14 +37,29 @@ public partial class SelectionManager : Node
     private void OnGizmoTransformBegin(int mode)
     {
         IsGizmoEditing = true;
+
+        // Capture pre-transform state for all selected objects
+        _preGizmoTransforms.Clear();
+        foreach (var obj in SelectedObjects)
+        {
+            Vector3 pos, rot;
+            if (obj is BoneSceneObject boneObj)
+            {
+                pos = boneObj.TargetPosition;
+                rot = boneObj.TargetRotation;
+            }
+            else
+            {
+                pos = obj.LocalPosition;
+                rot = obj.LocalRotation;
+            }
+            _preGizmoTransforms[obj] = (pos, rot, obj.LocalScale);
+        }
     }
     
     private void OnGizmoTransformEnd(int mode, int plane)
     {
     	IsGizmoEditing = false;
-    	
-    	// Don't auto-keyframe if we're just syncing the selection (not actually transforming)
-    	if (_isSyncingSelection) return;
     	
     	// Any gizmo manipulation is a scene change → mark the project dirty
     	ProjectManager.MarkDirty();
@@ -52,6 +72,41 @@ public partial class SelectionManager : Node
     			boneObj.OnGizmoTransformEnd();
     		}
     	}
+
+    	// Record undo commands for each transformed object
+    	if (EditorCommandHistory.Instance != null)
+    	{
+    		foreach (var obj in SelectedObjects)
+    		{
+    			if (!_preGizmoTransforms.TryGetValue(obj, out var pre)) continue;
+
+    			Vector3 newPos, newRot;
+    			if (obj is BoneSceneObject boneObj2)
+    			{
+    				newPos = boneObj2.TargetPosition;
+    				newRot = boneObj2.TargetRotation;
+    			}
+    			else
+    			{
+    				// Read from actual Node3D transform (not cached SceneObject properties)
+    				// because Gizmo3D modifies the Node3D directly, not through SceneObject setters
+    				newPos = obj.Transform.Origin;
+    				newRot = obj.Rotation;
+    			}
+    			var newScale = obj.Scale;
+
+    			if (newPos != pre.pos || newRot != pre.rot || newScale != pre.scale)
+    			{
+    				EditorCommandHistory.Instance.PushWithoutExecute(
+    					new TransformCommand(obj, pre.pos, pre.rot, pre.scale,
+    						newPos, newRot, newScale, "Gizmo Transform"));
+    			}
+    		}
+    	}
+    	_preGizmoTransforms.Clear();
+
+        // Don't auto-keyframe if we're just syncing the selection (not actually transforming)
+    	if (_isSyncingSelection) return;
     	
     	// Auto-keyframe affected properties when gizmo manipulation ends
     	if (TimelinePanel.Instance == null || SelectedObjects.Count == 0) return;

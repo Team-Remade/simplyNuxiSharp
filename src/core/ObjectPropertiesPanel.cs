@@ -1,10 +1,14 @@
 ﻿using Godot;
 using System;
+using simplyRemadeNuxi.core.commands;
 
 namespace simplyRemadeNuxi.core;
 
 public partial class ObjectPropertiesPanel : Panel
 {
+	/// <summary>Singleton reference set in <see cref="_Ready"/>.</summary>
+	public static ObjectPropertiesPanel Instance { get; private set; }
+
 	private VBoxContainer _vboxContainer;
 	private Label _objectNameLabel;
 	private CheckBox _visibilityCheckbox;
@@ -49,10 +53,34 @@ public partial class ObjectPropertiesPanel : Panel
 	private Vector3 _originalScale = Vector3.One;
 	private Vector3 _originalPivotOffset = new Vector3(0, -0.5f, 0);
 
+	// Pre-edit state for transform undo/redo.
+	// Captured when the object is selected; updated after each recorded command.
+	private Vector3 _preEditPosition = Vector3.Zero;
+	private Vector3 _preEditRotation = Vector3.Zero;
+	private Vector3 _preEditScale = Vector3.One;
+	private bool _suppressUndoRecord = false;
+
+	// Pre-edit state for light property spinboxes
+	private float _preEditLightEnergy;
+	private float _preEditLightRange;
+	private float _preEditLightIndirectEnergy;
+	private float _preEditLightSpecular;
+	private Godot.Color _preEditLightColor;
+
 	public override void _Ready()
 	{
+		Instance = this;
 		SetupUi();
 		SelectionManager.Instance.SelectionChanged += OnSelectionChanged;
+	}
+
+	/// <summary>
+	/// Re-reads the current object's values and updates all UI controls.
+	/// Called by undo/redo commands after they apply a transform.
+	/// </summary>
+	public void RefreshFromObject()
+	{
+		UpdateUiFromObject();
 	}
 
 	public override void _ExitTree()
@@ -147,9 +175,9 @@ public partial class ObjectPropertiesPanel : Panel
 		_inheritPositionCheckbox.Toggled += OnInheritPositionChanged;
 		inheritPositionRow.AddChild(_inheritPositionCheckbox);
 
-		_positionX = CreateSpinBoxRow(posContainer, "X:", OnPositionChanged);
-		_positionY = CreateSpinBoxRow(posContainer, "Y:", OnPositionChanged);
-		_positionZ = CreateSpinBoxRow(posContainer, "Z:", OnPositionChanged);
+		_positionX = CreateSpinBoxRow(posContainer, "X:", OnPositionChanged, OnTransformEditBegin, OnTransformEditEnd);
+		_positionY = CreateSpinBoxRow(posContainer, "Y:", OnPositionChanged, OnTransformEditBegin, OnTransformEditEnd);
+		_positionZ = CreateSpinBoxRow(posContainer, "Z:", OnPositionChanged, OnTransformEditBegin, OnTransformEditEnd);
 
 		// Rotation section with toggle arrow
 		_rotationSection = new CollapsibleSection("Rotation (degrees)");
@@ -174,9 +202,9 @@ public partial class ObjectPropertiesPanel : Panel
 		_inheritRotationCheckbox.Toggled += OnInheritRotationChanged;
 		inheritRotationRow.AddChild(_inheritRotationCheckbox);
 
-		_rotationX = CreateSpinBoxRow(rotContainer, "X:", OnRotationChanged);
-		_rotationY = CreateSpinBoxRow(rotContainer, "Y:", OnRotationChanged);
-		_rotationZ = CreateSpinBoxRow(rotContainer, "Z:", OnRotationChanged);
+		_rotationX = CreateSpinBoxRow(rotContainer, "X:", OnRotationChanged, OnTransformEditBegin, OnTransformEditEnd);
+		_rotationY = CreateSpinBoxRow(rotContainer, "Y:", OnRotationChanged, OnTransformEditBegin, OnTransformEditEnd);
+		_rotationZ = CreateSpinBoxRow(rotContainer, "Z:", OnRotationChanged, OnTransformEditBegin, OnTransformEditEnd);
 
 		// Scale section with toggle arrow
 		_scaleSection = new CollapsibleSection("Scale");
@@ -201,9 +229,9 @@ public partial class ObjectPropertiesPanel : Panel
 		_inheritScaleCheckbox.Toggled += OnInheritScaleChanged;
 		inheritScaleRow.AddChild(_inheritScaleCheckbox);
 
-		_scaleX = CreateSpinBoxRow(scaleContainer, "X:", OnScaleChanged);
-		_scaleY = CreateSpinBoxRow(scaleContainer, "Y:", OnScaleChanged);
-		_scaleZ = CreateSpinBoxRow(scaleContainer, "Z:", OnScaleChanged);
+		_scaleX = CreateSpinBoxRow(scaleContainer, "X:", OnScaleChanged, OnTransformEditBegin, OnTransformEditEnd);
+		_scaleY = CreateSpinBoxRow(scaleContainer, "Y:", OnScaleChanged, OnTransformEditBegin, OnTransformEditEnd);
+		_scaleZ = CreateSpinBoxRow(scaleContainer, "Z:", OnScaleChanged, OnTransformEditBegin, OnTransformEditEnd);
 
 		// Pivot Offset section with toggle arrow (non-animated property)
 		_pivotOffsetSection = new CollapsibleSection("Pivot Offset");
@@ -316,6 +344,26 @@ public partial class ObjectPropertiesPanel : Panel
 				AutoKeyframe("light.color.b");
 			}
 		};
+		// Capture pre-edit color when popup opens; record undo when it closes
+		lightColorPicker2.Ready += () =>
+		{
+			lightColorPicker2.GetPopup().AboutToPopup += () =>
+				_preEditLightColor = lightColorPicker2.Color;
+			lightColorPicker2.GetPopup().PopupHide += () =>
+			{
+				var pre = _preEditLightColor;
+				var cur = lightColorPicker2.Color;
+				if (pre == cur || EditorCommandHistory.Instance == null) return;
+				EditorCommandHistory.Instance.PushWithoutExecute(
+					new PropertyChangeCommand<Godot.Color>(
+						"Change Light Color", pre, cur,
+						v =>
+						{
+							if (_currentObject is LightSceneObject lo2) lo2.LightColor = v;
+							_lightColorPicker2.Color = v;
+						}));
+			};
+		};
 		lightColorRow.AddChild(lightColorPicker2);
 		// Store reference so we can update it
 		_lightColorPicker2 = lightColorPicker2;
@@ -337,6 +385,10 @@ public partial class ObjectPropertiesPanel : Panel
 		_lightEnergySpinBox.TooltipText = "Light brightness/intensity";
 		_lightEnergySpinBox.ValueChanged += OnLightEnergyChanged;
 		energyRow.AddChild(_lightEnergySpinBox);
+		HookLightSpinBoxUndo(_lightEnergySpinBox,
+			() => _preEditLightEnergy, v => _preEditLightEnergy = v,
+			"Change Light Energy",
+			v => { if (_currentObject is LightSceneObject lo) lo.LightEnergy = v; });
 
 		// Range row
 		var rangeRow = new HBoxContainer();
@@ -355,6 +407,10 @@ public partial class ObjectPropertiesPanel : Panel
 		_lightRangeSpinBox.TooltipText = "Radius of the light's influence";
 		_lightRangeSpinBox.ValueChanged += OnLightRangeChanged;
 		rangeRow.AddChild(_lightRangeSpinBox);
+		HookLightSpinBoxUndo(_lightRangeSpinBox,
+			() => _preEditLightRange, v => _preEditLightRange = v,
+			"Change Light Range",
+			v => { if (_currentObject is LightSceneObject lo) lo.LightRange = v; });
 
 		// Indirect Energy row
 		var indirectRow = new HBoxContainer();
@@ -373,6 +429,10 @@ public partial class ObjectPropertiesPanel : Panel
 		_lightIndirectEnergySpinBox.TooltipText = "Contribution to global illumination";
 		_lightIndirectEnergySpinBox.ValueChanged += OnLightIndirectEnergyChanged;
 		indirectRow.AddChild(_lightIndirectEnergySpinBox);
+		HookLightSpinBoxUndo(_lightIndirectEnergySpinBox,
+			() => _preEditLightIndirectEnergy, v => _preEditLightIndirectEnergy = v,
+			"Change Light Indirect Energy",
+			v => { if (_currentObject is LightSceneObject lo) lo.LightIndirectEnergy = v; });
 
 		// Specular row
 		var specularRow = new HBoxContainer();
@@ -391,6 +451,10 @@ public partial class ObjectPropertiesPanel : Panel
 		_lightSpecularSpinBox.TooltipText = "Specular highlight intensity (0 = none, 1 = full)";
 		_lightSpecularSpinBox.ValueChanged += OnLightSpecularChanged;
 		specularRow.AddChild(_lightSpecularSpinBox);
+		HookLightSpinBoxUndo(_lightSpecularSpinBox,
+			() => _preEditLightSpecular, v => _preEditLightSpecular = v,
+			"Change Light Specular",
+			v => { if (_currentObject is LightSceneObject lo) lo.LightSpecular = v; });
 
 		// Shadow checkbox row
 		var shadowRow = new HBoxContainer();
@@ -408,7 +472,8 @@ public partial class ObjectPropertiesPanel : Panel
 		shadowRow.AddChild(_lightShadowCheckbox);
 	}
 
-	private SpinBox CreateSpinBoxRow(VBoxContainer parent, string labelText, Action onChanged)
+	private SpinBox CreateSpinBoxRow(VBoxContainer parent, string labelText, Action onChanged,
+		Action onFocusEntered = null, Action onFocusExited = null)
 	{
 		var row = new HBoxContainer();
 		parent.AddChild(row);
@@ -425,6 +490,20 @@ public partial class ObjectPropertiesPanel : Panel
 		spin.MinValue = -10000;
 		spin.MaxValue = 10000;
 		spin.ValueChanged += (val) => onChanged?.Invoke();
+
+		// Hook focus events on the internal LineEdit so we can capture pre-edit state
+		spin.Ready += () =>
+		{
+			var lineEdit = spin.GetLineEdit();
+			if (lineEdit != null)
+			{
+				if (onFocusEntered != null)
+					lineEdit.FocusEntered += () => onFocusEntered();
+				if (onFocusExited != null)
+					lineEdit.FocusExited += () => onFocusExited();
+			}
+		};
+
 		row.AddChild(spin);
 
 		return spin;
@@ -589,10 +668,18 @@ public partial class ObjectPropertiesPanel : Panel
 
 	private void OnVisibilityChanged(bool visible)
 	{
-		if (_currentObject == null) return;
+		if (_currentObject == null || _suppressUndoRecord) return;
 
+		var oldVisible = _currentObject.ObjectVisible;
 		_currentObject.SetObjectVisible(visible);
-		
+
+		// Record undo command
+		if (EditorCommandHistory.Instance != null && oldVisible != visible)
+		{
+			EditorCommandHistory.Instance.PushWithoutExecute(
+				new VisibilityCommand(_currentObject, oldVisible, visible));
+		}
+
 		// Auto-keyframe when property changes
 		AutoKeyframe("visible");
 	}
@@ -617,6 +704,9 @@ public partial class ObjectPropertiesPanel : Panel
 		{
 			_currentObject.SetLocalPosition(newPos);
 		}
+
+		// Record undo command
+		RecordTransformCommand("Change Position");
 		
 		// Auto-keyframe when property changes
 		AutoKeyframe("position.x");
@@ -644,6 +734,9 @@ public partial class ObjectPropertiesPanel : Panel
 		{
 			_currentObject.SetLocalRotation(newRot);
 		}
+
+		// Record undo command
+		RecordTransformCommand("Change Rotation");
 		
 		// Auto-keyframe when property changes
 		AutoKeyframe("rotation.x");
@@ -660,6 +753,9 @@ public partial class ObjectPropertiesPanel : Panel
 			(float)_scaleY.Value,
 			(float)_scaleZ.Value
 		));
+
+		// Record undo command
+		RecordTransformCommand("Change Scale");
 		
 		// Auto-keyframe when property changes
 		AutoKeyframe("scale.x");
@@ -671,11 +767,31 @@ public partial class ObjectPropertiesPanel : Panel
 	{
 		if (_currentObject == null) return;
 
-		_currentObject.PivotOffset = new Vector3(
+		var newPivot = new Vector3(
 			(float)_pivotOffsetX.Value / 16,
 			(float)_pivotOffsetY.Value / 16,
 			(float)_pivotOffsetZ.Value / 16
 		);
+
+		var oldPivot = _currentObject.PivotOffset;
+		_currentObject.PivotOffset = newPivot;
+
+		// Record undo command if the value actually changed
+		if (EditorCommandHistory.Instance != null && newPivot != oldPivot)
+		{
+			var capturedObj = _currentObject;
+			EditorCommandHistory.Instance.PushWithoutExecute(
+				new PropertyChangeCommand<Godot.Vector3>(
+					"Change Pivot Offset",
+					oldPivot, newPivot,
+					v =>
+					{
+						capturedObj.PivotOffset = v;
+						if (Instance != null && SelectionManager.Instance != null &&
+							SelectionManager.Instance.SelectedObjects.Contains(capturedObj))
+							Instance.RefreshFromObject();
+					}));
+		}
 
 		// Note: Pivot offset is NOT auto-keyframed as it's a non-animated property
 	}
@@ -683,25 +799,119 @@ public partial class ObjectPropertiesPanel : Panel
 	private void OnInheritPivotOffsetChanged(bool inherit)
 	{
 		if (_currentObject == null) return;
+		var old = _currentObject.InheritPivotOffset;
 		_currentObject.InheritPivotOffset = inherit;
+		RecordBoolPropertyCommand("Change Inherit Pivot Offset", old, inherit,
+			v => { _currentObject.InheritPivotOffset = v; _inheritPivotOffsetCheckbox.SetPressedNoSignal(v); });
+	}
+
+	/// <summary>
+	/// Called when the user starts editing a transform field (position, rotation, scale).
+	/// Captures the current transform values so we can undo all changes made during
+	/// this edit session as a single command.
+	/// </summary>
+	private void OnTransformEditBegin()
+	{
+		if (_currentObject == null) return;
+
+		// Capture the current transform as the baseline for this edit session
+		_preEditPosition = _currentObject.LocalPosition;
+		_preEditRotation = _currentObject.LocalRotation;
+		_preEditScale = _currentObject.LocalScale;
+	}
+
+	/// <summary>
+	/// Called when the user finishes editing a transform field.
+	/// Records an undo command if the transform values changed during the edit session.
+	/// </summary>
+	private void OnTransformEditEnd()
+	{
+		if (_currentObject == null || EditorCommandHistory.Instance == null) return;
+
+		var newPosition = _currentObject.LocalPosition;
+		var newRotation = _currentObject.LocalRotation;
+		var newScale = _currentObject.LocalScale;
+
+		// Only record if values actually changed
+		if (newPosition != _preEditPosition || newRotation != _preEditRotation || newScale != _preEditScale)
+		{
+			var capturedObj = _currentObject;
+			EditorCommandHistory.Instance.PushWithoutExecute(
+				new TransformCommand(
+					capturedObj,
+					_preEditPosition, _preEditRotation, _preEditScale,
+					newPosition, newRotation, newScale,
+					"Transform"));
+		}
 	}
 
 	private void OnInheritPositionChanged(bool inherit)
 	{
 		if (_currentObject == null) return;
+		var old = _currentObject.InheritPosition;
 		_currentObject.InheritPosition = inherit;
+		RecordBoolPropertyCommand("Change Inherit Position", old, inherit,
+			v => { _currentObject.InheritPosition = v; _inheritPositionCheckbox.SetPressedNoSignal(v); });
 	}
 
 	private void OnInheritRotationChanged(bool inherit)
 	{
 		if (_currentObject == null) return;
+		var old = _currentObject.InheritRotation;
 		_currentObject.InheritRotation = inherit;
+		RecordBoolPropertyCommand("Change Inherit Rotation", old, inherit,
+			v => { _currentObject.InheritRotation = v; _inheritRotationCheckbox.SetPressedNoSignal(v); });
 	}
 
 	private void OnInheritScaleChanged(bool inherit)
 	{
 		if (_currentObject == null) return;
+		var old = _currentObject.InheritScale;
 		_currentObject.InheritScale = inherit;
+		RecordBoolPropertyCommand("Change Inherit Scale", old, inherit,
+			v => { _currentObject.InheritScale = v; _inheritScaleCheckbox.SetPressedNoSignal(v); });
+	}
+
+	/// <summary>
+	/// Helper that records a bool property change command only when the value actually changed.
+	/// </summary>
+	private void RecordBoolPropertyCommand(string description, bool oldValue, bool newValue, System.Action<bool> apply)
+	{
+		if (oldValue == newValue || EditorCommandHistory.Instance == null) return;
+		EditorCommandHistory.Instance.PushWithoutExecute(
+			new PropertyChangeCommand<bool>(description, oldValue, newValue, apply));
+	}
+
+	/// <summary>
+	/// Hooks focus-enter/exit on a light SpinBox's internal LineEdit so we can capture
+	/// the pre-edit value and record an undo command when the user finishes editing.
+	/// </summary>
+	private void HookLightSpinBoxUndo(SpinBox spinBox,
+		Func<float> getPreEdit, Action<float> setPreEdit,
+		string description, Action<float> applyValue)
+	{
+		spinBox.Ready += () =>
+		{
+			var lineEdit = spinBox.GetLineEdit();
+			if (lineEdit == null) return;
+
+			lineEdit.FocusEntered += () => setPreEdit((float)spinBox.Value);
+			lineEdit.FocusExited += () =>
+			{
+				var pre = getPreEdit();
+				var cur = (float)spinBox.Value;
+				if (Math.Abs(cur - pre) < 1e-6f) return;
+				if (EditorCommandHistory.Instance == null) return;
+				var capturedPre = pre; var capturedCur = cur;
+				EditorCommandHistory.Instance.PushWithoutExecute(
+					new PropertyChangeCommand<float>(description, capturedPre, capturedCur, v =>
+					{
+						spinBox.SetValueNoSignal(v);
+						applyValue(v);
+						RefreshFromObject();
+					}));
+			};
+		};
 	}
 	
 	private void AutoKeyframe(string propertyPath)
@@ -710,6 +920,71 @@ public partial class ObjectPropertiesPanel : Panel
 		
 		// Add keyframe at current timeline frame
 		TimelinePanel.Instance.AddKeyframeForProperty(_currentObject, propertyPath, TimelinePanel.Instance.CurrentFrame);
+	}
+
+	// ── Undo/Redo helpers ────────────────────────────────────────────────────
+
+	/// <summary>
+	/// Captures the current transform of <paramref name="obj"/> into the pre-edit
+	/// fields so that the next recorded command has the correct "before" state.
+	/// Called when an object is selected and after each recorded transform command.
+	/// </summary>
+	private void CapturePreEditTransform(SceneObject obj)
+	{
+		if (obj == null) return;
+		if (obj is BoneSceneObject boneObj)
+		{
+			_preEditPosition = boneObj.TargetPosition;
+			_preEditRotation = boneObj.TargetRotation;
+		}
+		else
+		{
+			_preEditPosition = obj.LocalPosition;
+			_preEditRotation = obj.LocalRotation;
+		}
+		_preEditScale = obj.LocalScale;
+	}
+
+	/// <summary>
+	/// Records a <see cref="TransformCommand"/> from the stored pre-edit state to
+	/// the object's current transform, then updates the pre-edit state.
+	/// Called from <see cref="OnPositionChanged"/>, <see cref="OnRotationChanged"/>,
+	/// and <see cref="OnScaleChanged"/>.
+	/// </summary>
+	private void RecordTransformCommand(string description = "Transform")
+	{
+		if (_currentObject == null || _suppressUndoRecord) return;
+		if (EditorCommandHistory.Instance == null) return;
+
+		Vector3 newPos, newRot;
+		if (_currentObject is BoneSceneObject boneObj)
+		{
+			newPos = boneObj.TargetPosition;
+			newRot = boneObj.TargetRotation;
+		}
+		else
+		{
+			newPos = _currentObject.LocalPosition;
+			newRot = _currentObject.LocalRotation;
+		}
+		var newScale = _currentObject.LocalScale;
+
+		// Only record if something actually changed from the last recorded state
+		if (newPos == _preEditPosition && newRot == _preEditRotation && newScale == _preEditScale)
+			return;
+
+		var cmd = new TransformCommand(
+			_currentObject,
+			_preEditPosition, _preEditRotation, _preEditScale,
+			newPos, newRot, newScale,
+			description);
+
+		EditorCommandHistory.Instance.PushWithoutExecute(cmd);
+
+		// Update pre-edit state so the next change records from the new baseline
+		_preEditPosition = newPos;
+		_preEditRotation = newRot;
+		_preEditScale = newScale;
 	}
 	
 	private void OnResetPosition()
@@ -932,7 +1207,23 @@ public partial class ObjectPropertiesPanel : Panel
 	private void OnLightShadowToggled(bool enabled)
 	{
 		if (_currentObject is not LightSceneObject lightObj) return;
+		var old = lightObj.LightShadowEnabled;
 		lightObj.LightShadowEnabled = enabled;
+
+		if (old != enabled && EditorCommandHistory.Instance != null)
+		{
+			var capturedObj = lightObj;
+			var capturedOld = old; var capturedNew = enabled;
+			EditorCommandHistory.Instance.PushWithoutExecute(
+				new PropertyChangeCommand<bool>(
+					"Change Light Shadow",
+					capturedOld, capturedNew,
+					v =>
+					{
+						capturedObj.LightShadowEnabled = v;
+						_lightShadowCheckbox.SetPressedNoSignal(v);
+					}));
+		}
 		// Shadow is not keyframed (boolean toggle, not typically animated)
 	}
 

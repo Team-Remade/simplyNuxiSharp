@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using simplyRemadeNuxi.core;
+using simplyRemadeNuxi.core.commands;
 
 namespace simplyRemadeNuxi.ui;
 
@@ -657,6 +658,9 @@ public partial class SpawnMenu : PopupPanel
 				GD.PrintErr("Could not find WorkCam - spawning at origin");
 			}
 			
+			// Record undo command
+			EditorCommandHistory.Instance?.PushWithoutExecute(new AddObjectCommand(cameraObject, Viewport));
+
 			// Notify PreviewViewport about new camera
 			if (GetTree().Root.GetNode<Main>("/root/Main") is Main main)
 			{
@@ -674,6 +678,8 @@ public partial class SpawnMenu : PopupPanel
 			if (lightObject != null)
 			{
 				lightObject.SpawnCategory = "Light";
+				// Record undo command
+				EditorCommandHistory.Instance?.PushWithoutExecute(new AddObjectCommand(lightObject, Viewport));
 				if (GetTree().Root.GetNode<Main>("/root/Main") is Main mainL)
 					mainL.SceneTreePanel.Refresh();
 			}
@@ -756,7 +762,10 @@ public partial class SpawnMenu : PopupPanel
 			
 			// Position at world origin for now
 			sceneObject.GlobalPosition = Vector3.Zero;
-			
+
+			// Record undo command
+			EditorCommandHistory.Instance?.PushWithoutExecute(new AddObjectCommand(sceneObject, Viewport));
+
 			// Notify the scene tree panel to refresh
 			if (GetTree().Root.GetNode<Main>("/root/Main") is Main main)
 			{
@@ -1309,7 +1318,10 @@ public partial class SpawnMenu : PopupPanel
 		// Model is now fully loaded with textures preloaded and shaders compiled
 		// Position at world origin
 		characterObject.GlobalPosition = Vector3.Zero;
-		
+
+		// Record undo command
+		EditorCommandHistory.Instance?.PushWithoutExecute(new AddObjectCommand(characterObject, Viewport));
+
 		// Notify the scene tree panel to refresh
 		if (GetTree().Root.GetNode<Main>("/root/Main") is Main main)
 		{
@@ -1480,7 +1492,10 @@ public partial class SpawnMenu : PopupPanel
 		
 		// Position at world origin
 		customModelObject.GlobalPosition = Vector3.Zero;
-		
+
+		// Record undo command
+		EditorCommandHistory.Instance?.PushWithoutExecute(new AddObjectCommand(customModelObject, Viewport));
+
 		// Notify the scene tree panel to refresh
 		if (GetTree().Root.GetNode<Main>("/root/Main") is Main main)
 		{

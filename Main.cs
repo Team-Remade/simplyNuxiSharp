@@ -1,6 +1,7 @@
 ﻿using Gizmo3DPlugin;
 using Godot;
 using simplyRemadeNuxi.core;
+using simplyRemadeNuxi.core.commands;
 using simplyRemadeNuxi.ui;
 using System;
 using System.Linq;
@@ -80,6 +81,7 @@ public partial class Main : Control
 		// Notify panels that depend on loaded assets
 		ProjectPropertyPanel?.OnAssetsLoaded();
 		
+		SetupCommandHistory();
 		SetupMenus();
 		SetupSpawnMenu();
 		SetupPreviewToggleButton();
@@ -373,6 +375,60 @@ public partial class Main : Control
 		}
 	}
 
+	private void SetupCommandHistory()
+	{
+		var history = new EditorCommandHistory();
+		history.Name = "EditorCommandHistory";
+		AddChild(history);
+
+		// Connect to history changes to update the Edit menu
+		history.HistoryChanged += OnHistoryChanged;
+
+		// Initialize menu state (disabled until there's something to undo)
+		OnHistoryChanged();
+
+		// Clear history when a new project is opened or created
+		ProjectManager.ProjectOpened  += _ => EditorCommandHistory.Instance?.Clear();
+		ProjectManager.ProjectClosed  += () => EditorCommandHistory.Instance?.Clear();
+	}
+
+	/// <summary>
+	/// Updates the Edit menu items to show the current undo/redo action and
+	/// enables/disables them based on whether there's history to undo/redo.
+	/// </summary>
+	private void OnHistoryChanged()
+	{
+		var editPopup = EditButton?.GetPopup();
+		if (editPopup == null) return;
+
+		var history = EditorCommandHistory.Instance;
+		if (history == null) return;
+
+		// Update Undo menu item (id 0)
+		if (history.CanUndo)
+		{
+			editPopup.SetItemText(0, $"Undo: {history.UndoDescription}\tCtrl+Z");
+			editPopup.SetItemDisabled(0, false);
+		}
+		else
+		{
+			editPopup.SetItemText(0, "Undo\tCtrl+Z");
+			editPopup.SetItemDisabled(0, true);
+		}
+
+		// Update Redo menu item (id 1)
+		if (history.CanRedo)
+		{
+			editPopup.SetItemText(1, $"Redo: {history.RedoDescription}\tCtrl+Y");
+			editPopup.SetItemDisabled(1, false);
+		}
+		else
+		{
+			editPopup.SetItemText(1, "Redo\tCtrl+Y");
+			editPopup.SetItemDisabled(1, true);
+		}
+	}
+
 	private void SetupMenus()
 	{
 		//Setup File Menu
@@ -386,14 +442,14 @@ public partial class Main : Control
 		
 		//Setup Edit Menu
 		var editPopup = EditButton.GetPopup();
-		editPopup.AddItem("Undo", 0);
-		editPopup.AddItem("Redo", 1);
-		filePopup.AddSeparator();
+		editPopup.AddItem("Undo\tCtrl+Z", 0);
+		editPopup.AddItem("Redo\tCtrl+Y", 1);
+		editPopup.AddSeparator();
 		editPopup.AddItem("Cut", 2);
 		editPopup.AddItem("Copy", 3);
 		editPopup.AddItem("Paste", 4);
 		editPopup.AddItem("Delete", 5);
-		//connect
+		editPopup.IndexPressed += OnEditMenuPressed;
 		
 		//Setup View Menu
 		var viewPopup = ViewButton.GetPopup();
@@ -531,6 +587,19 @@ public partial class Main : Control
 				break;
 			case 3: // Exit
 				GetTree().Quit();
+				break;
+		}
+	}
+
+	private void OnEditMenuPressed(long id)
+	{
+		switch (id)
+		{
+			case 0: // Undo
+				EditorCommandHistory.Instance?.Undo();
+				break;
+			case 1: // Redo
+				EditorCommandHistory.Instance?.Redo();
 				break;
 		}
 	}
@@ -994,6 +1063,21 @@ public partial class Main : Control
 					SceneTreePanel.DuplicateSelectedObjects();
 					GetViewport().SetInputAsHandled();
 				}
+			}
+
+			// Ctrl+Z to undo
+			if (keyEvent.Keycode == Key.Z && keyEvent.CtrlPressed && !keyEvent.ShiftPressed)
+			{
+				EditorCommandHistory.Instance?.Undo();
+				GetViewport().SetInputAsHandled();
+			}
+
+			// Ctrl+Y or Ctrl+Shift+Z to redo
+			if ((keyEvent.Keycode == Key.Y && keyEvent.CtrlPressed) ||
+			    (keyEvent.Keycode == Key.Z && keyEvent.CtrlPressed && keyEvent.ShiftPressed))
+			{
+				EditorCommandHistory.Instance?.Redo();
+				GetViewport().SetInputAsHandled();
 			}
 		}
 	}

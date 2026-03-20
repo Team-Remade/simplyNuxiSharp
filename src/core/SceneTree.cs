@@ -1,5 +1,6 @@
 using Godot;
 using Godot.Collections;
+using simplyRemadeNuxi.core.commands;
 
 namespace simplyRemadeNuxi.core;
 
@@ -272,7 +273,10 @@ public partial class SceneTree : Panel
 		{
 			globalTransform = sceneObject.GlobalTransform;
 		}
-		
+
+		// Capture old parent before reparenting (for undo)
+		var oldParent = sceneObject.GetParent();
+
 		// Reparent
 		sceneObject.Reparent(newParent);
 		
@@ -281,7 +285,14 @@ public partial class SceneTree : Panel
 		{
 			sceneObject.GlobalTransform = globalTransform.Value;
 		}
-		
+
+		// Record undo command
+		if (EditorCommandHistory.Instance != null && oldParent != null && oldParent != newParent)
+		{
+			EditorCommandHistory.Instance.PushWithoutExecute(
+				new ReparentCommand(sceneObject, oldParent, newParent));
+		}
+
 		// Rebuild tree to reflect changes
 		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
 		BuildTree();
@@ -613,21 +624,27 @@ public partial class SceneTree : Panel
 		}
 	}
 
-	private async void DeleteObject(SceneObject sceneObject)
+	private void DeleteObject(SceneObject sceneObject)
 	{
-		foreach (var child in sceneObject.GetChildren())
-		{
-			if (child is SceneObject childObject)
-			{
-				DeleteObject(childObject);
-			}
-		}
-		
+		// Capture the parent before removing so the command can restore it
+		var parent = sceneObject.GetParent();
+
+		// Deselect before removing
 		SelectionManager.Instance.ClearSelection();
-		
-		sceneObject.QueueFree();
-		
-		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+
+		// Use the command so the deletion can be undone
+		if (EditorCommandHistory.Instance != null && parent != null)
+		{
+			EditorCommandHistory.Instance.Execute(new DeleteObjectCommand(sceneObject, parent));
+		}
+		else
+		{
+			// Fallback: no history available, just remove permanently
+			if (parent != null)
+				parent.RemoveChild(sceneObject);
+			sceneObject.QueueFree();
+		}
+
 		BuildTree();
 	}
 

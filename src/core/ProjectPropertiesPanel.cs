@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using simplyRemadeNuxi.core.commands;
 
 namespace simplyRemadeNuxi.core;
 
@@ -45,6 +46,15 @@ public partial class ProjectPropertiesPanel : Panel
 	
 	// Store available block textures
 	private List<string> _blockTexturePaths;
+
+	// Pre-edit values for spinbox undo/redo (captured on focus-enter)
+	private double _preEditResolutionWidth;
+	private double _preEditResolutionHeight;
+	private double _preEditFramerate;
+	private double _preEditTextureAnimFps;
+
+	// Pre-edit color for background color picker undo/redo
+	private Color _preEditBackgroundColor;
 
 	public override void _Ready()
 	{
@@ -152,7 +162,11 @@ public partial class ProjectPropertiesPanel : Panel
             SizeFlagsHorizontal = SizeFlags.ExpandFill
         };
         _resolutionWidthSpinBox.ValueChanged += OnResolutionChanged;
-		resolutionInputRow.AddChild(_resolutionWidthSpinBox);
+  resolutionInputRow.AddChild(_resolutionWidthSpinBox);
+  HookSpinBoxUndo(_resolutionWidthSpinBox,
+   () => _preEditResolutionWidth, v => _preEditResolutionWidth = v,
+   "Change Resolution Width",
+   v => _resolutionWidthSpinBox.SetValueNoSignal(v));
 
         var xLabel = new Label
         {
@@ -172,7 +186,11 @@ public partial class ProjectPropertiesPanel : Panel
             SizeFlagsHorizontal = SizeFlags.ExpandFill
         };
         _resolutionHeightSpinBox.ValueChanged += OnResolutionChanged;
-		resolutionInputRow.AddChild(_resolutionHeightSpinBox);
+  resolutionInputRow.AddChild(_resolutionHeightSpinBox);
+  HookSpinBoxUndo(_resolutionHeightSpinBox,
+   () => _preEditResolutionHeight, v => _preEditResolutionHeight = v,
+   "Change Resolution Height",
+   v => _resolutionHeightSpinBox.SetValueNoSignal(v));
 
         // Add preset resolution buttons
         var presetsResolutionLabel = new Label
@@ -242,7 +260,11 @@ public partial class ProjectPropertiesPanel : Panel
             SizeFlagsHorizontal = SizeFlags.ExpandFill
         };
         _framerateSpinBox.ValueChanged += OnFramerateChanged;
-		framerateInputRow.AddChild(_framerateSpinBox);
+  framerateInputRow.AddChild(_framerateSpinBox);
+  HookSpinBoxUndo(_framerateSpinBox,
+   () => _preEditFramerate, v => _preEditFramerate = v,
+   "Change Framerate",
+   v => _framerateSpinBox.SetValueNoSignal(v));
 
         // Add preset framerate buttons
         var presetsFramerateLabel = new Label
@@ -307,8 +329,17 @@ public partial class ProjectPropertiesPanel : Panel
         };
         _textureAnimationFpsSpinBox.ValueChanged += OnTextureAnimationFpsChanged;
 		textureAnimationInputRow.AddChild(_textureAnimationFpsSpinBox);
+		HookSpinBoxUndo(_textureAnimationFpsSpinBox,
+			() => _preEditTextureAnimFps, v => _preEditTextureAnimFps = v,
+			"Change Texture Animation FPS",
+			v =>
+			{
+				_textureAnimationFpsSpinBox.SetValueNoSignal(v);
+				if (AnimatedTextureManager.Instance != null)
+					AnimatedTextureManager.Instance.SetTextureAnimationFps((float)v);
+			});
 
-        // Add preset texture animation fps buttons
+		      // Add preset texture animation fps buttons
         var presetsTextureAnimationLabel = new Label
         {
             Text = "Presets:"
@@ -376,7 +407,29 @@ public partial class ProjectPropertiesPanel : Panel
             EditAlpha = true
         };
         _backgroundColorPicker.ColorChanged += OnBackgroundColorChanged;
-		colorRow.AddChild(_backgroundColorPicker);
+  // Capture pre-edit color when the popup opens; record undo when it closes
+  _backgroundColorPicker.Ready += () =>
+  {
+   _backgroundColorPicker.GetPopup().AboutToPopup += () =>
+    _preEditBackgroundColor = _backgroundColorPicker.Color;
+   _backgroundColorPicker.GetPopup().PopupHide += () =>
+   {
+    var pre = _preEditBackgroundColor;
+    var cur = _backgroundColorPicker.Color;
+    if (pre != cur && EditorCommandHistory.Instance != null)
+    {
+     EditorCommandHistory.Instance.PushWithoutExecute(
+      new PropertyChangeCommand<Color>(
+       "Change Background Color", pre, cur,
+       v =>
+       {
+        _backgroundColorPicker.Color = v;
+        OnBackgroundColorChanged(v);
+       }));
+    }
+   };
+  };
+  colorRow.AddChild(_backgroundColorPicker);
 
         // Add color presets row
         var presetsLabel = new Label
@@ -715,13 +768,30 @@ public partial class ProjectPropertiesPanel : Panel
 
 	private void OnStretchToFitToggled(bool stretchToFit)
 	{
+		var old = !stretchToFit; // The old value is the opposite of what was just set
 		if (_backgroundImageMesh != null)
 		{
 			if (_backgroundImageMesh.MaterialOverride is ShaderMaterial shaderMat)
 			{
-				// Set the stretch shader parameter
+				// Retrieve the actual old value from the shader before applying
+				old = shaderMat.GetShaderParameter("stretch").AsBool();
 				shaderMat.SetShaderParameter("stretch", stretchToFit);
 			}
+		}
+
+		if (old != stretchToFit && EditorCommandHistory.Instance != null)
+		{
+			var capturedOld = old; var capturedNew = stretchToFit;
+			EditorCommandHistory.Instance.PushWithoutExecute(
+				new PropertyChangeCommand<bool>(
+					"Change Stretch To Fit",
+					capturedOld, capturedNew,
+					v =>
+					{
+						_stretchToFitCheckbox.SetPressedNoSignal(v);
+						if (_backgroundImageMesh?.MaterialOverride is ShaderMaterial sm)
+							sm.SetShaderParameter("stretch", v);
+					}));
 		}
 	}
 
@@ -830,26 +900,61 @@ public partial class ProjectPropertiesPanel : Panel
 			if (grassIndex >= 0)
 			{
 				_floorTextureDropdown.Selected = grassIndex;
-				OnFloorTextureSelected(grassIndex);
+				ApplyFloorTexture(grassIndex);
 			}
 			else
 			{
 				// Fallback to first texture if grass_block_top not found
 				_floorTextureDropdown.Selected = 0;
-				OnFloorTextureSelected(0);
+				ApplyFloorTexture(0);
 			}
 		}
 	}
 	
 	private void OnFloorVisibilityToggled(bool visible)
 	{
+		var old = _floorNode?.Visible ?? !visible;
 		if (_floorNode != null)
 		{
 			_floorNode.Visible = visible;
 		}
+
+		if (old != visible && EditorCommandHistory.Instance != null)
+		{
+			var capturedOld = old; var capturedNew = visible;
+			EditorCommandHistory.Instance.PushWithoutExecute(
+				new PropertyChangeCommand<bool>(
+					"Change Floor Visibility",
+					capturedOld, capturedNew,
+					v =>
+					{
+						_floorVisibilityCheckbox.SetPressedNoSignal(v);
+						if (_floorNode != null) _floorNode.Visible = v;
+					}));
+		}
 	}
 	
 	private void OnFloorTextureSelected(long index)
+	{
+		var oldIndex = (long)_floorTextureDropdown.Selected;
+		ApplyFloorTexture(index);
+
+		if (oldIndex != index && EditorCommandHistory.Instance != null)
+		{
+			var capturedOld = oldIndex; var capturedNew = index;
+			EditorCommandHistory.Instance.PushWithoutExecute(
+				new PropertyChangeCommand<long>(
+					"Change Floor Texture",
+					capturedOld, capturedNew,
+					v =>
+					{
+						_floorTextureDropdown.Selected = (int)v;
+						ApplyFloorTexture(v);
+					}));
+		}
+	}
+
+	private void ApplyFloorTexture(long index)
 	{
 		if (_floorMeshInstance == null || _blockTexturePaths == null)
 		{
@@ -875,16 +980,16 @@ public partial class ProjectPropertiesPanel : Panel
 		}
 		else
 		{
-            material = new StandardMaterial3D
-            {
-                Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor,
-                AlphaScissorThreshold = 0.5f,
-                AlphaAntialiasingMode = BaseMaterial3D.AlphaAntiAliasing.Off,
-                MetallicSpecular = 0.0f,
-                Uv1Scale = new Vector3(64, 64, 64),
-                TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest
-            };
-            _floorMeshInstance.MaterialOverride = material;
+	           material = new StandardMaterial3D
+	           {
+	               Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor,
+	               AlphaScissorThreshold = 0.5f,
+	               AlphaAntialiasingMode = BaseMaterial3D.AlphaAntiAliasing.Off,
+	               MetallicSpecular = 0.0f,
+	               Uv1Scale = new Vector3(64, 64, 64),
+	               TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest
+	           };
+	           _floorMeshInstance.MaterialOverride = material;
 		}
 		
 		// Set the texture
@@ -948,28 +1053,53 @@ public partial class ProjectPropertiesPanel : Panel
 	
 	private void OnResolutionChanged(double value)
 	{
-		var width = (int)_resolutionWidthSpinBox.Value;
-		var height = (int)_resolutionHeightSpinBox.Value;
-		// TODO: Apply resolution to render viewport
+		// Actual logic is minimal (resolution is read at render time), but we still record undo
 	}
 	
 	private void OnResolutionPresetPressed(int width, int height)
 	{
+		var oldW = _resolutionWidthSpinBox.Value;
+		var oldH = _resolutionHeightSpinBox.Value;
 		_resolutionWidthSpinBox.Value = width;
 		_resolutionHeightSpinBox.Value = height;
-		// OnResolutionChanged will be called automatically via ValueChanged signal
+
+		// Record undo as a single compound command via a tuple
+		if (EditorCommandHistory.Instance != null && ((int)oldW != width || (int)oldH != height))
+		{
+			var capturedOldW = oldW; var capturedOldH = oldH;
+			var capturedNewW = (double)width; var capturedNewH = (double)height;
+			EditorCommandHistory.Instance.PushWithoutExecute(
+				new PropertyChangeCommand<(double w, double h)>(
+					"Change Resolution",
+					(capturedOldW, capturedOldH),
+					(capturedNewW, capturedNewH),
+					v =>
+					{
+						_resolutionWidthSpinBox.SetValueNoSignal(v.w);
+						_resolutionHeightSpinBox.SetValueNoSignal(v.h);
+					}));
+		}
 	}
 	
 	private void OnFramerateChanged(double value)
 	{
-		var fps = (int)value;
-		// TODO: Apply framerate to animation timeline
+		// Actual logic is minimal (framerate is read at render time)
 	}
 	
 	private void OnFrameratePresetPressed(int fps)
 	{
+		var oldFps = _framerateSpinBox.Value;
 		_framerateSpinBox.Value = fps;
-		// OnFramerateChanged will be called automatically via ValueChanged signal
+
+		if (EditorCommandHistory.Instance != null && (int)oldFps != fps)
+		{
+			var capturedOld = oldFps; var capturedNew = (double)fps;
+			EditorCommandHistory.Instance.PushWithoutExecute(
+				new PropertyChangeCommand<double>(
+					"Change Framerate",
+					capturedOld, capturedNew,
+					v => _framerateSpinBox.SetValueNoSignal(v)));
+		}
 	}
 	
 	private void OnTextureAnimationFpsChanged(double value)
@@ -985,8 +1115,51 @@ public partial class ProjectPropertiesPanel : Panel
 	
 	private void OnTextureAnimationFpsPresetPressed(int fps)
 	{
+		var oldFps = _textureAnimationFpsSpinBox.Value;
 		_textureAnimationFpsSpinBox.Value = fps;
-		// OnTextureAnimationFpsChanged will be called automatically via ValueChanged signal
+
+		if (EditorCommandHistory.Instance != null && (int)oldFps != fps)
+		{
+			var capturedOld = oldFps; var capturedNew = (double)fps;
+			EditorCommandHistory.Instance.PushWithoutExecute(
+				new PropertyChangeCommand<double>(
+					"Change Texture Animation FPS",
+					capturedOld, capturedNew,
+					v =>
+					{
+						_textureAnimationFpsSpinBox.SetValueNoSignal(v);
+						if (AnimatedTextureManager.Instance != null)
+							AnimatedTextureManager.Instance.SetTextureAnimationFps((float)v);
+					}));
+		}
+	}
+
+	// ── Project property undo helpers ────────────────────────────────────────
+
+	/// <summary>
+	/// Hooks focus-enter/exit on a SpinBox's internal LineEdit so we can capture
+	/// the pre-edit value and record an undo command when the user finishes editing.
+	/// </summary>
+	private void HookSpinBoxUndo(SpinBox spinBox, Func<double> getPreEdit, Action<double> setPreEdit,
+		string description, Action<double> applyValue)
+	{
+		spinBox.Ready += () =>
+		{
+			var lineEdit = spinBox.GetLineEdit();
+			if (lineEdit == null) return;
+
+			lineEdit.FocusEntered += () => setPreEdit(spinBox.Value);
+			lineEdit.FocusExited += () =>
+			{
+				var pre = getPreEdit();
+				var cur = spinBox.Value;
+				if (Math.Abs(cur - pre) < 1e-9) return;
+				if (EditorCommandHistory.Instance == null) return;
+				var capturedPre = pre; var capturedCur = cur;
+				EditorCommandHistory.Instance.PushWithoutExecute(
+					new PropertyChangeCommand<double>(description, capturedPre, capturedCur, applyValue));
+			};
+		};
 	}
 	
 	/// <summary>
