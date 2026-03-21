@@ -340,6 +340,35 @@ public class MineImatorLoader
 	}
 	
 	/// <summary>
+	/// Gets the texture for a shape, checking shape level first, then part level, then model level
+	/// </summary>
+	private ImageTexture GetShapeTexture(MiShape shape, MiPart part, MiModel model)
+	{
+		// First: Check if shape has its own texture and load it
+		if (!string.IsNullOrEmpty(shape.Texture) && model != null && !string.IsNullOrEmpty(model.DirectoryPath))
+		{
+			var texturePath = Path.Combine(model.DirectoryPath, shape.Texture);
+			if (File.Exists(texturePath))
+			{
+				var tex = LoadTextureFromFile(texturePath);
+				if (tex != null)
+					return tex;
+			}
+		}
+		
+		// Second: Check if part has its own texture
+		var partTexture = part.GetTexture(null, model);
+		if (partTexture != null)
+			return partTexture;
+		
+		// Third: Fall back to model default texture
+		if (model != null)
+			return model.GetTexture();
+		
+		return null;
+	}
+	
+	/// <summary>
 	/// Creates a CharacterSceneObject with bones from a Mine Imator model
 	/// Each bone has its shapes as child MeshInstance3D nodes
 	/// </summary>
@@ -353,12 +382,11 @@ public class MineImatorLoader
 			return null;
 		}
 		
-		// Load the texture
-		ImageTexture texture = null;
-		if (!string.IsNullOrEmpty(model.Texture))
-		{
-			texture = LoadModelTexture(model);
-		}
+		// Load textures (supports multi-texture)
+		LoadModelTextures(model);
+		
+		// Get the default texture (backward compatibility)
+		ImageTexture texture = model.GetTexture();
 		
 		// Create skeleton
 		var skeleton = new Skeleton3D();
@@ -409,7 +437,11 @@ public class MineImatorLoader
 					int shapeIndex = 0;
 					foreach (var shape in part.Shapes)
 					{
-						var meshInstance = CreateShapeMesh(part.Name, shapeIndex, shape, model, texture, accumulatedScale, bendParams);
+						// Get texture for this shape (supports multi-texture)
+						// First check if shape has its own texture, then check part, then fall back to model
+						ImageTexture shapeTexture = GetShapeTexture(shape, part, model);
+						
+						var meshInstance = CreateShapeMesh(part.Name, shapeIndex, shape, model, shapeTexture, accumulatedScale, bendParams);
 						if (meshInstance != null)
 						{
 							// Add the mesh as a visual child of the BoneSceneObject
@@ -2467,22 +2499,171 @@ public class MineImatorLoader
 			return null;
 		}
 		
+		return LoadTextureFromFile(texturePath);
+	}
+	
+	/// <summary>
+	/// Loads all textures for a model (supports multi-texture)
+	/// Loads both the single "texture" property and the "textures" dictionary
+	/// </summary>
+	/// <param name="model">The model to load textures for</param>
+	public void LoadModelTextures(MiModel model)
+	{
+		if (model == null || string.IsNullOrEmpty(model.DirectoryPath))
+		{
+			return;
+		}
+		
+		// Initialize the loaded textures dictionary if needed
+		if (model.LoadedTextures == null)
+		{
+			model.LoadedTextures = new Dictionary<string, ImageTexture>();
+		}
+		
+		// Load the single texture (backward compatibility)
+		if (!string.IsNullOrEmpty(model.Texture))
+		{
+			var texture = LoadModelTexture(model);
+			if (texture != null)
+			{
+				model.LoadedTextures["texture"] = texture;
+			}
+		}
+		
+		// Load multiple textures from the dictionary
+		if (model.Textures != null && model.Textures.Count > 0)
+		{
+			foreach (var kvp in model.Textures)
+			{
+				var textureName = kvp.Key;
+				var texturePath = kvp.Value;
+				
+				// Skip if already loaded from single texture
+				if (model.LoadedTextures.ContainsKey(textureName))
+				{
+					continue;
+				}
+				
+				// Resolve full path
+				string fullPath;
+				if (Path.IsPathRooted(texturePath))
+				{
+					fullPath = texturePath;
+				}
+				else
+				{
+					fullPath = Path.Combine(model.DirectoryPath, texturePath);
+				}
+				
+				if (!File.Exists(fullPath))
+				{
+					GD.PrintS("warning", $"Mine Imator texture not found for '{textureName}': {fullPath}");
+					continue;
+				}
+				
+				var texture = LoadTextureFromFile(fullPath);
+				if (texture != null)
+				{
+					model.LoadedTextures[textureName] = texture;
+				}
+			}
+		}
+		
+		// Also load textures for all parts
+		if (model.Parts != null)
+		{
+			LoadPartTextures(model.Parts, model);
+		}
+	}
+	
+	/// <summary>
+	/// Loads textures for all parts recursively
+	/// </summary>
+	private void LoadPartTextures(List<MiPart> parts, MiModel model)
+	{
+		if (parts == null)
+			return;
+		
+		foreach (var part in parts)
+		{
+			if (part.LoadedTextures == null)
+			{
+				part.LoadedTextures = new Dictionary<string, ImageTexture>();
+			}
+			
+			// Load part's single texture (backward compatibility)
+			if (!string.IsNullOrEmpty(part.Texture) && !part.LoadedTextures.ContainsKey("texture"))
+			{
+				var texturePath = Path.Combine(model.DirectoryPath, part.Texture);
+				if (File.Exists(texturePath))
+				{
+					var texture = LoadTextureFromFile(texturePath);
+					if (texture != null)
+					{
+						part.LoadedTextures["texture"] = texture;
+					}
+				}
+			}
+			
+			// Load part's multiple textures
+			if (part.Textures != null && part.Textures.Count > 0)
+			{
+				foreach (var kvp in part.Textures)
+				{
+					var textureName = kvp.Key;
+					var texturePath = kvp.Value;
+					
+					if (part.LoadedTextures.ContainsKey(textureName))
+						continue;
+					
+					string fullPath;
+					if (Path.IsPathRooted(texturePath))
+					{
+						fullPath = texturePath;
+					}
+					else
+					{
+						fullPath = Path.Combine(model.DirectoryPath, texturePath);
+					}
+					
+					if (!File.Exists(fullPath))
+					{
+						continue;
+					}
+					
+					var texture = LoadTextureFromFile(fullPath);
+					if (texture != null)
+					{
+						part.LoadedTextures[textureName] = texture;
+					}
+				}
+			}
+			
+			// Recursively load textures for child parts
+			if (part.Parts != null && part.Parts.Count > 0)
+			{
+				LoadPartTextures(part.Parts, model);
+			}
+		}
+	}
+	
+	/// <summary>
+	/// Loads a texture from a file path
+	/// </summary>
+	private ImageTexture LoadTextureFromFile(string texturePath)
+	{
+		if (!File.Exists(texturePath))
+		{
+			return null;
+		}
+		
 		try
 		{
-			// Read file bytes using System.IO (works for external paths)
 			byte[] fileBytes = File.ReadAllBytes(texturePath);
-			
-			// Check for PNG header
-			if (fileBytes.Length >= 8)
-			{
-				bool isPng = fileBytes[0] == 0x89 && fileBytes[1] == 0x50 && 
-				             fileBytes[2] == 0x4E && fileBytes[3] == 0x47;
-			}
 			
 			var image = new Image();
 			Error error;
 			
-			// Determine image format from extension and load from buffer
 			string extension = Path.GetExtension(texturePath).ToLowerInvariant();
 			switch (extension)
 			{
@@ -2503,24 +2684,11 @@ public class MineImatorLoader
 					error = image.LoadTgaFromBuffer(fileBytes);
 					break;
 				default:
-					// Try PNG first, then other formats
 					error = image.LoadPngFromBuffer(fileBytes);
-					if (error != Error.Ok)
-					{
-						error = image.LoadJpgFromBuffer(fileBytes);
-					}
-					if (error != Error.Ok)
-					{
-						error = image.LoadWebpFromBuffer(fileBytes);
-					}
-					if (error != Error.Ok)
-					{
-						error = image.LoadBmpFromBuffer(fileBytes);
-					}
-					if (error != Error.Ok)
-					{
-						error = image.LoadTgaFromBuffer(fileBytes);
-					}
+					if (error != Error.Ok) error = image.LoadJpgFromBuffer(fileBytes);
+					if (error != Error.Ok) error = image.LoadWebpFromBuffer(fileBytes);
+					if (error != Error.Ok) error = image.LoadBmpFromBuffer(fileBytes);
+					if (error != Error.Ok) error = image.LoadTgaFromBuffer(fileBytes);
 					break;
 			}
 			
@@ -2530,13 +2698,11 @@ public class MineImatorLoader
 				return null;
 			}
 			
-			var texture = ImageTexture.CreateFromImage(image);
-			
-			return texture;
+			return ImageTexture.CreateFromImage(image);
 		}
 		catch (Exception ex)
 		{
-			GD.PrintErr($"Exception loading Mine Imator texture '{texturePath}': {ex.Message}");
+			GD.PrintErr($"Exception loading texture '{texturePath}': {ex.Message}");
 			return null;
 		}
 	}
@@ -2566,6 +2732,13 @@ public class MiModel
 	[JsonPropertyName("texture_size")]
 	public int[] TextureSize { get; set; }
 	
+	/// <summary>
+	/// Multiple texture support - dictionary of texture name to file path
+	/// Used for models with multiple texture slots (e.g., skin, cape, jacket)
+	/// </summary>
+	[JsonPropertyName("textures")]
+	public Dictionary<string, string> Textures { get; set; }
+	
 	[JsonPropertyName("parts")]
 	public List<MiPart> Parts { get; set; }
 	
@@ -2575,6 +2748,39 @@ public class MiModel
 	
 	[JsonIgnore]
 	public string FullPath { get; set; }
+	
+	// Runtime texture cache - stores loaded ImageTexture objects
+	[JsonIgnore]
+	public Dictionary<string, ImageTexture> LoadedTextures { get; set; } = new();
+	
+	/// <summary>
+	/// Gets a texture by name, falling back to the default texture if not found
+	/// </summary>
+	public ImageTexture GetTexture(string textureName = null)
+	{
+		if (LoadedTextures == null || LoadedTextures.Count == 0)
+			return null;
+		
+		// If no specific texture requested, try "skin" first, then default Texture
+		if (string.IsNullOrEmpty(textureName))
+		{
+			if (LoadedTextures.TryGetValue("skin", out var skinTex))
+				return skinTex;
+			if (LoadedTextures.TryGetValue("texture", out var defaultTex))
+				return defaultTex;
+			return null;
+		}
+		
+		// Try to get the named texture
+		if (LoadedTextures.TryGetValue(textureName, out var tex))
+			return tex;
+		
+		// Fallback to default texture
+		if (LoadedTextures.TryGetValue("texture", out var fallbackTex))
+			return fallbackTex;
+		
+		return null;
+	}
 }
 
 /// <summary>
@@ -2590,6 +2796,12 @@ public class MiPart
 	
 	[JsonPropertyName("texture_size")]
 	public int[] TextureSize { get; set; }
+	
+	/// <summary>
+	/// Multiple texture support for parts - dictionary of texture name to file path
+	/// </summary>
+	[JsonPropertyName("textures")]
+	public Dictionary<string, string> Textures { get; set; }
 	
 	[JsonPropertyName("position")]
 	public float[] Position { get; set; }
@@ -2615,6 +2827,40 @@ public class MiPart
 	
 	[JsonPropertyName("parts")]
 	public List<MiPart> Parts { get; set; }
+	
+	// Runtime texture cache for this part
+	[JsonIgnore]
+	public Dictionary<string, ImageTexture> LoadedTextures { get; set; } = new();
+	
+	/// <summary>
+	/// Gets a texture by name for this part, with fallback to model's textures
+	/// </summary>
+	public ImageTexture GetTexture(string textureName, MiModel model = null)
+	{
+		// First check part's own textures
+		if (LoadedTextures != null && LoadedTextures.Count > 0)
+		{
+			if (string.IsNullOrEmpty(textureName))
+			{
+				if (LoadedTextures.TryGetValue("skin", out var skinTex))
+					return skinTex;
+				if (LoadedTextures.TryGetValue("texture", out var defaultTex))
+					return defaultTex;
+			}
+			else if (LoadedTextures.TryGetValue(textureName, out var tex))
+			{
+				return tex;
+			}
+		}
+		
+		// Fallback to model's textures
+		if (model != null)
+		{
+			return model.GetTexture(textureName);
+		}
+		
+		return null;
+	}
 }
 
 /// <summary>
@@ -2648,6 +2894,13 @@ public class MiShape
 	
 	[JsonPropertyName("texture_mirror")]
 	public bool TextureMirror { get; set; }
+	
+	/// <summary>
+	/// Specifies which texture to use for this shape (for multi-texture models).
+	/// Common names: "skin", "cape", "jacket", "left_sleeve", "right_sleeve", "left_pants", "right_pants", "texture"
+	/// </summary>
+	[JsonPropertyName("texture")]
+	public string Texture { get; set; }
 	
 	[JsonPropertyName("3d")]
 	public bool ThreeD { get; set; }
