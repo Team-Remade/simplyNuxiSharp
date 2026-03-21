@@ -1,6 +1,7 @@
 ﻿using Godot;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using simplyRemadeNuxi.core.commands;
 
@@ -40,7 +41,15 @@ public partial class ProjectPropertiesPanel : Panel
 	public Node3D FloorNode => _floorNode;
 	public MeshInstance3D BackgroundColorNode => _backgroundColorMesh;
 	public MeshInstance3D BackgroundImageNode => _backgroundImageMesh;
-	
+
+	// Public properties for saving/loading background settings
+	public Color BackgroundColor => _backgroundColorPicker?.Color ?? new Color("#939BFF");
+	public string BackgroundImagePath => _currentBackgroundImagePath;
+	public bool StretchBackground => _stretchToFitCheckbox?.ButtonPressed ?? true;
+
+	// Public property for texture animation FPS
+	public float TextureAnimationFps => _textureAnimationFpsSpinBox != null ? (float)_textureAnimationFpsSpinBox.Value : 20f;
+
 	// Store the current background image path
 	private string _currentBackgroundImagePath = "";
 	
@@ -61,9 +70,88 @@ public partial class ProjectPropertiesPanel : Panel
 		SetupUi();
 		FindBackgroundNodes();
 		FindFloorNode();
-		LoadCurrentBackgroundSettings();
+
+		// Subscribe to project events to reload settings when project is opened
+		ProjectManager.ProjectOpened += OnProjectOpened;
+		ProjectManager.ProjectClosed += OnProjectClosed;
+
 		// Asset-dependent initialization is deferred until OnAssetsLoaded() is called
 		// by Main after the AssetDownloaderWindow has finished loading.
+	}
+
+	/// <summary>
+	/// Called when a project is opened. Reloads project settings.
+	/// </summary>
+	private void OnProjectOpened(string projectFolder)
+	{
+		// Load project name into the edit box (disconnect signal temporarily to avoid triggering OnProjectNameChanged)
+		_projectNameEdit.TextChanged -= OnProjectNameChanged;
+		_projectNameEdit.Text = ProjectManager.CurrentProjectName;
+		_projectNameEdit.TextChanged += OnProjectNameChanged;
+
+		// Reload project settings (resolution and framerate) from the saved project data
+		LoadCurrentProjectSettings();
+		
+		// Reload floor and background settings from the saved project data
+		LoadCurrentFloorSettings();
+		LoadCurrentBackgroundSettings();
+	}
+
+	/// <summary>
+	/// Loads resolution and framerate settings from the saved project data.
+	/// </summary>
+	private void LoadCurrentProjectSettings()
+	{
+		var settings = ProjectManager.GetSettings();
+		bool hasSavedSettings = settings != null;
+
+		// Load resolution width
+		if (hasSavedSettings && settings.RenderWidth > 0)
+		{
+			_resolutionWidthSpinBox.SetValueNoSignal(settings.RenderWidth);
+		}
+
+		// Load resolution height
+		if (hasSavedSettings && settings.RenderHeight > 0)
+		{
+			_resolutionHeightSpinBox.SetValueNoSignal(settings.RenderHeight);
+		}
+
+		// Load framerate
+		if (hasSavedSettings && settings.Framerate > 0)
+		{
+			_framerateSpinBox.SetValueNoSignal(settings.Framerate);
+		}
+
+		// Load texture animation FPS
+		if (hasSavedSettings && settings.TextureAnimationFps > 0)
+		{
+			_textureAnimationFpsSpinBox.SetValueNoSignal(settings.TextureAnimationFps);
+			// Also apply to the animated texture manager
+			if (AnimatedTextureManager.Instance != null)
+				AnimatedTextureManager.Instance.SetTextureAnimationFps(settings.TextureAnimationFps);
+		}
+	}
+
+	/// <summary>
+	/// Called when a project is closed. Resets to default settings.
+	/// </summary>
+	private void OnProjectClosed()
+	{
+		// Reset to default settings when project is closed
+		if (_floorNode != null)
+		{
+			_floorVisibilityCheckbox.SetPressedNoSignal(true);
+			_floorNode.Visible = true;
+		}
+
+		// Reset background to defaults
+		if (_backgroundColorMesh?.MaterialOverride is ShaderMaterial colorShaderMat)
+		{
+			var defaultColor = new Color("#939BFF");
+			colorShaderMat.SetShaderParameter("abledo_color", defaultColor);
+			_backgroundColorPicker.Color = defaultColor;
+		}
 	}
 
 	/// <summary>
@@ -665,37 +753,158 @@ public partial class ProjectPropertiesPanel : Panel
 
 	private void LoadCurrentBackgroundSettings()
 	{
-		// Load the current background color from the BackgroundColor MeshInstance3D shader material
+		// Try to load background settings from the saved project data
+		var settings = ProjectManager.GetSettings();
+		bool hasSavedSettings = settings != null;
+
+		// Load background color
 		if (_backgroundColorMesh != null)
 		{
-			if (_backgroundColorMesh.MaterialOverride is ShaderMaterial colorShaderMat)
+			if (hasSavedSettings && !string.IsNullOrEmpty(settings.BackgroundColor))
 			{
-				var color = colorShaderMat.GetShaderParameter("abledo_color").AsColor();
-				_backgroundColorPicker.Color = color;
+				// Use saved color
+				try
+				{
+					var color = new Color(settings.BackgroundColor);
+					_backgroundColorPicker.Color = color;
+					ApplyBackgroundColor(color);
+				}
+				catch
+				{
+					// Fallback to reading from scene
+					LoadBackgroundColorFromScene();
+				}
+			}
+			else
+			{
+				// Load from scene (default behavior)
+				LoadBackgroundColorFromScene();
 			}
 		}
-		
-		// Load the current background image from the BackgroundImage MeshInstance3D shader material
+
+		// Load background image and stretch mode
 		if (_backgroundImageMesh != null)
 		{
-			if (_backgroundImageMesh.MaterialOverride is ShaderMaterial shaderMat)
+			if (hasSavedSettings && !string.IsNullOrEmpty(settings.BackgroundImagePath))
 			{
-				var tex = shaderMat.GetShaderParameter("albedo_tex").As<Texture2D>();
-				if (tex != null && tex is CompressedTexture2D compressedTex)
-				{
-					var resPath = compressedTex.ResourcePath;
-					// Treat the default Untitled.png as "no image selected"
-					if (resPath != "res://assets/img/Untitled.png")
-					{
-						_currentBackgroundImagePath = resPath;
-						_backgroundImageLabel.Text = resPath;
-					}
-				}
-				
-				// Load stretch mode from shader parameter
-				bool isStretchToFit = shaderMat.GetShaderParameter("stretch").AsBool();
-				_stretchToFitCheckbox.SetPressedNoSignal(isStretchToFit);
+				// Store the relative path and display it
+				_currentBackgroundImagePath = settings.BackgroundImagePath;
+				_backgroundImageLabel.Text = settings.BackgroundImagePath;
+
+				// Convert relative path to absolute path for loading
+				var absolutePath = GetAbsolutePathForLoading(settings.BackgroundImagePath);
+				LoadBackgroundImageFromPath(absolutePath);
+
+				// Apply stretch mode
+				_stretchToFitCheckbox.SetPressedNoSignal(settings.StretchBackground);
+				ApplyStretchMode(settings.StretchBackground);
 			}
+			else
+			{
+				// Load from scene (default behavior)
+				LoadBackgroundImageAndStretchFromScene();
+			}
+		}
+	}
+
+	private void LoadBackgroundColorFromScene()
+	{
+		if (_backgroundColorMesh?.MaterialOverride is ShaderMaterial colorShaderMat)
+		{
+			var color = colorShaderMat.GetShaderParameter("abledo_color").AsColor();
+			_backgroundColorPicker.Color = color;
+		}
+	}
+
+	private void LoadBackgroundImageAndStretchFromScene()
+	{
+		if (_backgroundImageMesh?.MaterialOverride is ShaderMaterial shaderMat)
+		{
+			var tex = shaderMat.GetShaderParameter("albedo_tex").As<Texture2D>();
+			if (tex != null && tex is CompressedTexture2D compressedTex)
+			{
+				var resPath = compressedTex.ResourcePath;
+				// Treat the default Untitled.png as "no image selected"
+				if (resPath != "res://assets/img/Untitled.png")
+				{
+					_currentBackgroundImagePath = resPath;
+					_backgroundImageLabel.Text = resPath;
+				}
+			}
+
+			// Load stretch mode from shader parameter
+			bool isStretchToFit = shaderMat.GetShaderParameter("stretch").AsBool();
+			_stretchToFitCheckbox.SetPressedNoSignal(isStretchToFit);
+		}
+	}
+
+	private void ApplyBackgroundColor(Color color)
+	{
+		if (_backgroundColorMesh?.MaterialOverride is ShaderMaterial colorShaderMat)
+		{
+			colorShaderMat.SetShaderParameter("abledo_color", color);
+		}
+	}
+
+	private void LoadBackgroundImageFromPath(string path)
+	{
+		if (_backgroundImageMesh?.MaterialOverride is ShaderMaterial shaderMat)
+		{
+			if (!string.IsNullOrEmpty(path) && Godot.FileAccess.FileExists(path))
+			{
+				var img = new Image();
+				img.Load(path);
+
+
+				var texture = ImageTexture.CreateFromImage(img);
+				if (texture != null)
+				{
+					shaderMat.SetShaderParameter("albedo_tex", texture);
+					return;
+				}
+			}
+
+			// Clear the image if path doesn't exist or loading failed
+			var defaultTex = GD.Load<Texture2D>("res://assets/img/Untitled.png");
+			if (defaultTex != null)
+			{
+				shaderMat.SetShaderParameter("albedo_tex", defaultTex);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Converts a relative or absolute path to an absolute path that Godot can load.
+	/// If the path is already absolute, returns it as-is.
+	/// If it's a relative path (e.g., "assets/images/image.png"), converts to absolute using the project folder.
+	/// </summary>
+	private string GetAbsolutePathForLoading(string path)
+	{
+		if (string.IsNullOrEmpty(path))
+			return "";
+
+		// Convert backslashes to forward slashes for consistency
+		path = path.Replace('\\', '/');
+
+		// If it's already an absolute path, return as-is
+		if (System.IO.Path.IsPathRooted(path))
+			return path;
+
+		// It's a relative path - combine with project folder
+		var projectFolder = ProjectManager.CurrentProjectFolder;
+		if (string.IsNullOrEmpty(projectFolder))
+			return path;
+
+		// Combine and convert backslashes
+		var absolutePath = System.IO.Path.Combine(projectFolder, path);
+		return absolutePath.Replace('\\', '/');
+	}
+
+	private void ApplyStretchMode(bool stretch)
+	{
+		if (_backgroundImageMesh?.MaterialOverride is ShaderMaterial shaderMat)
+		{
+			shaderMat.SetShaderParameter("stretch", stretch);
 		}
 	}
 
@@ -885,28 +1094,58 @@ public partial class ProjectPropertiesPanel : Panel
 	
 	private void LoadCurrentFloorSettings()
 	{
-		// Load the current floor visibility
+		// Try to load floor settings from the saved project data
+		var settings = ProjectManager.GetSettings();
+		bool hasSavedFloorSettings = settings != null;
+
+		// Load floor visibility
 		if (_floorNode != null)
 		{
-			_floorVisibilityCheckbox.SetPressedNoSignal(_floorNode.Visible);
+			// Use saved setting if available, otherwise use current scene state
+			bool floorVisible = hasSavedFloorSettings ? settings.FloorVisible : _floorNode.Visible;
+			_floorVisibilityCheckbox.SetPressedNoSignal(floorVisible);
+			_floorNode.Visible = floorVisible;
 		}
-		
-		// Set default texture to grass_block_top
+
+		// Set floor texture
 		if (_blockTexturePaths != null && _blockTexturePaths.Count > 0)
 		{
-			// Try to find grass_block_top texture
-			int grassIndex = _blockTexturePaths.FindIndex(p => p.Contains("grass_block_top"));
-			
-			if (grassIndex >= 0)
+			string textureToUse;
+
+			if (hasSavedFloorSettings && !string.IsNullOrEmpty(settings.FloorTexture))
 			{
-				_floorTextureDropdown.Selected = grassIndex;
-				ApplyFloorTexture(grassIndex);
+				// Use saved texture from project
+				textureToUse = settings.FloorTexture;
 			}
 			else
 			{
-				// Fallback to first texture if grass_block_top not found
-				_floorTextureDropdown.Selected = 0;
-				ApplyFloorTexture(0);
+				// Default to grass_block_top
+				textureToUse = "grass_block_top";
+			}
+
+			// Try to find the saved texture in available textures
+			int textureIndex = _blockTexturePaths.FindIndex(p => p.Contains(textureToUse));
+
+			if (textureIndex >= 0)
+			{
+				_floorTextureDropdown.Selected = textureIndex;
+				ApplyFloorTexture(textureIndex);
+			}
+			else
+			{
+				// Fallback to grass_block_top if saved texture not found
+				int grassIndex = _blockTexturePaths.FindIndex(p => p.Contains("grass_block_top"));
+				if (grassIndex >= 0)
+				{
+					_floorTextureDropdown.Selected = grassIndex;
+					ApplyFloorTexture(grassIndex);
+				}
+				else
+				{
+					// Fallback to first texture if nothing found
+					_floorTextureDropdown.Selected = 0;
+					ApplyFloorTexture(0);
+				}
 			}
 		}
 	}
@@ -1048,7 +1287,11 @@ public partial class ProjectPropertiesPanel : Panel
 	
 	private void OnProjectNameChanged(string newName)
 	{
-		// TODO: Save to project file or settings
+		// Save the new project name to the project data
+		ProjectManager.SetProjectName(newName);
+		
+		// Update the window title to reflect the new project name
+		Main.Instance?.UpdateWindowTitle();
 	}
 	
 	private void OnResolutionChanged(double value)
@@ -1185,4 +1428,14 @@ public partial class ProjectPropertiesPanel : Panel
 	{
 		return (float)_framerateSpinBox.Value;
 	}
+
+	/// <summary>
+	/// Gets the current resolution width.
+	/// </summary>
+	public int GetResolutionWidth() => (int)_resolutionWidthSpinBox.Value;
+
+	/// <summary>
+	/// Gets the current resolution height.
+	/// </summary>
+	public int GetResolutionHeight() => (int)_resolutionHeightSpinBox.Value;
 }

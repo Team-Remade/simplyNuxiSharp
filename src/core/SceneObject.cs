@@ -84,7 +84,23 @@ public partial class SceneObject : Node3D
 	/// When true, this object inherits the parent's scale (default: true).
 	/// </summary>
 	public bool InheritScale = true;
-	
+
+	/// <summary>
+	/// When true, this object inherits the parent's visibility (default: true).
+	/// When false, the object's own ObjectVisible property determines visibility
+	/// without considering parent visibility.
+	/// </summary>
+	private bool _inheritVisibility = true;
+	public bool InheritVisibility
+	{
+		get => _inheritVisibility;
+		set
+		{
+			_inheritVisibility = value;
+			ApplyEffectiveVisibility();
+		}
+	}
+
 	public Node3D Visual;
 
 	// Stores the local transform set by the user (position/rotation/scale before inheritance is applied)
@@ -249,7 +265,49 @@ public partial class SceneObject : Node3D
 	public void SetObjectVisible(bool visible)
 	{
 		ObjectVisible = visible;
-		Visual.Visible = ObjectVisible;
+		ApplyEffectiveVisibility();
+	}
+
+	/// <summary>
+	/// Gets the effective visibility of this object, considering parent visibility
+	/// and the InheritVisibility setting.
+	/// </summary>
+	public bool GetEffectiveVisibility()
+	{
+		if (!InheritVisibility)
+		{
+			// Not inheriting - use own visibility
+			return ObjectVisible;
+		}
+
+		// Check parent's effective visibility
+		var parent = GetParent();
+		if (parent is SceneObject parentSceneObject)
+		{
+			return ObjectVisible && parentSceneObject.GetEffectiveVisibility();
+		}
+
+		// No SceneObject parent - just use own visibility
+		return ObjectVisible;
+	}
+
+	/// <summary>
+	/// Applies the effective visibility to the visual node based on inheritance.
+	/// </summary>
+	private void ApplyEffectiveVisibility()
+	{
+		Visual.Visible = GetEffectiveVisibility();
+		// Also update all children to reflect the new effective visibility
+		UpdateChildrenVisibility();
+	}
+
+	private void UpdateChildrenVisibility()
+	{
+		foreach (var child in GetChildrenObjects())
+		{
+			// Re-apply visibility to children since parent's visibility changed
+			child.ApplyEffectiveVisibility();
+		}
 	}
 
 	public bool SetParent(SceneObject parent)
@@ -292,7 +350,10 @@ public partial class SceneObject : Node3D
 
 		// Update pivot offset based on new parent hierarchy
 		UpdateVisualPosition();
-		
+
+		// Update visibility based on new parent hierarchy
+		ApplyEffectiveVisibility();
+
 		EmitSignal(nameof(ParentChanged), oldParent, parent);
 		return true;
 	}

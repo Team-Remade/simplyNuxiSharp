@@ -1376,6 +1376,18 @@ public partial class SpawnMenu : PopupPanel
 				customModelObject = character;
 			}
 		}
+		else if (extension == ".miobject")
+		{
+			// Load Mine Imator object - contains a scene with multiple models
+			var sceneRoot = LoadMiObjectScene(modelPath);
+			if (sceneRoot != null)
+			{
+				sceneRoot.Name = fullObjectName;
+				sceneRoot.ObjectType = displayName;
+				Viewport.AddChild(sceneRoot);
+				customModelObject = sceneRoot;
+			}
+		}
 		else if (extension == ".blend")
 		{
 			// Load Blender .blend file - export to GLB via Blender CLI, then load
@@ -1635,7 +1647,33 @@ public partial class SpawnMenu : PopupPanel
 		
 		return character;
 	}
-	
+
+	/// <summary>
+	/// Loads a Mine Imator object file (.miobject) which contains a scene with multiple models
+	/// </summary>
+	private SceneObject LoadMiObjectScene(string miobjectPath)
+	{
+		var loader = MineImatorLoader.Instance;
+		var miObject = loader.LoadMiObject(miobjectPath);
+
+		if (miObject == null)
+		{
+			GD.PrintErr($"Failed to load Mine Imator object: {miobjectPath}");
+			return null;
+		}
+
+		// Create a scene from the .miobject
+		var sceneRoot = loader.CreateSceneFromMiObject(miObject);
+
+		if (sceneRoot == null)
+		{
+			GD.PrintErr($"Failed to create scene from Mine Imator object: {miobjectPath}");
+			return null;
+		}
+
+		return sceneRoot;
+	}
+
 	/// <summary>
 	/// Checks if a Node3D hierarchy contains a Skeleton3D
 	/// </summary>

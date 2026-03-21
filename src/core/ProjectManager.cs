@@ -36,6 +36,24 @@ public static class ProjectManager
 	/// <summary>Display name of the current project (derived from folder name).</summary>
 	public static string CurrentProjectName { get; private set; } = "Untitled";
 
+	/// <summary>
+	/// Sets the project name and updates the underlying data.
+	/// Marks the project as dirty.
+	/// </summary>
+	public static void SetProjectName(string name)
+	{
+		if (string.IsNullOrEmpty(name)) return;
+		if (CurrentProjectName == name) return;
+		
+		CurrentProjectName = name;
+		_currentData.ProjectName = name;
+		
+		// Update the recent projects list with the new name
+		UpdateRecentProjectsName(CurrentProjectFile, name);
+		
+		MarkDirty();
+	}
+
 	/// <summary>True when the project has unsaved changes.</summary>
 	public static bool IsDirty { get; private set; } = false;
 
@@ -166,6 +184,24 @@ public static class ProjectManager
 		var list = LoadRecentProjects();
 		list.RemoveAll(e => string.Equals(e.FilePath, projectFilePath, StringComparison.OrdinalIgnoreCase));
 		SaveRecentProjects(list);
+	}
+
+	/// <summary>
+	/// Updates the project name in the recent projects list.
+	/// </summary>
+	private static void UpdateRecentProjectsName(string projectFilePath, string newName)
+	{
+		if (string.IsNullOrEmpty(projectFilePath)) return;
+		var list = LoadRecentProjects();
+		foreach (var entry in list)
+		{
+			if (string.Equals(entry.FilePath, projectFilePath, StringComparison.OrdinalIgnoreCase))
+			{
+				entry.ProjectName = newName;
+				SaveRecentProjects(list);
+				return;
+			}
+		}
 	}
 
 	private static List<RecentProjectEntry> LoadRecentProjects()
@@ -417,10 +453,10 @@ public static class ProjectManager
 			var fileName    = Path.GetFileName(sourcePath);
 			string destFolder;
 
-			// .mimodel files get their own sub-folder so their internal assets
-			// (textures, meshes, etc.) cannot collide with those of other .mimodel
+			// .mimodel and .miobject files get their own sub-folder so their internal assets
+			// (textures, meshes, etc.) cannot collide with those of other model
 			// packages that happen to contain files with the same names.
-			if (ext == ".mimodel")
+			if (ext == ".mimodel" || ext == ".miobject")
 			{
 				var baseName       = Path.GetFileNameWithoutExtension(fileName);
 				var modelSubFolder = GetUniqueDirectoryPath(ModelsFolder, baseName);
@@ -437,12 +473,16 @@ public static class ProjectManager
 
 			File.Copy(sourcePath, destPath, overwrite: false);
 
-			// For .mimodel files, also copy all referenced texture assets so the
+			// For .mimodel and .miobject files, also copy all referenced assets so the
 			// model can be loaded from the project folder without needing the
 			// original source directory.
 			if (ext == ".mimodel")
 			{
 				CopyMiModelAssets(sourcePath, destFolder);
+			}
+			else if (ext == ".miobject")
+			{
+				CopyMiObjectAssets(sourcePath, destFolder);
 			}
 
 			// Register in manifest
@@ -610,6 +650,9 @@ public static class ProjectManager
 		// Save the current timeline frame number
 		_currentData.CurrentFrame = TimelinePanel.Instance?.CurrentFrame ?? 0;
 
+		// Save floor and background settings
+		CollectProjectSettingsState();
+
 		var viewport = Main.Instance?.Viewport;
 		if (viewport == null) return;
 
@@ -617,6 +660,167 @@ public static class ProjectManager
 		{
 			if (child is SceneObject sceneObject)
 				CollectSceneObjectRecursive(sceneObject, null);
+		}
+	}
+
+	/// <summary>
+	/// Collects floor and background settings from the UI for saving.
+	/// </summary>
+	private static void CollectProjectSettingsState()
+	{
+		var propPanel = Main.Instance?.ProjectPropertyPanel;
+		if (propPanel == null) return;
+
+		// Save project settings (resolution and framerate)
+		CollectProjectSettings(propPanel);
+
+		// Save floor visibility
+		_currentData.Settings.FloorVisible = propPanel.FloorNode?.Visible ?? true;
+
+		// Save floor texture - get the currently selected texture name
+		var floorTexture = GetCurrentFloorTexture();
+		if (!string.IsNullOrEmpty(floorTexture))
+		{
+			_currentData.Settings.FloorTexture = floorTexture;
+		}
+
+		// Save background settings
+		CollectBackgroundSettings(propPanel);
+	}
+
+	/// <summary>
+	/// Collects resolution and framerate settings from the ProjectPropertyPanel.
+	/// </summary>
+	private static void CollectProjectSettings(ProjectPropertiesPanel propPanel)
+	{
+		try
+		{
+			_currentData.Settings.RenderWidth = propPanel.GetResolutionWidth();
+			_currentData.Settings.RenderHeight = propPanel.GetResolutionHeight();
+			_currentData.Settings.Framerate = propPanel.GetFramerate();
+			_currentData.Settings.TextureAnimationFps = propPanel.TextureAnimationFps;
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"CollectProjectSettings failed: {ex.Message}");
+		}
+	}
+
+	/// <summary>
+	/// Collects background color, image, and stretch settings from the ProjectPropertyPanel.
+	/// Also copies the background image to the project images directory if needed.
+	/// </summary>
+	private static void CollectBackgroundSettings(ProjectPropertiesPanel propPanel)
+	{
+		try
+		{
+			// Get background color from the property
+			var bgColor = propPanel.BackgroundColor;
+			_currentData.Settings.BackgroundColor = bgColor.ToHtml(false);
+
+			// Get background image path and copy to project if necessary
+			var bgImagePath = propPanel.BackgroundImagePath;
+			if (!string.IsNullOrEmpty(bgImagePath) && bgImagePath != "No image selected")
+			{
+				// Copy the background image to the project's images folder
+				var savedImagePath = CopyBackgroundImageToProject(bgImagePath);
+				if (!string.IsNullOrEmpty(savedImagePath))
+				{
+					_currentData.Settings.BackgroundImagePath = savedImagePath;
+				}
+				else
+				{
+					// If copy failed (e.g., file not found), try to use the original path
+					_currentData.Settings.BackgroundImagePath = bgImagePath;
+				}
+			}
+			else
+			{
+				_currentData.Settings.BackgroundImagePath = "";
+			}
+
+			// Get stretch mode from the property
+			_currentData.Settings.StretchBackground = propPanel.StretchBackground;
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"CollectBackgroundSettings failed: {ex.Message}");
+		}
+	}
+
+	/// <summary>
+	/// Copies the background image to the project's images directory if it's not already there.
+	/// Returns the relative path to use when saving, or empty string on failure.
+	/// </summary>
+	private static string CopyBackgroundImageToProject(string sourcePath)
+	{
+		if (string.IsNullOrEmpty(sourcePath) || string.IsNullOrEmpty(CurrentProjectFolder))
+			return "";
+
+		GD.Print(sourcePath);
+
+		// Normalize path separators for comparison
+		var normalizedSource = sourcePath.Replace('\\', '/');
+		var normalizedProjectFolder = CurrentProjectFolder.Replace('\\', '/');
+
+		// If it's already a path within the current project, don't copy again
+		if (normalizedSource.StartsWith(normalizedProjectFolder, StringComparison.OrdinalIgnoreCase))
+		{
+			// Return the relative path from project folder
+			return GetRelativePath(CurrentProjectFolder, sourcePath);
+		}
+
+		try
+		{
+			// Check if source file exists
+			if (!File.Exists(sourcePath))
+			{
+				GD.PrintErr($"Background image file not found: {sourcePath}");
+				return "";
+			}
+
+			// Ensure the images folder exists
+			Directory.CreateDirectory(ImagesFolder);
+
+			var fileName = Path.GetFileName(sourcePath);
+			var destPath = GetUniqueFilePath(ImagesFolder, fileName);
+
+			// Copy the file
+			File.Copy(sourcePath, destPath, overwrite: true);
+
+			GD.Print($"Copied background image to project: {destPath}");
+
+			// Return the relative path from project folder
+			return GetRelativePath(CurrentProjectFolder, destPath);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"Failed to copy background image: {ex.Message}");
+			return "";
+		}
+	}
+
+	/// <summary>
+	/// Gets the current floor texture name from the ProjectPropertyPanel.
+	/// </summary>
+	private static string GetCurrentFloorTexture()
+	{
+		try
+		{
+			var propPanel = Main.Instance?.ProjectPropertyPanel;
+			if (propPanel == null) return "";
+
+			// Access the dropdown to get the selected texture name
+			var dropdown = propPanel.GetNodeOrNull<Godot.OptionButton>("FloorTextureDropdown");
+			if (dropdown == null || dropdown.Selected < 0) return "";
+
+			// Get the text of the selected item
+			return dropdown.GetItemText(dropdown.Selected);
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"GetCurrentFloorTexture failed: {ex.Message}");
+			return "";
 		}
 	}
 
@@ -1043,6 +1247,72 @@ public static class ProjectManager
 	}
 
 	/// <summary>
+	/// Copies all .mimodel files referenced in a .miobject file, along with their
+	/// texture assets, from the .miobject's source directory into <paramref name="destFolder"/>
+	/// </summary>
+	private static void CopyMiObjectAssets(string miobjectSourcePath, string destFolder)
+	{
+		try
+		{
+			var sourceDir = Path.GetDirectoryName(miobjectSourcePath) ?? "";
+			var jsonText  = File.ReadAllText(miobjectSourcePath);
+
+			using var doc = System.Text.Json.JsonDocument.Parse(jsonText);
+			var root = doc.RootElement;
+
+			// Find the resources array
+			if (!root.TryGetProperty("resources", out var resources) || resources.ValueKind != System.Text.Json.JsonValueKind.Array)
+			{
+				GD.Print($"ProjectManager: No resources section found in miobject '{miobjectSourcePath}'");
+				return;
+			}
+
+			// Collect all .mimodel filenames from resources
+			var mimodelFilenames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			foreach (var resource in resources.EnumerateArray())
+			{
+				if (resource.TryGetProperty("type", out var type) && type.GetString() == "model")
+				{
+					if (resource.TryGetProperty("filename", out var filename) && filename.ValueKind == System.Text.Json.JsonValueKind.String)
+					{
+						var filenameStr = filename.GetString();
+						if (!string.IsNullOrEmpty(filenameStr) && filenameStr.EndsWith(".mimodel", StringComparison.OrdinalIgnoreCase))
+						{
+							mimodelFilenames.Add(filenameStr);
+						}
+					}
+				}
+			}
+
+			// Copy each .mimodel file and its assets
+			foreach (var mimodelFilename in mimodelFilenames)
+			{
+				var mimodelSourcePath = Path.Combine(sourceDir, mimodelFilename);
+				if (!File.Exists(mimodelSourcePath))
+				{
+					GD.PrintErr($"ProjectManager: Referenced mimodel not found: '{mimodelSourcePath}'");
+					continue;
+				}
+
+				// Copy the .mimodel file
+				var mimodelDestPath = Path.Combine(destFolder, mimodelFilename);
+				if (!File.Exists(mimodelDestPath))
+				{
+					File.Copy(mimodelSourcePath, mimodelDestPath);
+					GD.Print($"ProjectManager: Copied mimodel '{mimodelFilename}' → '{mimodelDestPath}'");
+				}
+
+				// Also copy the .mimodel's texture assets
+				CopyMiModelAssets(mimodelSourcePath, destFolder);
+			}
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"ProjectManager.CopyMiObjectAssets failed for '{miobjectSourcePath}': {ex.Message}");
+		}
+	}
+
+	/// <summary>
 	/// Recursively walks a JsonElement representing a mimodel (or part) and
 	/// adds every "texture" string value it finds to <paramref name="paths"/>.
 	/// </summary>
@@ -1077,7 +1347,7 @@ public static class ProjectManager
 	{
 		return ext switch
 		{
-			".glb" or ".gltf" or ".mimodel" or ".blend" => ModelsFolder,
+			".glb" or ".gltf" or ".mimodel" or ".miobject" or ".blend" => ModelsFolder,
 			".png" or ".jpg" or ".jpeg" or ".bmp" or ".webp" => ImagesFolder,
 			".wav" or ".mp3" or ".ogg" => AudioFolder,
 			_ => AssetsFolder,
@@ -1088,7 +1358,7 @@ public static class ProjectManager
 	{
 		return ext switch
 		{
-			".glb" or ".gltf" or ".mimodel" or ".blend" => "Model",
+			".glb" or ".gltf" or ".mimodel" or ".miobject" or ".blend" => "Model",
 			".png" or ".jpg" or ".jpeg" or ".bmp" or ".webp" => "Image",
 			".wav" or ".mp3" or ".ogg" => "Audio",
 			_ => "Other",
@@ -1173,9 +1443,14 @@ public class ProjectSettings
 	public int    RenderWidth    { get; set; } = 1920;
 	public int    RenderHeight   { get; set; } = 1080;
 	public float  Framerate      { get; set; } = 30f;
+	public float  TextureAnimationFps { get; set; } = 20f;
 	public string BackgroundColor { get; set; } = "#939BFF";
 	public string BackgroundImagePath { get; set; } = "";
 	public bool   StretchBackground { get; set; } = true;
+
+	// Floor settings
+	public bool   FloorVisible   { get; set; } = true;
+	public string FloorTexture   { get; set; } = "grass_block_top";
 }
 
 /// <summary>Manifest entry for a single imported asset file.</summary>

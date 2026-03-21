@@ -18,6 +18,278 @@ public class MineImatorLoader
 	
 	// Cache of loaded models by path
 	private readonly Dictionary<string, MiModel> _modelCache = new();
+
+	// Cache of loaded .miobject files by path
+	private readonly Dictionary<string, MiObject> _miObjectCache = new();
+
+	/// <summary>
+	/// Loads a Mine Imator object file (.miobject) which contains a scene with multiple models
+	/// </summary>
+	/// <param name="objectPath">Path to the .miobject file</param>
+	/// <returns>The loaded MiObject, or null if loading failed</returns>
+	public MiObject LoadMiObject(string objectPath)
+	{
+		if (_miObjectCache.TryGetValue(objectPath, out var cachedObject))
+		{
+			return cachedObject;
+		}
+
+		try
+		{
+			if (!File.Exists(objectPath))
+			{
+				GD.PrintErr($"Mine Imator object file not found: {objectPath}");
+				return null;
+			}
+
+			var jsonText = File.ReadAllText(objectPath);
+			var miObject = JsonSerializer.Deserialize<MiObject>(jsonText, new JsonSerializerOptions
+			{
+				PropertyNameCaseInsensitive = true,
+				MaxDepth = 256
+			});
+
+			if (miObject == null)
+			{
+				GD.PrintErr($"Failed to deserialize Mine Imator object: {objectPath}");
+				return null;
+			}
+
+			// Store the directory path for resolving texture paths
+			miObject.DirectoryPath = Path.GetDirectoryName(objectPath);
+			miObject.FullPath = objectPath;
+
+			_miObjectCache[objectPath] = miObject;
+
+			return miObject;
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"Error loading Mine Imator object '{objectPath}': {ex.Message}");
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Creates a SceneObject containing all timeline items from a .miobject file
+	/// Each timeline item that has a model template is loaded and positioned accordingly
+	/// </summary>
+	/// <param name="miObject">The loaded MiObject</param>
+	/// <returns>A SceneObject with all timeline items as children</returns>
+	public SceneObject CreateSceneFromMiObject(MiObject miObject)
+	{
+		if (miObject == null)
+		{
+			GD.PrintErr("Cannot create scene from null MiObject");
+			return null;
+		}
+
+		// Create the root scene object
+		var sceneRoot = new SceneObject
+		{
+			Name = "MiObject_Scene",
+			ObjectType = "MineImatorObject"
+		};
+
+		// Build a dictionary of templates by ID for quick lookup
+		var templateDict = new Dictionary<string, MiTemplate>();
+		if (miObject.Templates != null)
+		{
+			foreach (var template in miObject.Templates)
+			{
+				if (!string.IsNullOrEmpty(template.Id))
+				{
+					templateDict[template.Id] = template;
+				}
+			}
+		}
+
+		// Build a dictionary of resources by ID for mapping model IDs to filenames
+		var resourceDict = new Dictionary<string, string>(); // modelID -> filename
+		if (miObject.Resources != null)
+		{
+			foreach (var resource in miObject.Resources)
+			{
+				if (!string.IsNullOrEmpty(resource.Id) && !string.IsNullOrEmpty(resource.Filename))
+				{
+					resourceDict[resource.Id] = resource.Filename;
+				}
+			}
+		}
+
+		// Dictionary to store all created SceneObjects by timeline ID
+		var sceneObjectsByTimelineId = new Dictionary<string, SceneObject>();
+
+		// First pass: Create all scene objects for model-type timelines
+		if (miObject.Timelines != null)
+		{
+			foreach (var timeline in miObject.Timelines)
+			{
+				// Skip bodypart types for now - we'll handle them in second pass
+				if (timeline.Type == "bodypart")
+					continue;
+
+				// Get the template this timeline references
+				MiTemplate template = null;
+				if (!string.IsNullOrEmpty(timeline.Temp) && templateDict.TryGetValue(timeline.Temp, out var foundTemplate))
+				{
+					template = foundTemplate;
+				}
+
+				// Try to load the model if template exists
+				SceneObject itemObject = null;
+				MiModel miModel = null; // Store for transform application
+
+				if (template != null && !string.IsNullOrEmpty(template.Model))
+				{
+					// Use resource mapping to get the actual filename
+					string modelFilename = template.Model;
+					if (resourceDict.TryGetValue(template.Model, out var mappedFilename))
+					{
+						modelFilename = mappedFilename;
+					}
+
+					// Look for the model file in the same directory as the .miobject
+					var modelPath = Path.Combine(miObject.DirectoryPath, modelFilename);
+
+					if (File.Exists(modelPath))
+					{
+						// Load the .mimodel
+						miModel = LoadModel(modelPath);
+						if (miModel != null)
+						{
+							// Create a character from the model
+							var character = CreateCharacterFromModel(miModel);
+							if (character != null)
+							{
+								character.Name = timeline.ModelPartName ?? timeline.Name ?? "Model";
+								itemObject = character;
+							}
+						}
+					}
+					else
+					{
+						GD.PrintErr($"Model file not found: {modelPath}");
+					}
+				}
+				else if (template != null)
+				{
+					GD.PrintErr($"Template '{template.Id}' has no model reference");
+				}
+
+				// If we couldn't load a model, create a placeholder
+				if (itemObject == null)
+				{
+					itemObject = new SceneObject
+					{
+						Name = timeline.ModelPartName ?? timeline.Name ?? "Unknown",
+						ObjectType = "Placeholder"
+					};
+				}
+
+				// Apply transform from timeline (try direct fields first, then keyframes)
+				ApplyTimelineTransform(itemObject, timeline, miModel);
+
+				// Apply visibility
+				itemObject.Visible = !timeline.Hide;
+
+				// Store in dictionary for later parent lookup
+				if (!string.IsNullOrEmpty(timeline.Id))
+				{
+					sceneObjectsByTimelineId[timeline.Id] = itemObject;
+				}
+			}
+		}
+
+		// Second pass: Establish parent-child relationships and handle bodyparts
+		if (miObject.Timelines != null)
+		{
+			foreach (var timeline in miObject.Timelines)
+			{
+				// Find the SceneObject for this timeline
+				if (!sceneObjectsByTimelineId.TryGetValue(timeline.Id, out var itemObject))
+				{
+					// This might be a bodypart or other type without a created object
+					continue;
+				}
+
+				// Determine the parent object
+				SceneObject parentObject = null;
+
+				if (!string.IsNullOrEmpty(timeline.Parent))
+				{
+					// Try to find the parent in our created objects
+					if (sceneObjectsByTimelineId.TryGetValue(timeline.Parent, out var foundParent))
+					{
+						parentObject = foundParent;
+					}
+				}
+
+				// Add to parent or root
+				if (parentObject != null)
+				{
+					parentObject.AddChild(itemObject);
+				}
+				else
+				{
+					sceneRoot.AddChild(itemObject);
+				}
+			}
+		}
+
+		return sceneRoot;
+	}
+
+	/// <summary>
+	/// Applies transform data from a timeline to a SceneObject
+	/// Tries direct position/rotation/scale fields first, then falls back to keyframes
+	/// Also tries to get position from the loaded model if available
+	/// </summary>
+	private void ApplyTimelineTransform(SceneObject itemObject, MiTimeline timeline, MiModel model = null)
+	{
+		if (timeline.Keyframes != null && timeline.Keyframes.Count > 0)
+		{
+			// Search through all keyframes to find one with position data
+			float[] keyframePos = null;
+			foreach (var kf in timeline.Keyframes)
+			{
+				var pos = kf.Value.GetPosition();
+				if (pos != null)
+				{
+					keyframePos = pos;
+					break;
+				}
+			}
+			if (keyframePos != null)
+			{
+				itemObject.GlobalPosition = new Vector3(
+					keyframePos[0] / 16.0f,
+					keyframePos[1] / 16.0f,
+					keyframePos[2] / 16.0f
+				);
+			}
+		}
+
+		if (timeline.Keyframes != null && timeline.Keyframes.TryGetValue("0", out var keyframe2) && keyframe2.Rotation != null && keyframe2.Rotation.Length >= 3)
+		{
+			// Fall back to keyframe rotation (frame 0)
+			itemObject.GlobalRotation = new Vector3(
+				Mathf.DegToRad(keyframe2.Rotation[0]),
+				Mathf.DegToRad(keyframe2.Rotation[1]),
+				Mathf.DegToRad(keyframe2.Rotation[2])
+			);
+		}
+
+		if (timeline.Keyframes != null && timeline.Keyframes.TryGetValue("0", out var keyframe3) && keyframe3.Scale != null && keyframe3.Scale.Length >= 3)
+		{
+			// Fall back to keyframe scale (frame 0)
+			itemObject.Scale = new Vector3(
+				keyframe3.Scale[0],
+				keyframe3.Scale[1],
+				keyframe3.Scale[2]
+			);
+		}
+	}
 	
 	/// <summary>
 	/// Loads a Mine Imator model from a .mimodel file
@@ -2546,6 +2818,308 @@ public class SingleOrArrayBoolConverter : JsonConverter<bool[]>
 			writer.WriteEndArray();
 		}
 	}
+}
+
+/// <summary>
+/// Represents a Mine Imator object file (.miobject) containing a scene with multiple models
+/// </summary>
+public class MiObject
+{
+	[JsonPropertyName("format")]
+	public int Format { get; set; }
+
+	[JsonPropertyName("created_in")]
+	public string CreatedIn { get; set; }
+
+	[JsonPropertyName("templates")]
+	public List<MiTemplate> Templates { get; set; }
+
+	[JsonPropertyName("timelines")]
+	public List<MiTimeline> Timelines { get; set; }
+
+	[JsonPropertyName("resources")]
+	public List<MiResource> Resources { get; set; }
+
+	// Runtime properties (not in JSON)
+	[JsonIgnore]
+	public string DirectoryPath { get; set; }
+
+	[JsonIgnore]
+	public string FullPath { get; set; }
+}
+
+/// <summary>
+/// Represents a template in a .miobject file (references to .mimodel files)
+/// </summary>
+public class MiTemplate
+{
+	[JsonPropertyName("id")]
+	public string Id { get; set; }
+
+	[JsonPropertyName("type")]
+	public string Type { get; set; }
+
+	[JsonPropertyName("name")]
+	public string Name { get; set; }
+
+	[JsonPropertyName("model")]
+	public string Model { get; set; }
+
+	[JsonPropertyName("model_tex")]
+	public string ModelTex { get; set; }
+}
+
+/// <summary>
+/// Represents a timeline entry in a .miobject file (scene object)
+/// </summary>
+public class MiTimeline
+{
+	[JsonPropertyName("id")]
+	public string Id { get; set; }
+
+	[JsonPropertyName("type")]
+	public string Type { get; set; }
+
+	[JsonPropertyName("name")]
+	public string Name { get; set; }
+
+	[JsonPropertyName("temp")]
+	public string Temp { get; set; }
+
+	[JsonPropertyName("color")]
+	public string Color { get; set; }
+
+	[JsonPropertyName("hide")]
+	public bool Hide { get; set; }
+
+	[JsonPropertyName("lock")]
+	public bool Lock { get; set; }
+
+	[JsonPropertyName("depth")]
+	public int Depth { get; set; }
+
+	[JsonPropertyName("model_part_name")]
+	public string ModelPartName { get; set; }
+
+	[JsonPropertyName("part_of")]
+	public string PartOf { get; set; }
+
+	[JsonPropertyName("parent")]
+	public string Parent { get; set; }
+
+	[JsonPropertyName("parent_tree_index")]
+	public int ParentTreeIndex { get; set; }
+
+	[JsonPropertyName("position")]
+	public float[] Position { get; set; }
+
+	[JsonPropertyName("rotation")]
+	public float[] Rotation { get; set; }
+
+	[JsonPropertyName("scale")]
+	public float[] Scale { get; set; }
+
+	[JsonPropertyName("rot_point")]
+	public float[] RotPoint { get; set; }
+
+	[JsonPropertyName("backfaces")]
+	public bool Backfaces { get; set; }
+
+	[JsonPropertyName("shadows")]
+	public bool Shadows { get; set; }
+
+	[JsonPropertyName("glow")]
+	public bool Glow { get; set; }
+
+	[JsonPropertyName("fog")]
+	public bool Fog { get; set; }
+
+	[JsonPropertyName("blend_mode")]
+	public string BlendMode { get; set; }
+
+	[JsonPropertyName("parts")]
+	public List<string> Parts { get; set; }
+
+	[JsonPropertyName("inherit")]
+	public MiInherit Inherit { get; set; }
+
+	[JsonPropertyName("default_values")]
+	public Dictionary<string, object> DefaultValues { get; set; }
+
+	[JsonPropertyName("keyframes")]
+	public Dictionary<string, MiKeyframe> Keyframes { get; set; }
+
+	[JsonPropertyName("tree_extend")]
+	public bool TreeExtend { get; set; }
+
+	[JsonPropertyName("lock_bend")]
+	public bool LockBend { get; set; }
+
+	[JsonPropertyName("scale_resize")]
+	public bool ScaleResize { get; set; }
+
+	[JsonPropertyName("rot_point_custom")]
+	public bool RotPointCustom { get; set; }
+
+	[JsonPropertyName("texture_filtering")]
+	public bool TextureFiltering { get; set; }
+
+	[JsonPropertyName("texture_blur")]
+	public bool TextureBlur { get; set; }
+
+	[JsonPropertyName("ssao")]
+	public bool SSAO { get; set; }
+
+	[JsonPropertyName("hq_hiding")]
+	public bool HQHiding { get; set; }
+
+	[JsonPropertyName("lq_hiding")]
+	public bool LQHiding { get; set; }
+
+	[JsonPropertyName("foliage_tint")]
+	public bool FoliageTint { get; set; }
+
+	[JsonPropertyName("bleed_light")]
+	public bool BleedLight { get; set; }
+
+	[JsonPropertyName("glow_texture")]
+	public bool GlowTexture { get; set; }
+
+	[JsonPropertyName("only_render_glow")]
+	public bool OnlyRenderGlow { get; set; }
+}
+
+/// <summary>
+/// Represents the inherit settings for a timeline item
+/// </summary>
+public class MiInherit
+{
+	[JsonPropertyName("position")]
+	public bool Position { get; set; }
+
+	[JsonPropertyName("rotation")]
+	public bool Rotation { get; set; }
+
+	[JsonPropertyName("scale")]
+	public bool Scale { get; set; }
+
+	[JsonPropertyName("alpha")]
+	public bool Alpha { get; set; }
+
+	[JsonPropertyName("color")]
+	public bool Color { get; set; }
+
+	[JsonPropertyName("texture")]
+	public bool Texture { get; set; }
+
+	[JsonPropertyName("visibility")]
+	public bool Visibility { get; set; }
+
+	[JsonPropertyName("glow_color")]
+	public bool GlowColor { get; set; }
+
+	[JsonPropertyName("select")]
+	public bool Select { get; set; }
+}
+
+/// <summary>
+/// Represents a keyframe in a timeline item
+/// </summary>
+public class MiKeyframe
+{
+	[JsonPropertyName("position")]
+	public float[] Position { get; set; }
+
+	[JsonPropertyName("POS_X")]
+	public float? PosX { get; set; }
+
+	[JsonPropertyName("POS_Y")]
+	public float? PosY { get; set; }
+
+	[JsonPropertyName("POS_Z")]
+	public float? PosZ { get; set; }
+
+	[JsonPropertyName("rotation")]
+	public float[] Rotation { get; set; }
+
+	[JsonPropertyName("ROT_X")]
+	public float? RotX { get; set; }
+
+	[JsonPropertyName("ROT_Y")]
+	public float? RotY { get; set; }
+
+	[JsonPropertyName("ROT_Z")]
+	public float? RotZ { get; set; }
+
+	[JsonPropertyName("scale")]
+	public float[] Scale { get; set; }
+
+	[JsonPropertyName("SCL_X")]
+	public float? SclX { get; set; }
+
+	[JsonPropertyName("SCL_Y")]
+	public float? SclY { get; set; }
+
+	[JsonPropertyName("SCL_Z")]
+	public float? SclZ { get; set; }
+
+	[JsonPropertyName("color")]
+	public string Color { get; set; }
+
+	[JsonPropertyName("alpha")]
+	public float Alpha { get; set; }
+
+	/// <summary>
+	/// Gets position values from either array format or individual POS_X/Y/Z fields
+	/// Mine Imator uses Z-up, so we swap Y and Z for Godot's Y-up coordinate system
+	/// </summary>
+	public float[] GetPosition()
+	{
+		if (Position != null && Position.Length >= 3)
+			return Position;
+		if (PosX.HasValue || PosY.HasValue || PosZ.HasValue)
+			return new float[] { PosX ?? 0, PosZ ?? 0, PosY ?? 0 }; // Swap Y and Z
+		return null;
+	}
+
+	/// <summary>
+	/// Gets rotation values from either array format or individual ROT_X/Y/Z fields
+	/// </summary>
+	public float[] GetRotation()
+	{
+		if (Rotation != null && Rotation.Length >= 3)
+			return Rotation;
+		if (RotX.HasValue || RotY.HasValue || RotZ.HasValue)
+			return new float[] { RotX ?? 0, RotY ?? 0, RotZ ?? 0 };
+		return null;
+	}
+
+	/// <summary>
+	/// Gets scale values from either array format or individual SCL_X/Y/Z fields
+	/// </summary>
+	public float[] GetScale()
+	{
+		if (Scale != null && Scale.Length >= 3)
+			return Scale;
+		if (SclX.HasValue || SclY.HasValue || SclZ.HasValue)
+			return new float[] { SclX ?? 1, SclY ?? 1, SclZ ?? 1 };
+		return null;
+	}
+}
+
+/// <summary>
+/// Represents a resource entry in a .miobject file (maps IDs to actual filenames)
+/// </summary>
+public class MiResource
+{
+	[JsonPropertyName("id")]
+	public string Id { get; set; }
+
+	[JsonPropertyName("type")]
+	public string Type { get; set; }
+
+	[JsonPropertyName("filename")]
+	public string Filename { get; set; }
 }
 
 #endregion

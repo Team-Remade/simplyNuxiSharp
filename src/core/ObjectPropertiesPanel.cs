@@ -32,6 +32,7 @@ public partial class ObjectPropertiesPanel : Panel
 	private CheckBox _inheritPositionCheckbox;
 	private CheckBox _inheritRotationCheckbox;
 	private CheckBox _inheritScaleCheckbox;
+	private CheckBox _inheritVisibilityCheckbox;
 	private CollapsibleSection _materialSection;
 	private HSlider _materialAlphaSlider;
 	private Label _materialAlphaLabel;
@@ -151,6 +152,21 @@ public partial class ObjectPropertiesPanel : Panel
 		_visibilityCheckbox.AddThemeStyleboxOverride("pressed", styleBox);
 		_visibilityCheckbox.Toggled += OnVisibilityChanged;
 		visibilityContainer.AddChild(_visibilityCheckbox);
+
+		// Inherit Visibility checkbox (checked by default, like position/rotation/scale)
+		var inheritVisibilityRow = new HBoxContainer();
+		vbox.AddChild(inheritVisibilityRow);
+		var inheritVisibilityLabel = new Label();
+		inheritVisibilityLabel.Text = "Inherit Visibility:";
+		inheritVisibilityLabel.CustomMinimumSize = new Vector2(120, 0);
+		inheritVisibilityRow.AddChild(inheritVisibilityLabel);
+		_inheritVisibilityCheckbox = new CheckBox();
+		_inheritVisibilityCheckbox.Name = "InheritVisibilityCheckbox";
+		_inheritVisibilityCheckbox.Text = "";
+		_inheritVisibilityCheckbox.ButtonPressed = true;
+		_inheritVisibilityCheckbox.TooltipText = "When checked, this object inherits the parent's visibility";
+		_inheritVisibilityCheckbox.Toggled += OnInheritVisibilityChanged;
+		inheritVisibilityRow.AddChild(_inheritVisibilityCheckbox);
 
 		// Position section with toggle arrow
 		_positionSection = new CollapsibleSection("Position");
@@ -594,6 +610,7 @@ public partial class ObjectPropertiesPanel : Panel
 		_inheritPositionCheckbox.SetPressedNoSignal(_currentObject.InheritPosition);
 		_inheritRotationCheckbox.SetPressedNoSignal(_currentObject.InheritRotation);
 		_inheritScaleCheckbox.SetPressedNoSignal(_currentObject.InheritScale);
+		_inheritVisibilityCheckbox.SetPressedNoSignal(_currentObject.InheritVisibility);
 
 		// Material Alpha - special handling for bones
 		if (_currentObject is BoneSceneObject boneObject)
@@ -658,6 +675,7 @@ public partial class ObjectPropertiesPanel : Panel
 		_inheritPositionCheckbox.SetPressedNoSignal(true);
 		_inheritRotationCheckbox.SetPressedNoSignal(true);
 		_inheritScaleCheckbox.SetPressedNoSignal(true);
+		_inheritVisibilityCheckbox.SetPressedNoSignal(true);
 		// Clear light controls
 		_lightEnergySpinBox.SetValueNoSignal(1.0);
 		_lightRangeSpinBox.SetValueNoSignal(5.0);
@@ -803,6 +821,15 @@ public partial class ObjectPropertiesPanel : Panel
 		_currentObject.InheritPivotOffset = inherit;
 		RecordBoolPropertyCommand("Change Inherit Pivot Offset", old, inherit,
 			v => { _currentObject.InheritPivotOffset = v; _inheritPivotOffsetCheckbox.SetPressedNoSignal(v); });
+	}
+
+	private void OnInheritVisibilityChanged(bool inherit)
+	{
+		if (_currentObject == null) return;
+		var old = _currentObject.InheritVisibility;
+		_currentObject.InheritVisibility = inherit;
+		RecordBoolPropertyCommand("Change Inherit Visibility", old, inherit,
+			v => { _currentObject.InheritVisibility = v; _inheritVisibilityCheckbox.SetPressedNoSignal(v); });
 	}
 
 	/// <summary>
