@@ -7,7 +7,7 @@ For all your Minecraft animation needs!
 Requirements
 
 - Dotnet 9.0+
-- [This](https://drive.google.com/file/d/1iLjB1zmbnLmsFVDjbBHVVxI9lXo5fYxN/view?usp=sharing) Godot build
+- [This](https://drive.google.com/file/d/17s0k8i0sTdraLql9_Lu-ev6YakkFuVHY/view?usp=sharing) Godot build
 
 ## Setup
 

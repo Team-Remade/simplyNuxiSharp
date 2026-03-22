@@ -1145,6 +1145,30 @@ public partial class Main : Control
 				UpdateLightsRenderMode(childNode, enabled);
 			}
 		}
+		
+		// Update Sun and Moon shadow settings based on render mode
+		UpdateSunMoonShadows(node, enabled);
+	}
+	
+	/// <summary>
+	/// Updates the shadow settings on the Sun and Moon directional lights.
+	/// When in rendered mode, shadows are enabled. When in unrendered mode, shadows are disabled.
+	/// </summary>
+	private void UpdateSunMoonShadows(Node node, bool enabled)
+	{
+		// Find Sun directional light
+		var sun = node.GetNodeOrNull<DirectionalLight3D>("Sun");
+		if (sun != null)
+		{
+			sun.ShadowEnabled = enabled;
+			
+			// Find Moon directional light (child of Sun)
+			var moon = sun.GetNodeOrNull<DirectionalLight3D>("Moon");
+			if (moon != null)
+			{
+				moon.ShadowEnabled = enabled;
+			}
+		}
 	}
 	
 	public void TogglePreviewViewportVisibility()

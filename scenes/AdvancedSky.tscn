@@ -1,0 +1,54 @@
+[gd_scene format=3 uid="uid://bjey3l25qxdlv"]
+
+[ext_resource type="Sky" uid="uid://dtgm0pm1yxogn" path="res://assets/AdvancedSky.tres" id="1_myinc"]
+[ext_resource type="RDShaderFile" uid="uid://dx1y5cye1m1hu" path="res://addons/SunshineClouds2/SunshineCloudsCompute.glsl" id="2_lrmk3"]
+[ext_resource type="CompressedTexture3D" uid="uid://dei12lsgrjpyu" path="res://addons/SunshineClouds2/NoiseTextures/curl_noise_varied.tga" id="3_quft7"]
+[ext_resource type="CompressedTexture3D" uid="uid://b3uyfsp4in821" path="res://addons/SunshineClouds2/NoiseTextures/bluenoise_Dither.png" id="4_nkjq3"]
+[ext_resource type="Texture2D" uid="uid://de2nsujnhdlg0" path="res://addons/SunshineClouds2/NoiseTextures/ExtraLargeScaleNoise.tres" id="5_2wb7r"]
+[ext_resource type="Texture2D" uid="uid://g02m2ewpwusq" path="res://addons/SunshineClouds2/NoiseTextures/HeightGradient.tres" id="6_g2j5e"]
+[ext_resource type="NoiseTexture3D" uid="uid://6ed3lvlpbqmg" path="res://addons/SunshineClouds2/NoiseTextures/LargeScaleNoise.tres" id="7_ca7ld"]
+[ext_resource type="NoiseTexture3D" uid="uid://dxyewgt7o40m0" path="res://addons/SunshineClouds2/NoiseTextures/MediumScaleNoise.tres" id="8_jhcfr"]
+[ext_resource type="RDShaderFile" uid="uid://cqhejbalsrvjp" path="res://addons/SunshineClouds2/SunshineCloudsPostCompute.glsl" id="9_remuo"]
+[ext_resource type="RDShaderFile" uid="uid://crfpk8ta4qxsk" path="res://addons/SunshineClouds2/SunshineCloudsPreCompute.glsl" id="10_tg6y8"]
+[ext_resource type="Script" uid="uid://dnblgqynq1t7l" path="res://addons/SunshineClouds2/SunshineClouds.gd" id="11_0l11o"]
+[ext_resource type="NoiseTexture3D" uid="uid://bnck2kxeg5bkg" path="res://addons/SunshineClouds2/NoiseTextures/SmallScaleNoise.tres" id="12_v3ley"]
+[ext_resource type="Script" uid="uid://djusduuxf0voj" path="res://addons/SunshineClouds2/SunshineCloudsDriver.gd" id="13_ridcr"]
+
+[sub_resource type="CompositorEffect" id="CompositorEffect_g43wx"]
+resource_local_to_scene = false
+resource_name = ""
+enabled = true
+effect_callback_type = 3
+access_resolved_color = true
+access_resolved_depth = true
+needs_motion_vectors = true
+needs_normal_roughness = false
+script = ExtResource("11_0l11o")
+clouds_coverage = 0.795
+atmospheric_density = 0.455
+lighting_density = 1.299
+dither_noise = ExtResource("4_nkjq3")
+height_gradient = ExtResource("6_g2j5e")
+extra_large_noise_patterns = ExtResource("5_2wb7r")
+large_scale_noise = ExtResource("7_ca7ld")
+medium_scale_noise = ExtResource("8_jhcfr")
+small_scale_noise = ExtResource("12_v3ley")
+curl_noise = ExtResource("3_quft7")
+pre_pass_compute_shader = ExtResource("10_tg6y8")
+compute_shader = ExtResource("2_lrmk3")
+post_pass_compute_shader = ExtResource("9_remuo")
+wind_direction = Vector3(1, 0, 1)
+
+[sub_resource type="Environment" id="Environment_ivycn"]
+background_mode = 2
+sky = ExtResource("1_myinc")
+
+[node name="AdvancedSky" type="Node3D" unique_id=331286390]
+
+[node name="CloudDriver" type="Node" parent="." unique_id=2096047676]
+script = ExtResource("13_ridcr")
+update_continuously = true
+clouds_resource = SubResource("CompositorEffect_g43wx")
+ambience_sample_environment = SubResource("Environment_ivycn")
+tracked_directional_light_shadow_steps = Array[int]([12, 12])
+metadata/_custom_type_script = "uid://djusduuxf0voj"

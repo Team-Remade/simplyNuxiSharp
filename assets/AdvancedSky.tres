@@ -1,0 +1,34 @@
+[gd_resource type="Sky" format=3 uid="uid://dtgm0pm1yxogn"]
+
+[ext_resource type="Shader" uid="uid://vqhnph2lmx62" path="res://assets/Shaders/AdvancedSky.gdshader" id="1_g1x82"]
+[ext_resource type="Texture2D" uid="uid://cymfuvo7lwxcq" path="res://assets/img/environment/moon.png" id="3_wp162"]
+[ext_resource type="CompressedCubemap" uid="uid://by87f61qddm7y" path="res://assets/img/environment/stars.hdr" id="4_qxf7d"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_8tn2x"]
+shader = ExtResource("1_g1x82")
+shader_parameter/use_debanding = true
+shader_parameter/atmosphere_sample_count = 32
+shader_parameter/elevation = 0.0
+shader_parameter/rayleigh_strength = 1.0
+shader_parameter/mie_strength = 1.0
+shader_parameter/ozone_strength = 1.0
+shader_parameter/mie_anisotropy_factor = 0.885
+shader_parameter/atmosphere_density = 1.0
+shader_parameter/exposure = 13.0
+shader_parameter/sun_disc_feather = 0.5
+shader_parameter/sundisc_intensity = 30.0
+shader_parameter/stars_hdr = ExtResource("4_qxf7d")
+shader_parameter/stars_exposure = 3.0000001425
+shader_parameter/stars_rotation = Basis(1, 0, 0, 0, 0.887, 0.462, 0, -0.462, 0.887)
+shader_parameter/dim_stars_at_day = true
+shader_parameter/moon_dist = PackedFloat32Array(0.235)
+shader_parameter/moon_uv_x_offset = PackedFloat32Array(0.62, 0.8, -0.435)
+shader_parameter/moon_textures = Array[Texture2D]([ExtResource("3_wp162")])
+shader_parameter/use_rainbow = false
+shader_parameter/rainbow_width = 0.05
+shader_parameter/rainbow_offset = 0.65
+shader_parameter/rainbow_opacity = 0.1
+shader_parameter/double_rainbow = true
+
+[resource]
+sky_material = SubResource("ShaderMaterial_8tn2x")

@@ -741,6 +741,49 @@ public static class ProjectManager
 
 			// Get stretch mode from the property
 			_currentData.Settings.StretchBackground = propPanel.StretchBackground;
+
+			// Get sky setting
+			_currentData.Settings.UseSky = propPanel.UseSky;
+			_currentData.Settings.UseAdvancedSky = propPanel.UseAdvancedSky;
+	
+			// Save Minecraft sky shader colors
+			var skyColors = propPanel.GetSkyShaderColors();
+			if (skyColors != null)
+			{
+				_currentData.Settings.SkyHorizonDayColor    = skyColors.HorizonDayColor;
+				_currentData.Settings.SkyZenithDayColor     = skyColors.ZenithDayColor;
+				_currentData.Settings.SkyHorizonSunsetColor = skyColors.HorizonSunsetColor;
+				_currentData.Settings.SkyZenithSunsetColor  = skyColors.ZenithSunsetColor;
+				_currentData.Settings.SkyNightHorizonColor  = skyColors.NightHorizonColor;
+				_currentData.Settings.SkyNightZenithColor   = skyColors.NightZenithColor;
+				_currentData.Settings.SkyStarsColor         = skyColors.StarsColor;
+			}
+	
+			// Save Minecraft clouds color
+			_currentData.Settings.CloudsColor = propPanel.GetCloudsColor();
+	
+			// Save sun rotation
+			var sunRot = propPanel.GetSunRotationDegrees();
+			if (sunRot.HasValue)
+			{
+				_currentData.Settings.SunRotationX = sunRot.Value.X;
+				_currentData.Settings.SunRotationY = sunRot.Value.Y;
+				_currentData.Settings.SunRotationZ = sunRot.Value.Z;
+			}
+	
+			// Save Advanced Sky atmosphere settings
+			var advSkySettings = propPanel.GetAdvancedSkySettings();
+			if (advSkySettings != null)
+			{
+				_currentData.Settings.AdvSkyRayleighStrength = advSkySettings.RayleighStrength;
+				_currentData.Settings.AdvSkyMieStrength      = advSkySettings.MieStrength;
+				_currentData.Settings.AdvSkyOzoneStrength    = advSkySettings.OzoneStrength;
+				_currentData.Settings.AdvSkyAtmDensity       = advSkySettings.AtmDensity;
+				_currentData.Settings.AdvSkyExposure         = advSkySettings.Exposure;
+				_currentData.Settings.AdvSkySunDiscFeather   = advSkySettings.SunDiscFeather;
+				_currentData.Settings.AdvSkySunDiscIntensity = advSkySettings.SunDiscIntensity;
+				_currentData.Settings.AdvSkyStarsExposure    = advSkySettings.StarsExposure;
+			}
 		}
 		catch (Exception ex)
 		{
@@ -1451,6 +1494,38 @@ public class ProjectSettings
 	// Floor settings
 	public bool   FloorVisible   { get; set; } = true;
 	public string FloorTexture   { get; set; } = "grass_block_top";
+
+	// Sky settings
+	public bool   UseSky         { get; set; } = true;
+	public float  SkyTimeOfDay  { get; set; } = 0.25f;
+	public bool   UseAdvancedSky { get; set; } = false;
+
+	// Minecraft Sky shader colors
+	public string SkyHorizonDayColor    { get; set; } = "";
+	public string SkyZenithDayColor     { get; set; } = "";
+	public string SkyHorizonSunsetColor { get; set; } = "";
+	public string SkyZenithSunsetColor  { get; set; } = "";
+	public string SkyNightHorizonColor  { get; set; } = "";
+	public string SkyNightZenithColor   { get; set; } = "";
+	public string SkyStarsColor         { get; set; } = "";
+
+	// Minecraft Clouds shader color
+	public string CloudsColor           { get; set; } = "";
+
+	// Sun rotation (degrees, applied to the Sun DirectionalLight3D node)
+	public float  SunRotationX          { get; set; } = float.NaN;
+	public float  SunRotationY          { get; set; } = float.NaN;
+	public float  SunRotationZ          { get; set; } = float.NaN;
+
+	// Advanced Sky atmosphere settings
+	public float  AdvSkyRayleighStrength  { get; set; } = float.NaN;
+	public float  AdvSkyMieStrength       { get; set; } = float.NaN;
+	public float  AdvSkyOzoneStrength     { get; set; } = float.NaN;
+	public float  AdvSkyAtmDensity        { get; set; } = float.NaN;
+	public float  AdvSkyExposure          { get; set; } = float.NaN;
+	public float  AdvSkySunDiscFeather    { get; set; } = float.NaN;
+	public float  AdvSkySunDiscIntensity  { get; set; } = float.NaN;
+	public float  AdvSkyStarsExposure     { get; set; } = float.NaN;
 }
 
 /// <summary>Manifest entry for a single imported asset file.</summary>

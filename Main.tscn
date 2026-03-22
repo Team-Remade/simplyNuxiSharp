@@ -10,7 +10,7 @@
 [ext_resource type="Script" uid="uid://1358ext44s8c" path="res://src/core/SceneTree.cs" id="6_3dxm6"]
 [ext_resource type="Environment" uid="uid://xn3wh5pxus5k" path="res://assets/Env.tres" id="6_20pc6"]
 [ext_resource type="Script" uid="uid://yo6sdyucm2lt" path="res://src/core/AnimatedTextureManager.cs" id="6_animtex"]
-[ext_resource type="Script" path="res://src/core/AudioTrackManager.cs" id="6_audiotracks"]
+[ext_resource type="Script" uid="uid://b5v8mvq3jxum4" path="res://src/core/AudioTrackManager.cs" id="6_audiotracks"]
 [ext_resource type="Script" uid="uid://yk4xrjo1fpr7" path="res://src/core/WorkCamera.cs" id="6_lgr22"]
 [ext_resource type="Shader" uid="uid://btpopdqor5lee" path="res://assets/Shaders/Picking.gdshader" id="7_trn2v"]
 [ext_resource type="Texture2D" uid="uid://h6ota84sm1dg" path="res://assets/img/Untitled.png" id="8_5tuhn"]
@@ -21,7 +21,10 @@
 [ext_resource type="Texture2D" uid="uid://lyvreubvsmie" path="res://assets/img/bench.png" id="9_5vvyt"]
 [ext_resource type="Texture2D" uid="uid://ds8cqt4u4ojkv" path="res://assets/img/bee_nest_front.png" id="9_c2ibq"]
 [ext_resource type="PackedScene" uid="uid://c0preview1234" path="res://scenes/PreviewViewport.tscn" id="10_preview"]
+[ext_resource type="Script" uid="uid://bdbp24wh47ui1" path="res://assets/Scripts/MinecraftClouds.gd" id="12_bg4s2"]
 [ext_resource type="Shader" uid="uid://duep02bpb3va4" path="res://assets/Shaders/Background.gdshader" id="12_kjvhd"]
+[ext_resource type="Shader" uid="uid://dmf2ktdwnwst7" path="res://assets/Shaders/MinecraftClouds.gdshader" id="13_hhcpw"]
+[ext_resource type="Texture2D" uid="uid://bips5v666g8rv" path="res://assets/img/environment/clouds.png" id="13_mxvw5"]
 
 [sub_resource type="Resource" id="Resource_3dxm6"]
 resource_name = "Tabs"
@@ -91,6 +94,21 @@ size = Vector2(2, 2)
 render_priority = -128
 shader = ExtResource("9_2gh4u")
 shader_parameter/abledo_color = Color(0.5764706, 0.5764706, 1, 1)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_mxvw5"]
+render_priority = 0
+shader = ExtResource("13_hhcpw")
+shader_parameter/cloud_texture = ExtResource("13_mxvw5")
+shader_parameter/tile_world_size = Vector2(768, 768)
+shader_parameter/texture_size = Vector2(256, 256)
+shader_parameter/extrude_height = 0.0
+shader_parameter/alpha_threshold = 0.3
+shader_parameter/cloud_color = Color(1, 1, 1, 1)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_mxvw5"]
+size = Vector2(768, 768)
+subdivide_width = 256
+subdivide_depth = 256
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_j4qnp"]
 render_priority = -1
@@ -230,6 +248,7 @@ mesh = SubResource("QuadMesh_2gh4u")
 
 [node name="BackgroundColor" type="MeshInstance3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=382741756]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -221.36696, 0)
+visible = false
 material_override = SubResource("ShaderMaterial_devvj")
 cast_shadow = 0
 extra_cull_margin = 16384.0
@@ -242,6 +261,24 @@ PickingShader = ExtResource("7_trn2v")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=920564239]
 transform = Transform3D(0.8660254, -0.25, 0.4330127, 0, 0.8660254, 0.5, -0.5, -0.4330127, 0.75, 0, 0, 0)
+light_energy = 0.176
+light_specular = 0.0
+sky_mode = 1
+
+[node name="MinecraftClouds" type="MeshInstance3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=398200575]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 128, 3)
+material_override = SubResource("ShaderMaterial_mxvw5")
+mesh = SubResource("PlaneMesh_mxvw5")
+script = ExtResource("12_bg4s2")
+cloud_material = SubResource("ShaderMaterial_mxvw5")
+
+[node name="Sun" type="DirectionalLight3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=1996494694]
+transform = Transform3D(1, 0, 0, 0, 0.72539866, 0.688329, 0, -0.688329, 0.72539866, 0, 0, 0)
+
+[node name="Moon" type="DirectionalLight3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport/Sun" unique_id=1323769906]
+transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0, 0, 0)
+light_energy = 0.235
+sky_mode = 1
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=966723163]
 environment = ExtResource("6_20pc6")

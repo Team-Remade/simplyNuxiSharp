@@ -1,0 +1,27 @@
+[gd_resource type="Sky" format=3 uid="uid://ckd1p5n2m3hxr"]
+
+[ext_resource type="Shader" path="res://assets/Shaders/MinecraftSky.gdshader" id="1"]
+[ext_resource type="Texture2D" uid="uid://djmdrlv7g73bq" path="res://assets/img/environment/minecraft_sun.png" id="2_sun"]
+[ext_resource type="Texture2D" uid="uid://by6wm416sxuqy" path="res://assets/img/environment/minecraft_moon/full_moon.png" id="3_moon"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_sky"]
+shader = ExtResource("1")
+shader_parameter/horizon_day_color = Color(0.576, 0.608, 1, 1)
+shader_parameter/zenith_day_color = Color(0.12, 0.25, 0.55, 1)
+shader_parameter/horizon_sunset_color = Color(1, 0.45, 0.2, 1)
+shader_parameter/zenith_sunset_color = Color(0.3, 0.1, 0.35, 1)
+shader_parameter/night_horizon_color = Color(0.05, 0.05, 0.15, 1)
+shader_parameter/night_zenith_color = Color(0.01, 0.01, 0.03, 1)
+shader_parameter/stars_color = Color(1, 1, 1, 1)
+shader_parameter/sun_texture = ExtResource("2_sun")
+shader_parameter/moon_texture = ExtResource("3_moon")
+shader_parameter/sun_size = 0.5
+shader_parameter/moon_size = 0.5
+shader_parameter/disc_rotation = 0.0
+shader_parameter/star_noise_scale = 1.0
+shader_parameter/star_threshold = 0.92
+shader_parameter/star_brightness = 1.0
+
+[resource]
+sky_material = SubResource("ShaderMaterial_sky")
+process_mode = 1

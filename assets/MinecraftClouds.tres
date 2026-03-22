@@ -1,0 +1,13 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://minecraft_clouds_mat"]
+
+[ext_resource type="Shader" path="res://assets/Shaders/MinecraftClouds.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" uid="uid://bips5v666g8rv" path="res://assets/img/environment/clouds.png" id="2_clouds"]
+
+[resource]
+shader = ExtResource("1_shader")
+shader_parameter/cloud_texture = ExtResource("2_clouds")
+shader_parameter/tile_world_size = Vector2(384, 384)
+shader_parameter/texture_size = Vector2(128, 128)
+shader_parameter/extrude_height = 3.0
+shader_parameter/alpha_threshold = 0.3
+shader_parameter/cloud_color = Color(1, 1, 1, 1)
