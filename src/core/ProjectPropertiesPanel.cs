@@ -1639,6 +1639,10 @@ public partial class ProjectPropertiesPanel : Panel
 
 			// Re-apply Advanced Sky settings to the newly loaded shader material
 			ApplyAllAdvancedSkySettings();
+
+			// Temporarily enable render mode to initialize cloud shadows properly
+			// This is a workaround for clouds disappearing when shadows are enabled on Sun/Moon
+			Main.Instance?.TemporarilyEnableRenderMode();
 		}
 		else
 		{
@@ -1919,6 +1923,68 @@ public partial class ProjectPropertiesPanel : Panel
 			ApplyCloudsShaderColor(_cloudsColorPicker.Color);
 	}
 
+	// ── Load sky colors from scene ───────────────────────────────────────────
+
+	/// <summary>
+	/// Loads sky and cloud colors from the current shader in the scene.
+	/// Returns true if values were successfully loaded from the scene.
+	/// </summary>
+	private bool LoadSkyColorsFromScene()
+	{
+		var skyMat = GetMinecraftSkyMaterial();
+		var cloudsMat = GetMinecraftCloudsMaterial();
+
+		if (skyMat == null && cloudsMat == null)
+			return false;
+
+		// Load sky colors from shader
+		if (skyMat != null)
+		{
+			TrySetColorPickerFromShader(_skyHorizonDayColorPicker,    skyMat, "horizon_day_color");
+			TrySetColorPickerFromShader(_skyZenithDayColorPicker,     skyMat, "zenith_day_color");
+			TrySetColorPickerFromShader(_skyHorizonSunsetColorPicker, skyMat, "horizon_sunset_color");
+			TrySetColorPickerFromShader(_skyZenithSunsetColorPicker,  skyMat, "zenith_sunset_color");
+			TrySetColorPickerFromShader(_skyNightHorizonColorPicker,  skyMat, "night_horizon_color");
+			TrySetColorPickerFromShader(_skyNightZenithColorPicker,   skyMat, "night_zenith_color");
+			TrySetColorPickerFromShader(_skyStarsColorPicker,         skyMat, "stars_color");
+		}
+
+		// Load clouds color from shader
+		if (cloudsMat != null)
+		{
+			TrySetColorPickerFromShader(_cloudsColorPicker, cloudsMat, "cloud_color");
+		}
+
+		return true;
+	}
+
+	/// <summary>
+	/// Tries to set a color picker's color from a shader parameter.
+	/// </summary>
+	private void TrySetColorPickerFromShader(ColorPickerButton picker, ShaderMaterial mat, string paramName)
+	{
+		if (picker == null) return;
+		picker.Color = mat.GetShaderParameter(paramName).AsColor();
+	}
+
+	// ── Load sun rotation from scene ─────────────────────────────────────────
+
+	/// <summary>
+	/// Loads sun rotation from the Sun node in the scene.
+	/// Returns true if values were successfully loaded from the scene.
+	/// </summary>
+	private bool LoadSunRotationFromScene()
+	{
+		if (_sunNode == null || _sunRotationXSpinBox == null)
+			return false;
+
+		var rotation = _sunNode.RotationDegrees;
+		_sunRotationXSpinBox.SetValueNoSignal(rotation.X);
+		_sunRotationYSpinBox.SetValueNoSignal(rotation.Y);
+		_sunRotationZSpinBox.SetValueNoSignal(rotation.Z);
+		return true;
+	}
+
 	// ── Sun rotation application ──────────────────────────────────────────────
 
 	/// <summary>
@@ -2062,10 +2128,24 @@ public partial class ProjectPropertiesPanel : Panel
 	// ── Load sky settings from project ────────────────────────────────────────
 
 	/// <summary>
-	/// Loads sky color and sun rotation settings from the saved project data.
+	/// Loads sky color and sun rotation settings. First tries to read from the current
+	/// shader and sun in the scene, then falls back to saved settings, then to defaults.
 	/// </summary>
 	private void LoadCurrentSkySettings()
 	{
+		// First, try to load from the current shader and sun in the scene
+		bool loadedFromScene = LoadSkyColorsFromScene();
+		loadedFromScene = LoadSunRotationFromScene() || loadedFromScene;
+
+		// If we loaded from scene, apply the colors and return
+		if (loadedFromScene)
+		{
+			ApplyAllSkyColors();
+			ApplyAllCloudsColors();
+			return;
+		}
+
+		// Fall back to saved settings or defaults
 		var settings = ProjectManager.GetSettings();
 		if (settings == null) return;
 

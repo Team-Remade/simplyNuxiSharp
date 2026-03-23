@@ -171,17 +171,30 @@ public partial class SpawnMenu : PopupPanel
 
 	private void InitializeModelLoadingWindow()
 	{
-        _modelLoadingWindow = new ModelLoadingProgressWindow
-        {
-            Visible = false
-        };
-        GetTree().Root.AddChild(_modelLoadingWindow);
+		// Create the model loading progress window
+		_modelLoadingWindow = new ModelLoadingProgressWindow
+		{
+			Visible = false
+		};
+		// Use CallDeferred to add child since we're in the _Ready phase
+		GetTree().Root.CallDeferred("add_child", _modelLoadingWindow);
 		
 		// Subscribe to progress updates from AsyncModelLoader
 		AsyncModelLoader.Instance.OnProgressUpdate += OnModelLoadingProgress;
 		
 		// Handle cancel button
 		_modelLoadingWindow.OnCancel += OnModelLoadingCancelled;
+	}
+	
+	/// <summary>
+	/// Ensures the model loading window is created. Call this before showing the window.
+	/// </summary>
+	private void EnsureModelLoadingWindow()
+	{
+		if (_modelLoadingWindow == null)
+		{
+			InitializeModelLoadingWindow();
+		}
 	}
 
 	private void OnModelLoadingProgress(float progress, string message)
@@ -1361,13 +1374,30 @@ public partial class SpawnMenu : PopupPanel
 		int nextNumber = GetNextAvailableObjectNumber(displayName);
 		string fullObjectName = nextNumber > 1 ? $"{displayName}{nextNumber}" : displayName;
 		
+		// Ensure progress window is initialized and show it
+		EnsureModelLoadingWindow();
+		bool progressWindowAvailable = _modelLoadingWindow != null;
+		if (progressWindowAvailable)
+		{
+			_modelLoadingWindow.SetModelName(displayName);
+			_modelLoadingWindow.ShowWindow();
+			_modelLoadingWindow.UpdateProgress(0.1f, $"Loading {extension.ToUpper()} file...");
+		}
+		
 		SceneObject customModelObject = null;
 		
 		// Check if this is a Mine Imator model
 		if (extension == ".mimodel")
 		{
+			if (progressWindowAvailable)
+				_modelLoadingWindow.UpdateProgress(0.3f, "Loading Mine Imator model...");
+			
 			// Load Mine Imator model - it returns a CharacterSceneObject directly
 			var character = LoadMineImatorModel(modelPath);
+			
+			if (progressWindowAvailable)
+				_modelLoadingWindow.UpdateProgress(0.7f, "Creating character object...");
+			
 			if (character != null)
 			{
 				character.Name = fullObjectName;
@@ -1378,8 +1408,15 @@ public partial class SpawnMenu : PopupPanel
 		}
 		else if (extension == ".miobject")
 		{
+			if (progressWindowAvailable)
+				_modelLoadingWindow.UpdateProgress(0.3f, "Loading Mine Imator object...");
+			
 			// Load Mine Imator object - contains a scene with multiple models
 			var sceneRoot = LoadMiObjectScene(modelPath);
+			
+			if (progressWindowAvailable)
+				_modelLoadingWindow.UpdateProgress(0.7f, "Creating scene object...");
+			
 			if (sceneRoot != null)
 			{
 				sceneRoot.Name = fullObjectName;
@@ -1390,16 +1427,28 @@ public partial class SpawnMenu : PopupPanel
 		}
 		else if (extension == ".blend")
 		{
+			if (progressWindowAvailable)
+				_modelLoadingWindow.UpdateProgress(0.2f, "Exporting Blender file...");
+			
 			// Load Blender .blend file - export to GLB via Blender CLI, then load
 			var modelRoot = LoadBlendModel(modelPath);
+			
+			if (progressWindowAvailable)
+				_modelLoadingWindow.UpdateProgress(0.5f, "Processing model...");
+			
 			if (modelRoot == null)
 			{
+				if (progressWindowAvailable)
+					_modelLoadingWindow.HideWindow();
 				GD.PrintErr($"Failed to load .blend file: {modelPath}");
 				return;
 			}
 			
 			// Check if the model has a skeleton
 			bool hasSkeleton = HasSkeleton(modelRoot);
+			
+			if (progressWindowAvailable)
+				_modelLoadingWindow.UpdateProgress(0.7f, hasSkeleton ? "Creating character object..." : "Creating scene object...");
 			
 			if (hasSkeleton)
 			{
@@ -1438,17 +1487,18 @@ public partial class SpawnMenu : PopupPanel
 			// Load as GLB/GLTF using async loader for proper texture preloading
 			// and shader compilation waiting
 			
-			// Show progress window for model loading
-			_modelLoadingWindow.SetModelName(displayName);
-			_modelLoadingWindow.ShowWindow();
+			if (progressWindowAvailable)
+				_modelLoadingWindow.UpdateProgress(0.3f, "Loading GLB/GLTF file...");
 			
 			var modelRoot = await AsyncModelLoader.Instance.LoadGlbAsync(modelPath);
 			
-			// Hide progress window
-			_modelLoadingWindow.HideWindow();
+			if (progressWindowAvailable)
+				_modelLoadingWindow.UpdateProgress(0.8f, "Processing model...");
 			
 			if (modelRoot == null)
 			{
+				if (progressWindowAvailable)
+					_modelLoadingWindow.HideWindow();
 				GD.PrintErr($"Failed to load model: {modelPath}");
 				return;
 			}
@@ -1543,6 +1593,13 @@ public partial class SpawnMenu : PopupPanel
 		
 		// Add to history using the final resolved path (imported copy if applicable)
 		AddToCustomModelHistory(customModelObject.SourceAssetPath, displayName);
+		
+		// Hide the progress window when done
+		if (progressWindowAvailable)
+		{
+			_modelLoadingWindow.UpdateProgress(1.0f, "Complete!");
+			_modelLoadingWindow.HideWindow();
+		}
 		
 		// Hide the menu after spawning
 		Hide();

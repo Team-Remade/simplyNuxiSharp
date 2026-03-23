@@ -33,6 +33,8 @@ public partial class ObjectPropertiesPanel : Panel
 	private CheckBox _inheritRotationCheckbox;
 	private CheckBox _inheritScaleCheckbox;
 	private CheckBox _inheritVisibilityCheckbox;
+	private CheckBox _linkScaleCheckbox;
+	private bool _isUpdatingScale = false;
 	private CollapsibleSection _materialSection;
 	private HSlider _materialAlphaSlider;
 	private Label _materialAlphaLabel;
@@ -195,6 +197,10 @@ public partial class ObjectPropertiesPanel : Panel
 		_positionY = CreateSpinBoxRow(posContainer, "Y:", OnPositionChanged, OnTransformEditBegin, OnTransformEditEnd);
 		_positionZ = CreateSpinBoxRow(posContainer, "Z:", OnPositionChanged, OnTransformEditBegin, OnTransformEditEnd);
 
+		ConfigureSpinBox(_positionX);
+		ConfigureSpinBox(_positionY);
+		ConfigureSpinBox(_positionZ);
+
 		// Rotation section with toggle arrow
 		_rotationSection = new CollapsibleSection("Rotation (degrees)");
 		_rotationSection.SizeFlagsHorizontal = SizeFlags.ExpandFill;
@@ -245,9 +251,28 @@ public partial class ObjectPropertiesPanel : Panel
 		_inheritScaleCheckbox.Toggled += OnInheritScaleChanged;
 		inheritScaleRow.AddChild(_inheritScaleCheckbox);
 
-		_scaleX = CreateSpinBoxRow(scaleContainer, "X:", OnScaleChanged, OnTransformEditBegin, OnTransformEditEnd);
-		_scaleY = CreateSpinBoxRow(scaleContainer, "Y:", OnScaleChanged, OnTransformEditBegin, OnTransformEditEnd);
-		_scaleZ = CreateSpinBoxRow(scaleContainer, "Z:", OnScaleChanged, OnTransformEditBegin, OnTransformEditEnd);
+		// Link Scale checkbox
+		var linkScaleRow = new HBoxContainer();
+		scaleContainer.AddChild(linkScaleRow);
+		var linkScaleLabel = new Label();
+		linkScaleLabel.Text = "Link Scale:";
+		linkScaleLabel.CustomMinimumSize = new Vector2(120, 0);
+		linkScaleRow.AddChild(linkScaleLabel);
+		_linkScaleCheckbox = new CheckBox();
+		_linkScaleCheckbox.Name = "LinkScaleCheckbox";
+		_linkScaleCheckbox.Text = "";
+		_linkScaleCheckbox.ButtonPressed = false;
+		_linkScaleCheckbox.TooltipText = "When checked, changing one scale axis will proportionally update the others";
+		linkScaleRow.AddChild(_linkScaleCheckbox);
+
+		_scaleX = CreateSpinBoxRow(scaleContainer, "X:", () => OnScaleAxisChanged("x"), OnTransformEditBegin, OnTransformEditEnd);
+		_scaleY = CreateSpinBoxRow(scaleContainer, "Y:", () => OnScaleAxisChanged("y"), OnTransformEditBegin, OnTransformEditEnd);
+		_scaleZ = CreateSpinBoxRow(scaleContainer, "Z:", () => OnScaleAxisChanged("z"), OnTransformEditBegin, OnTransformEditEnd);
+
+		// Configure scale spinboxes to allow smaller values (like 0.001) for precision scaling
+		ConfigureScaleSpinBox(_scaleX);
+		ConfigureScaleSpinBox(_scaleY);
+		ConfigureScaleSpinBox(_scaleZ);
 
 		// Pivot Offset section with toggle arrow (non-animated property)
 		_pivotOffsetSection = new CollapsibleSection("Pivot Offset");
@@ -525,6 +550,21 @@ public partial class ObjectPropertiesPanel : Panel
 		return spin;
 	}
 
+	private void ConfigureSpinBox(SpinBox spin)
+	{
+		spin.Step = 0.01;
+		spin.MaxValue = 100000;
+		spin.Rounded = false;
+	}
+
+	private void ConfigureScaleSpinBox(SpinBox spin)
+	{
+		spin.Step = 0.001;
+		spin.MinValue = 0.001;
+		spin.MaxValue = 100000;
+		spin.Rounded = false;
+	}
+
 	private void OnSelectionChanged()
 	{
 		var selectedObjects = SelectionManager.Instance.SelectedObjects;
@@ -762,9 +802,81 @@ public partial class ObjectPropertiesPanel : Panel
 		AutoKeyframe("rotation.z");
 	}
 
+	private void OnScaleAxisChanged(string changedAxis)
+	{
+		if (_currentObject == null || _isUpdatingScale) return;
+
+		// Capture old scale before making any changes
+		var oldScale = _currentObject.LocalScale;
+		float oldX = oldScale.X;
+		float oldY = oldScale.Y;
+		float oldZ = oldScale.Z;
+
+		// Get new values from the UI
+		float newX = (float)_scaleX.Value;
+		float newY = (float)_scaleY.Value;
+		float newZ = (float)_scaleZ.Value;
+
+		// If linked, apply the delta to the other axes
+		if (_linkScaleCheckbox.ButtonPressed)
+		{
+			_isUpdatingScale = true;
+
+			switch (changedAxis)
+			{
+				case "x":
+					float deltaX = newX - oldX;
+					newY = oldY + deltaX;
+					newZ = oldZ + deltaX;
+					break;
+				case "y":
+					float deltaY = newY - oldY;
+					newX = oldX + deltaY;
+					newZ = oldZ + deltaY;
+					break;
+				case "z":
+					float deltaZ = newZ - oldZ;
+					newX = oldX + deltaZ;
+					newY = oldY + deltaZ;
+					break;
+			}
+
+			// Update the Y and Z spinboxes if X was changed, etc.
+			// Use SetValueNoSignal to avoid triggering this method again
+			if (changedAxis == "x")
+			{
+				_scaleY.SetValueNoSignal(Math.Round(newY, 2));
+				_scaleZ.SetValueNoSignal(Math.Round(newZ, 2));
+			}
+			else if (changedAxis == "y")
+			{
+				_scaleX.SetValueNoSignal(Math.Round(newX, 2));
+				_scaleZ.SetValueNoSignal(Math.Round(newZ, 2));
+			}
+			else if (changedAxis == "z")
+			{
+				_scaleX.SetValueNoSignal(Math.Round(newX, 2));
+				_scaleY.SetValueNoSignal(Math.Round(newY, 2));
+			}
+
+			_isUpdatingScale = false;
+		}
+
+		// Apply the new scale
+		_currentObject.SetLocalScale(new Vector3(newX, newY, newZ));
+
+		// Record undo command
+		RecordTransformCommand("Change Scale");
+
+		// Auto-keyframe when property changes
+		AutoKeyframe("scale.x");
+		AutoKeyframe("scale.y");
+		AutoKeyframe("scale.z");
+	}
+
 	private void OnScaleChanged()
 	{
-		if (_currentObject == null) return;
+		if (_currentObject == null || _suppressUndoRecord) return;
 
 		_currentObject.SetLocalScale(new Vector3(
 			(float)_scaleX.Value,

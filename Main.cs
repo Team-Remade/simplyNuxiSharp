@@ -9,6 +9,7 @@ using SceneTree = simplyRemadeNuxi.core.SceneTree;
 using GDExtensionBindgen;
 using FFMpegCore;
 using FFMpegCore.Extensions.Downloader;
+using System.Threading.Tasks;
 
 namespace simplyRemadeNuxi;
 
@@ -119,12 +120,6 @@ public partial class Main : Control
 	/// </summary>
 	private void DisableViewportRendering()
 	{
-		// Main 3D viewport
-		var mainViewport = GetNodeOrNull<SubViewport>(
-			"Content/MainContent/Viewport/MainViewport/SubViewport");
-		if (mainViewport != null)
-			mainViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
-		
 		// Preview viewport SubViewport (instanced scene)
 		var previewSubViewport = GetNodeOrNull<SubViewport>(
 			"Content/MainContent/Viewport/ViewportUI/PreviewViewport/MainPanel/VBox/AspectRatioContainerNode/ViewportContainer/PreviewSubViewport");
@@ -137,12 +132,6 @@ public partial class Main : Control
 	/// </summary>
 	private void EnableViewportRendering()
 	{
-		// Main 3D viewport – restore to ALWAYS (continuous rendering)
-		var mainViewport = GetNodeOrNull<SubViewport>(
-			"Content/MainContent/Viewport/MainViewport/SubViewport");
-		if (mainViewport != null)
-			mainViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
-		
 		// Preview viewport SubViewport – restore to ALWAYS so it is ready when toggled on
 		if (PreviewViewportControl?.PreviewSubViewport != null)
 		{
@@ -1087,7 +1076,7 @@ public partial class Main : Control
 		return _renderModeEnabled;
 	}
 	
-	private void ToggleRenderMode()
+	private async Task ToggleRenderMode()
 	{
 		_renderModeEnabled = !_renderModeEnabled;
 		
@@ -1128,6 +1117,21 @@ public partial class Main : Control
 		{
 			PreviewViewportControl.Visible = true;
 		}
+
+		await ToggleTAA(Viewport);
+		await ToggleTAA(PreviewViewportControl.PreviewSubViewport);
+	}
+
+	private async Task ToggleTAA(SubViewport viewport)
+	{
+		viewport.UseTaa = true;
+
+		// Wait for a few frames
+		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+
+		viewport.UseTaa = false;
 	}
 	
 	private void UpdateLightsRenderMode(Node node, bool enabled)
@@ -1148,6 +1152,33 @@ public partial class Main : Control
 		
 		// Update Sun and Moon shadow settings based on render mode
 		UpdateSunMoonShadows(node, enabled);
+	}
+	
+	/// <summary>
+	/// Temporarily enables render mode for a few frames then disables it again.
+	/// Used when enabling Advanced Sky to initialize cloud shadows properly.
+	/// </summary>
+	public async void TemporarilyEnableRenderMode()
+	{
+		// Store original state
+		bool originalState = _renderModeEnabled;
+		
+		// Enable render mode temporarily
+		if (!_renderModeEnabled)
+		{
+			ToggleRenderMode();
+		}
+		
+		// Wait for a few frames
+		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+		await ToSignal(GetTree(), Godot.SceneTree.SignalName.ProcessFrame);
+		
+		// Disable render mode if it was originally disabled
+		if (!originalState)
+		{
+			ToggleRenderMode();
+		}
 	}
 	
 	/// <summary>
