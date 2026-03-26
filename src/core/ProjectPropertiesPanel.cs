@@ -2162,64 +2162,88 @@ public partial class ProjectPropertiesPanel : Panel
 	// ── Load sky settings from project ────────────────────────────────────────
 
 	/// <summary>
-	/// Loads sky color and sun rotation settings. First tries to read from the current
-	/// shader and sun in the scene, then falls back to saved settings, then to defaults.
+	/// Loads sky color and sun rotation settings. Prioritizes saved project settings
+	/// when they exist, then falls back to reading from the scene shader, then to defaults.
 	/// </summary>
 	private void LoadCurrentSkySettings()
 	{
-		// First, try to load from the current shader and sun in the scene
-		bool loadedFromScene = LoadSkyColorsFromScene();
-		loadedFromScene = LoadSunRotationFromScene() || loadedFromScene;
-
-		// If we loaded from scene, apply the colors and return
-		if (loadedFromScene)
-		{
-			ApplyAllSkyColors();
-			ApplyAllCloudsColors();
-			return;
-		}
-
-		// Fall back to saved settings or defaults
+		// Check for saved project settings first
 		var settings = ProjectManager.GetSettings();
-		if (settings == null) return;
+		bool hasSavedSkyColors = settings != null && !string.IsNullOrEmpty(settings.SkyHorizonDayColor);
 
-		// Load Minecraft sky colors
-		TrySetColorPicker(_skyHorizonDayColorPicker,    settings.SkyHorizonDayColor,    new Color(0.576f, 0.608f, 1.0f, 1.0f));
-		TrySetColorPicker(_skyZenithDayColorPicker,     settings.SkyZenithDayColor,     new Color(0.12f, 0.25f, 0.55f, 1.0f));
-		TrySetColorPicker(_skyHorizonSunsetColorPicker, settings.SkyHorizonSunsetColor, new Color(1.0f, 0.45f, 0.2f, 1.0f));
-		TrySetColorPicker(_skyZenithSunsetColorPicker,  settings.SkyZenithSunsetColor,  new Color(0.3f, 0.1f, 0.35f, 1.0f));
-		TrySetColorPicker(_skyNightHorizonColorPicker,  settings.SkyNightHorizonColor,  new Color(0.05f, 0.05f, 0.15f, 1.0f));
-		TrySetColorPicker(_skyNightZenithColorPicker,   settings.SkyNightZenithColor,   new Color(0.01f, 0.01f, 0.03f, 1.0f));
-		TrySetColorPicker(_skyStarsColorPicker,         settings.SkyStarsColor,         new Color(1.0f, 1.0f, 1.0f, 1.0f));
-
-		// Apply sky colors to the shader
-		ApplyAllSkyColors();
-
-		// Load clouds color
-		TrySetColorPicker(_cloudsColorPicker, settings.CloudsColor, new Color(1.0f, 1.0f, 1.0f, 1.0f));
-		ApplyAllCloudsColors();
-
-		// Load sun rotation
-		if (!float.IsNaN(settings.SunRotationX) && _sunRotationXSpinBox != null)
+		if (hasSavedSkyColors)
 		{
-			_sunRotationXSpinBox.SetValueNoSignal(settings.SunRotationX);
-			_sunRotationYSpinBox.SetValueNoSignal(settings.SunRotationY);
-			_sunRotationZSpinBox.SetValueNoSignal(settings.SunRotationZ);
-			ApplySunRotation();
+			// Load Minecraft sky colors from saved settings
+			TrySetColorPicker(_skyHorizonDayColorPicker,    settings.SkyHorizonDayColor,    new Color(0.576f, 0.608f, 1.0f, 1.0f));
+			TrySetColorPicker(_skyZenithDayColorPicker,     settings.SkyZenithDayColor,     new Color(0.12f, 0.25f, 0.55f, 1.0f));
+			TrySetColorPicker(_skyHorizonSunsetColorPicker, settings.SkyHorizonSunsetColor, new Color(1.0f, 0.45f, 0.2f, 1.0f));
+			TrySetColorPicker(_skyZenithSunsetColorPicker,  settings.SkyZenithSunsetColor,  new Color(0.3f, 0.1f, 0.35f, 1.0f));
+			TrySetColorPicker(_skyNightHorizonColorPicker,  settings.SkyNightHorizonColor,  new Color(0.05f, 0.05f, 0.15f, 1.0f));
+			TrySetColorPicker(_skyNightZenithColorPicker,   settings.SkyNightZenithColor,   new Color(0.01f, 0.01f, 0.03f, 1.0f));
+			TrySetColorPicker(_skyStarsColorPicker,         settings.SkyStarsColor,         new Color(1.0f, 1.0f, 1.0f, 1.0f));
+
+			// Apply sky colors to the shader
+			ApplyAllSkyColors();
+
+			// Load clouds color
+			TrySetColorPicker(_cloudsColorPicker, settings.CloudsColor, new Color(1.0f, 1.0f, 1.0f, 1.0f));
+			ApplyAllCloudsColors();
+
+			// Load sun rotation
+			if (!float.IsNaN(settings.SunRotationX) && _sunRotationXSpinBox != null)
+			{
+				_sunRotationXSpinBox.SetValueNoSignal(settings.SunRotationX);
+				_sunRotationYSpinBox.SetValueNoSignal(settings.SunRotationY);
+				_sunRotationZSpinBox.SetValueNoSignal(settings.SunRotationZ);
+				ApplySunRotation();
+			}
+			else
+			{
+				// Fall back to reading sun rotation from scene
+				LoadSunRotationFromScene();
+			}
+
+			// Load Advanced Sky settings
+			if (!float.IsNaN(settings.AdvSkyRayleighStrength) && _advSkyRayleighSpinBox != null)
+			{
+				_advSkyRayleighSpinBox.SetValueNoSignal(settings.AdvSkyRayleighStrength);
+				_advSkyMieSpinBox.SetValueNoSignal(settings.AdvSkyMieStrength);
+				_advSkyOzoneSpinBox.SetValueNoSignal(settings.AdvSkyOzoneStrength);
+				_advSkyAtmDensitySpinBox.SetValueNoSignal(settings.AdvSkyAtmDensity);
+				_advSkyExposureSpinBox.SetValueNoSignal(settings.AdvSkyExposure);
+				_advSkySunDiscFeatherSpinBox.SetValueNoSignal(settings.AdvSkySunDiscFeather);
+				_advSkySunDiscIntensitySpinBox.SetValueNoSignal(settings.AdvSkySunDiscIntensity);
+				_advSkyStarsExposureSpinBox.SetValueNoSignal(settings.AdvSkyStarsExposure);
+				ApplyAllAdvancedSkySettings();
+			}
 		}
-
-		// Load Advanced Sky settings
-		if (!float.IsNaN(settings.AdvSkyRayleighStrength) && _advSkyRayleighSpinBox != null)
+		else
 		{
-			_advSkyRayleighSpinBox.SetValueNoSignal(settings.AdvSkyRayleighStrength);
-			_advSkyMieSpinBox.SetValueNoSignal(settings.AdvSkyMieStrength);
-			_advSkyOzoneSpinBox.SetValueNoSignal(settings.AdvSkyOzoneStrength);
-			_advSkyAtmDensitySpinBox.SetValueNoSignal(settings.AdvSkyAtmDensity);
-			_advSkyExposureSpinBox.SetValueNoSignal(settings.AdvSkyExposure);
-			_advSkySunDiscFeatherSpinBox.SetValueNoSignal(settings.AdvSkySunDiscFeather);
-			_advSkySunDiscIntensitySpinBox.SetValueNoSignal(settings.AdvSkySunDiscIntensity);
-			_advSkyStarsExposureSpinBox.SetValueNoSignal(settings.AdvSkyStarsExposure);
-			ApplyAllAdvancedSkySettings();
+			// No saved sky settings — fall back to reading from the current scene shader
+			bool loadedFromScene = LoadSkyColorsFromScene();
+			loadedFromScene = LoadSunRotationFromScene() || loadedFromScene;
+
+			if (loadedFromScene)
+			{
+				ApplyAllSkyColors();
+				ApplyAllCloudsColors();
+				return;
+			}
+
+			// Last resort: apply defaults
+			if (settings != null)
+			{
+				TrySetColorPicker(_skyHorizonDayColorPicker,    settings.SkyHorizonDayColor,    new Color(0.576f, 0.608f, 1.0f, 1.0f));
+				TrySetColorPicker(_skyZenithDayColorPicker,     settings.SkyZenithDayColor,     new Color(0.12f, 0.25f, 0.55f, 1.0f));
+				TrySetColorPicker(_skyHorizonSunsetColorPicker, settings.SkyHorizonSunsetColor, new Color(1.0f, 0.45f, 0.2f, 1.0f));
+				TrySetColorPicker(_skyZenithSunsetColorPicker,  settings.SkyZenithSunsetColor,  new Color(0.3f, 0.1f, 0.35f, 1.0f));
+				TrySetColorPicker(_skyNightHorizonColorPicker,  settings.SkyNightHorizonColor,  new Color(0.05f, 0.05f, 0.15f, 1.0f));
+				TrySetColorPicker(_skyNightZenithColorPicker,   settings.SkyNightZenithColor,   new Color(0.01f, 0.01f, 0.03f, 1.0f));
+				TrySetColorPicker(_skyStarsColorPicker,         settings.SkyStarsColor,         new Color(1.0f, 1.0f, 1.0f, 1.0f));
+				TrySetColorPicker(_cloudsColorPicker,           settings.CloudsColor,           new Color(1.0f, 1.0f, 1.0f, 1.0f));
+				ApplyAllSkyColors();
+				ApplyAllCloudsColors();
+			}
 		}
 	}
 
