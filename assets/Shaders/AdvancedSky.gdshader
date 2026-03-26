@@ -52,6 +52,16 @@ uniform float moon_dist[3];
 uniform float moon_uv_x_offset[3];
 uniform sampler2D moon_textures[3];
 
+// SKY COLOR TINT UNIFORMS (same as MinecraftSky)
+group_uniforms SkyColors;
+uniform vec4 horizon_day_color    : source_color = vec4(0.576, 0.608, 1.0,  1.0);
+uniform vec4 zenith_day_color     : source_color = vec4(0.12,  0.25,  0.55, 1.0);
+uniform vec4 horizon_sunset_color : source_color = vec4(1.0,   0.45,  0.2,  1.0);
+uniform vec4 zenith_sunset_color  : source_color = vec4(0.3,   0.1,   0.35, 1.0);
+uniform vec4 night_horizon_color  : source_color = vec4(0.05,  0.05,  0.15, 1.0);
+uniform vec4 night_zenith_color   : source_color = vec4(0.01,  0.01,  0.03, 1.0);
+uniform vec4 stars_color          : source_color = vec4(1.0,   1.0,   1.0,  1.0);
+
 group_uniforms Rainbow;
 uniform bool use_rainbow = false;
 uniform sampler2D rainbow_gradient: hint_default_white, filter_linear;
@@ -341,13 +351,31 @@ void sky() {
 		vec3 transmittance = QUARTER_RES_COLOR.rgb;
 		vec3 radiance = texture(RADIANCE, EYEDIR).rgb;
 
+		// ── Sky color tint (same gradient logic as MinecraftSky) ─────────────
+		float sun_elev      = LIGHT0_DIRECTION.y;
+		float day_factor    = clamp(sun_elev * 2.0 + 0.5, 0.0, 1.0);
+		float sunset_factor = pow(clamp(1.0 - abs(sun_elev) * 3.0, 0.0, 1.0), 2.0);
+		float night_factor  = clamp(-sun_elev * 2.0 + 0.5, 0.0, 1.0);
+		float horiz_blend   = pow(clamp(abs(EYEDIR.y) * 2.0, 0.0, 1.0), 0.5);
+
+		vec3 day_sky    = mix(horizon_day_color.rgb,    zenith_day_color.rgb,    horiz_blend);
+		vec3 sunset_sky = mix(horizon_sunset_color.rgb, zenith_sunset_color.rgb, horiz_blend);
+		vec3 night_sky  = mix(night_horizon_color.rgb,  night_zenith_color.rgb,  horiz_blend);
+
+		vec3 sky_tint = mix(night_sky, day_sky, day_factor);
+		sky_tint      = mix(sky_tint, sunset_sky, sunset_factor);
+
+		// Multiply the physical radiance by the color tint
+		radiance *= sky_tint;
+
 		float sun_mask = sun_disc(EYEDIR, LIGHT0_DIRECTION, LIGHT0_SIZE * 0.5);
 		vec3 sundisc = vec3(sun_mask) * transmittance * sundisc_intensity;
 
 		vec3 stars =
 			texture(stars_hdr, EYEDIR * stars_rotation).rgb *
 			stars_exposure *
-			transmittance;
+			transmittance *
+			stars_color.rgb;
 
 		if (dim_stars_at_day) {
 			float stars_mult = smoothstep(

@@ -1640,6 +1640,9 @@ public partial class ProjectPropertiesPanel : Panel
 			// Re-apply Advanced Sky settings to the newly loaded shader material
 			ApplyAllAdvancedSkySettings();
 
+			// Re-apply sky colors to the Advanced Sky material
+			ApplyAllSkyColors();
+
 			// Temporarily enable render mode to initialize cloud shadows properly
 			// This is a workaround for clouds disappearing when shadows are enabled on Sun/Moon
 			Main.Instance?.TemporarilyEnableRenderMode();
@@ -1680,6 +1683,9 @@ public partial class ProjectPropertiesPanel : Panel
 
 			// Force environment update
 			_worldEnvironment.Environment = currentEnv;
+
+			// Re-apply sky colors to the restored Minecraft sky material
+			ApplyAllSkyColors();
 		}
 
 		// Update the advanced sky checkbox state (in case called programmatically)
@@ -1873,11 +1879,16 @@ public partial class ProjectPropertiesPanel : Panel
 
 	/// <summary>
 	/// Applies a color to a named shader parameter on the Minecraft sky material.
+	/// Also applies to the Advanced Sky material if it is currently active.
 	/// </summary>
 	private void ApplySkyShaderColor(string paramName, Color color)
 	{
 		var mat = GetMinecraftSkyMaterial();
 		mat?.SetShaderParameter(paramName, color);
+
+		// Also apply to Advanced Sky if active
+		var advMat = GetAdvancedSkyMaterial();
+		advMat?.SetShaderParameter(paramName, color);
 	}
 
 	/// <summary>
@@ -1891,27 +1902,50 @@ public partial class ProjectPropertiesPanel : Panel
 
 	/// <summary>
 	/// Applies all sky color picker values to the Minecraft sky shader material.
+	/// Also applies to the Advanced Sky material if it is currently active.
 	/// Called after the sky is loaded/changed to ensure colors are in sync.
 	/// </summary>
 	private void ApplyAllSkyColors()
 	{
+		// Apply to Minecraft sky material
 		var mat = GetMinecraftSkyMaterial();
-		if (mat == null) return;
+		if (mat != null)
+		{
+			if (_skyHorizonDayColorPicker != null)
+				mat.SetShaderParameter("horizon_day_color", _skyHorizonDayColorPicker.Color);
+			if (_skyZenithDayColorPicker != null)
+				mat.SetShaderParameter("zenith_day_color", _skyZenithDayColorPicker.Color);
+			if (_skyHorizonSunsetColorPicker != null)
+				mat.SetShaderParameter("horizon_sunset_color", _skyHorizonSunsetColorPicker.Color);
+			if (_skyZenithSunsetColorPicker != null)
+				mat.SetShaderParameter("zenith_sunset_color", _skyZenithSunsetColorPicker.Color);
+			if (_skyNightHorizonColorPicker != null)
+				mat.SetShaderParameter("night_horizon_color", _skyNightHorizonColorPicker.Color);
+			if (_skyNightZenithColorPicker != null)
+				mat.SetShaderParameter("night_zenith_color", _skyNightZenithColorPicker.Color);
+			if (_skyStarsColorPicker != null)
+				mat.SetShaderParameter("stars_color", _skyStarsColorPicker.Color);
+		}
 
-		if (_skyHorizonDayColorPicker != null)
-			mat.SetShaderParameter("horizon_day_color", _skyHorizonDayColorPicker.Color);
-		if (_skyZenithDayColorPicker != null)
-			mat.SetShaderParameter("zenith_day_color", _skyZenithDayColorPicker.Color);
-		if (_skyHorizonSunsetColorPicker != null)
-			mat.SetShaderParameter("horizon_sunset_color", _skyHorizonSunsetColorPicker.Color);
-		if (_skyZenithSunsetColorPicker != null)
-			mat.SetShaderParameter("zenith_sunset_color", _skyZenithSunsetColorPicker.Color);
-		if (_skyNightHorizonColorPicker != null)
-			mat.SetShaderParameter("night_horizon_color", _skyNightHorizonColorPicker.Color);
-		if (_skyNightZenithColorPicker != null)
-			mat.SetShaderParameter("night_zenith_color", _skyNightZenithColorPicker.Color);
-		if (_skyStarsColorPicker != null)
-			mat.SetShaderParameter("stars_color", _skyStarsColorPicker.Color);
+		// Also apply to Advanced Sky material if active
+		var advMat = GetAdvancedSkyMaterial();
+		if (advMat != null)
+		{
+			if (_skyHorizonDayColorPicker != null)
+				advMat.SetShaderParameter("horizon_day_color", _skyHorizonDayColorPicker.Color);
+			if (_skyZenithDayColorPicker != null)
+				advMat.SetShaderParameter("zenith_day_color", _skyZenithDayColorPicker.Color);
+			if (_skyHorizonSunsetColorPicker != null)
+				advMat.SetShaderParameter("horizon_sunset_color", _skyHorizonSunsetColorPicker.Color);
+			if (_skyZenithSunsetColorPicker != null)
+				advMat.SetShaderParameter("zenith_sunset_color", _skyZenithSunsetColorPicker.Color);
+			if (_skyNightHorizonColorPicker != null)
+				advMat.SetShaderParameter("night_horizon_color", _skyNightHorizonColorPicker.Color);
+			if (_skyNightZenithColorPicker != null)
+				advMat.SetShaderParameter("night_zenith_color", _skyNightZenithColorPicker.Color);
+			if (_skyStarsColorPicker != null)
+				advMat.SetShaderParameter("stars_color", _skyStarsColorPicker.Color);
+		}
 	}
 
 	/// <summary>
