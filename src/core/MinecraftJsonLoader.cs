@@ -1,9 +1,11 @@
 ﻿using Godot;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace simplyRemadeNuxi.core;
@@ -18,8 +20,8 @@ public class MinecraftJsonLoader
 	
 	private readonly string _assetsPath;
 	private readonly string _dataPath;
-	private Dictionary<string, MinecraftModel> _loadedModels;
-	private Dictionary<string, BlockState> _loadedBlockStates;
+	private ConcurrentDictionary<string, MinecraftModel> _loadedModels;
+	private ConcurrentDictionary<string, BlockState> _loadedBlockStates;
 	private bool _isLoaded = false;
 	private int _totalFilesLoaded = 0;
 	private int _totalFilesFailedToLoad = 0;
@@ -34,12 +36,12 @@ public class MinecraftJsonLoader
 		var userDataPath = OS.GetUserDataDir();
 		_dataPath = Path.Combine(userDataPath, "data");
 		_assetsPath = Path.Combine(_dataPath, "SimplyRemadeAssetsV1");
-		_loadedModels = new Dictionary<string, MinecraftModel>();
-		_loadedBlockStates = new Dictionary<string, BlockState>();
+		_loadedModels = new ConcurrentDictionary<string, MinecraftModel>(StringComparer.OrdinalIgnoreCase);
+		_loadedBlockStates = new ConcurrentDictionary<string, BlockState>(StringComparer.OrdinalIgnoreCase);
 	}
 	
 	/// <summary>
-	/// Loads all Minecraft JSON files from the assets directory
+	/// Loads all Minecraft JSON files from the assets directory using 3 parallel threads.
 	/// </summary>
 	/// <param name="progressCallback">Optional callback to report progress (message, percentage)</param>
 	public async Task<bool> LoadAllJsonFiles(Action<string, float> progressCallback = null)
@@ -79,23 +81,38 @@ public class MinecraftJsonLoader
 						
 			progressCallback?.Invoke($"Found {jsonFiles.Count} files to load", 10);
 			
+			int total = jsonFiles.Count;
 			int processed = 0;
-			foreach (var filePath in jsonFiles)
+
+			// Use a SemaphoreSlim to cap concurrency at 3 threads
+			var semaphore = new SemaphoreSlim(3, 3);
+
+			// Kick off all file loads concurrently (max 3 at a time)
+			var tasks = jsonFiles.Select(async filePath =>
 			{
-				processed++;
-				
-				// Report progress periodically
-				if (processed % 50 == 0 || processed == jsonFiles.Count)
+				await semaphore.WaitAsync();
+				try
 				{
-					var progress = 10 + (int)((processed / (float)jsonFiles.Count) * 85);
-					var message = $"Loading JSON files: {processed}/{jsonFiles.Count}";
-					progressCallback?.Invoke(message, progress);
-					// Allow other operations to run
-					await Task.Delay(1);
+					await LoadJsonFile(filePath);
 				}
-				
-				await LoadJsonFile(filePath);
+				finally
+				{
+					semaphore.Release();
+					Interlocked.Increment(ref processed);
+				}
+			}).ToList();
+
+			// Poll progress while tasks are running
+			while (!Task.WhenAll(tasks).IsCompleted)
+			{
+				int snap = Volatile.Read(ref processed);
+				var progress = 10 + (int)((snap / (float)total) * 85);
+				progressCallback?.Invoke($"Loading JSON files: {snap}/{total}", progress);
+				await Task.Delay(50);
 			}
+
+			// Await to propagate any exceptions
+			await Task.WhenAll(tasks);
 			
 			_isLoaded = true;
 			
@@ -113,7 +130,8 @@ public class MinecraftJsonLoader
 	}
 	
 	/// <summary>
-	/// Loads a single JSON file and determines its type
+	/// Loads a single JSON file and determines its type.
+	/// Safe to call from multiple threads concurrently.
 	/// </summary>
 	private async Task LoadJsonFile(string filePath)
 	{
@@ -136,28 +154,31 @@ public class MinecraftJsonLoader
 				LoadGenericJsonFile(filePath, jsonString);
 			}
 			
-			_totalFilesLoaded++;
+			Interlocked.Increment(ref _totalFilesLoaded);
 		}
 		catch (Exception ex)
 		{
-			_totalFilesFailedToLoad++;
+			Interlocked.Increment(ref _totalFilesFailedToLoad);
 			GD.PrintErr($"Failed to load JSON file {filePath}: {ex.Message}");
 		}
 	}
 	
+	// Shared JsonSerializerOptions instance (thread-safe for reads after construction)
+	private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
+	{
+		PropertyNameCaseInsensitive = true,
+		AllowTrailingCommas = true,
+		ReadCommentHandling = JsonCommentHandling.Skip
+	};
+
 	/// <summary>
-	/// Loads a blockstate JSON file
+	/// Loads a blockstate JSON file. Thread-safe.
 	/// </summary>
 	private void LoadBlockStateFile(string filePath, string jsonString)
 	{
 		try
 		{
-			var blockState = JsonSerializer.Deserialize<BlockState>(jsonString, new JsonSerializerOptions
-			{
-				PropertyNameCaseInsensitive = true,
-				AllowTrailingCommas = true,
-				ReadCommentHandling = JsonCommentHandling.Skip
-			});
+			var blockState = JsonSerializer.Deserialize<BlockState>(jsonString, _jsonOptions);
 			
 			if (blockState != null)
 			{
@@ -172,18 +193,13 @@ public class MinecraftJsonLoader
 	}
 	
 	/// <summary>
-	/// Loads a model JSON file
+	/// Loads a model JSON file. Thread-safe.
 	/// </summary>
 	private void LoadModelFile(string filePath, string jsonString)
 	{
 		try
 		{
-			var model = JsonSerializer.Deserialize<MinecraftModel>(jsonString, new JsonSerializerOptions
-			{
-				PropertyNameCaseInsensitive = true,
-				AllowTrailingCommas = true,
-				ReadCommentHandling = JsonCommentHandling.Skip
-			});
+			var model = JsonSerializer.Deserialize<MinecraftModel>(jsonString, _jsonOptions);
 			
 			if (model != null)
 			{
@@ -198,19 +214,14 @@ public class MinecraftJsonLoader
 	}
 	
 	/// <summary>
-	/// Tries to load a JSON file as either model or blockstate
+	/// Tries to load a JSON file as either model or blockstate. Thread-safe.
 	/// </summary>
 	private void LoadGenericJsonFile(string filePath, string jsonString)
 	{
 		// Try to parse as model first (more common)
 		try
 		{
-			var model = JsonSerializer.Deserialize<MinecraftModel>(jsonString, new JsonSerializerOptions
-			{
-				PropertyNameCaseInsensitive = true,
-				AllowTrailingCommas = true,
-				ReadCommentHandling = JsonCommentHandling.Skip
-			});
+			var model = JsonSerializer.Deserialize<MinecraftModel>(jsonString, _jsonOptions);
 			
 			if (model != null && (model.Elements != null || model.Parent != null || model.Textures != null))
 			{
@@ -224,12 +235,7 @@ public class MinecraftJsonLoader
 		// Try as blockstate
 		try
 		{
-			var blockState = JsonSerializer.Deserialize<BlockState>(jsonString, new JsonSerializerOptions
-			{
-				PropertyNameCaseInsensitive = true,
-				AllowTrailingCommas = true,
-				ReadCommentHandling = JsonCommentHandling.Skip
-			});
+			var blockState = JsonSerializer.Deserialize<BlockState>(jsonString, _jsonOptions);
 			
 			if (blockState != null && (blockState.Variants != null || blockState.Multipart != null))
 			{
@@ -361,7 +367,7 @@ public class MinecraftJsonLoader
 		_loadedModels.Clear();
 		_loadedBlockStates.Clear();
 		_isLoaded = false;
-		_totalFilesLoaded = 0;
-		_totalFilesFailedToLoad = 0;
+		Interlocked.Exchange(ref _totalFilesLoaded, 0);
+		Interlocked.Exchange(ref _totalFilesFailedToLoad, 0);
 	}
 }
