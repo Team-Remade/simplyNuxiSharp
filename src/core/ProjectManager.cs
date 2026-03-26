@@ -628,9 +628,10 @@ public static class ProjectManager
 
 	private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
 	{
-		WriteIndented          = true,
+		WriteIndented              = true,
 		PropertyNameCaseInsensitive = true,
-		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+		DefaultIgnoreCondition      = JsonIgnoreCondition.WhenWritingNull,
+		NumberHandling              = JsonNumberHandling.AllowNamedFloatingPointLiterals,
 	};
 
 	private static void WriteProjectFile(string path, ProjectData data)
