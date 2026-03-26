@@ -459,10 +459,23 @@ public partial class SceneObject : Node3D
 
 	public void UpdateVisualPosition()
 	{
-		if (Visual != null)
+		if (Visual == null) return;
+
+		// Base pivot offset
+		var pivotOffset = -GetAccumulatedPivotOffset();
+
+		// If the parent is a BoneSceneObject with LockBend > 0, apply the parent's
+		// bent-half transform so this child appears attached to the bent portion.
+		var parentBone = GetParent() as BoneSceneObject;
+		if (parentBone != null && parentBone.LockBend > 0f && parentBone.BendParameters.HasValue)
 		{
-			// Apply the accumulated pivot offset from this object and all parents
-			Visual.Position = -GetAccumulatedPivotOffset();
+			var bentTransform = parentBone.GetBentHalfTransform();
+			// Compose: bent transform applied to the pivot-offset position
+			Visual.Transform = bentTransform * new Transform3D(Basis.Identity, pivotOffset);
+		}
+		else
+		{
+			Visual.Position = pivotOffset;
 		}
 	}
 

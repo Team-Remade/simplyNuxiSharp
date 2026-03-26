@@ -1,4 +1,5 @@
 ﻿using Godot;
+using System;
 using System.Collections.Generic;
 
 namespace simplyRemadeNuxi.core;
@@ -172,6 +173,20 @@ public partial class CharacterSceneObject : SceneObject
 }
 
 /// <summary>
+/// Holds all data needed to regenerate a single shape mesh on a bone.
+/// Stored so that when the bend angle changes the mesh can be rebuilt.
+/// </summary>
+public class BoneShapeData
+{
+	public string PartName;
+	public int ShapeIndex;
+	public MiShape Shape;
+	public MiModel Model;
+	public ImageTexture Texture;
+	public Vector3 AccumulatedScale;
+}
+
+/// <summary>
 /// Represents a single bone in a character's skeleton as a SceneObject
 /// </summary>
 public partial class BoneSceneObject : SceneObject
@@ -202,7 +217,120 @@ public partial class BoneSceneObject : SceneObject
 			ApplyAlphaToControlledMesh();
 		}
 	}
-	
+
+	// ── Bend data ─────────────────────────────────────────────────────────────
+
+	/// <summary>
+	/// The bend parameters parsed from the MiPart's bend JSON (null if no bend).
+	/// The <see cref="BendParams.Angle"/> field is the *current* editable angle.
+	/// </summary>
+	public BendParams? BendParameters { get; private set; }
+
+	/// <summary>
+	/// The lock_bend value from the MiPart JSON.
+	/// When > 0 children should inherit the parent's bent-half transform offset.
+	/// </summary>
+	public float LockBend { get; private set; }
+
+	/// <summary>Shape data list used to regenerate meshes when bend angle changes.</summary>
+	private List<BoneShapeData> _shapeDataList = new();
+
+	/// <summary>
+	/// Sets the bend parameters for this bone.
+	/// Called by the loader after the bone is created.
+	/// </summary>
+	public void SetBendParameters(BendParams? bendParams, float lockBend)
+	{
+		BendParameters = bendParams;
+		LockBend = lockBend;
+	}
+
+	/// <summary>
+	/// Registers shape data so meshes can be regenerated when the bend angle changes.
+	/// </summary>
+	public void RegisterShapeData(BoneShapeData data)
+	{
+		_shapeDataList.Add(data);
+	}
+
+	/// <summary>
+	/// Updates the bend angle and regenerates all shape meshes.
+	/// </summary>
+	public void SetBendAngle(Vector3 newAngle)
+	{
+		if (!BendParameters.HasValue) return;
+
+		var bp = BendParameters.Value;
+		// Clamp to direction limits
+		newAngle.X = Math.Clamp(newAngle.X, bp.DirectionMin.X, bp.DirectionMax.X);
+		newAngle.Y = Math.Clamp(newAngle.Y, bp.DirectionMin.Y, bp.DirectionMax.Y);
+		newAngle.Z = Math.Clamp(newAngle.Z, bp.DirectionMin.Z, bp.DirectionMax.Z);
+
+		bp.Angle = newAngle;
+		BendParameters = bp;
+
+		RegenerateMeshes();
+	}
+
+	/// <summary>
+	/// Rebuilds all mesh instances for this bone using the current bend angle.
+	/// Removes old meshes from the Visual node and creates new ones.
+	/// Also updates children's visual positions to reflect the new bend.
+	/// </summary>
+	public void RegenerateMeshes()
+	{
+		if (_shapeDataList.Count == 0) return;
+
+		// Remove existing mesh instances from Visual
+		var toRemove = new List<Node>();
+		foreach (var child in Visual.GetChildren())
+		{
+			if (child is MeshInstance3D)
+				toRemove.Add(child);
+		}
+		foreach (var node in toRemove)
+		{
+			Visual.RemoveChild(node);
+			node.QueueFree();
+		}
+
+		// Recreate meshes using the loader
+		var loader = new MineImatorLoader();
+		foreach (var sd in _shapeDataList)
+		{
+			var meshInstance = loader.CreateShapeMeshPublic(
+				sd.PartName, sd.ShapeIndex, sd.Shape, sd.Model,
+				sd.Texture, sd.AccumulatedScale, BendParameters);
+			if (meshInstance != null)
+			{
+				AddVisualInstance(meshInstance);
+				meshInstance.Name = $"{sd.PartName}_Shape{sd.ShapeIndex}";
+			}
+		}
+
+		// Update children's visual positions so they track the new bend
+		foreach (var child in GetChildrenObjects())
+		{
+			child.UpdateVisualPosition();
+		}
+	}
+
+	/// <summary>
+	/// Returns the world-space transform that represents the "bent half" pivot
+	/// for children that have lock_bend enabled.
+	/// This is the transform applied at the bend point (weight = LockBend).
+	/// </summary>
+	public Transform3D GetBentHalfTransform()
+	{
+		if (!BendParameters.HasValue || LockBend <= 0f)
+			return Transform3D.Identity;
+
+		var b = BendParameters.Value;
+		var bendVec = BendHelper.GetBendVector(b.Angle, LockBend);
+		// Use zero shape position/rotation for the bone-level transform
+		return BendHelper.GetBendMatrix(b, bendVec, Vector3.Zero);
+	}
+
 	public int BoneIndex => _boneIdx;
 	public Skeleton3D Skeleton => _skeleton;
 	

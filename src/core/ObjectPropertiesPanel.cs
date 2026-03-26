@@ -49,6 +49,14 @@ public partial class ObjectPropertiesPanel : Panel
 	private SpinBox _lightIndirectEnergySpinBox;
 	private SpinBox _lightSpecularSpinBox;
 	private CheckBox _lightShadowCheckbox;
+
+	// Bend-specific controls (shown only for bones with bend parameters)
+	private CollapsibleSection _bendSection;
+	private SpinBox _bendAngleX;
+	private SpinBox _bendAngleY;
+	private SpinBox _bendAngleZ;
+	private Label _bendPartLabel;
+	private Label _bendAxisLabel;
 	
 	// Store original values for reset functionality
 	private Vector3 _originalPosition = Vector3.Zero;
@@ -69,6 +77,9 @@ public partial class ObjectPropertiesPanel : Panel
 	private float _preEditLightIndirectEnergy;
 	private float _preEditLightSpecular;
 	private Godot.Color _preEditLightColor;
+
+	// Pre-edit state for bend angle spinboxes
+	private Vector3 _preEditBendAngle = Vector3.Zero;
 
 	public override void _Ready()
 	{
@@ -511,6 +522,48 @@ public partial class ObjectPropertiesPanel : Panel
 		_lightShadowCheckbox.TooltipText = "Enable shadow casting";
 		_lightShadowCheckbox.Toggled += OnLightShadowToggled;
 		shadowRow.AddChild(_lightShadowCheckbox);
+
+		// Bend section (initially hidden, shown only for bones with bend parameters)
+		_bendSection = new CollapsibleSection("Bend");
+		_bendSection.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_bendSection.Visible = false;
+		vbox.AddChild(_bendSection);
+		_bendSection.GetResetButton().Pressed += OnResetBendAngle;
+
+		var bendContainer = _bendSection.GetContentContainer();
+
+		// Info row: part direction
+		var bendInfoRow = new HBoxContainer();
+		bendContainer.AddChild(bendInfoRow);
+		var bendPartLabelTitle = new Label();
+		bendPartLabelTitle.Text = "Part:";
+		bendPartLabelTitle.CustomMinimumSize = new Vector2(60, 0);
+		bendInfoRow.AddChild(bendPartLabelTitle);
+		_bendPartLabel = new Label();
+		_bendPartLabel.Text = "-";
+		_bendPartLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		bendInfoRow.AddChild(_bendPartLabel);
+
+		// Info row: active axes
+		var bendAxisRow = new HBoxContainer();
+		bendContainer.AddChild(bendAxisRow);
+		var bendAxisLabelTitle = new Label();
+		bendAxisLabelTitle.Text = "Axes:";
+		bendAxisLabelTitle.CustomMinimumSize = new Vector2(60, 0);
+		bendAxisRow.AddChild(bendAxisLabelTitle);
+		_bendAxisLabel = new Label();
+		_bendAxisLabel.Text = "-";
+		_bendAxisLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		bendAxisRow.AddChild(_bendAxisLabel);
+
+		// Angle spinboxes
+		_bendAngleX = CreateSpinBoxRow(bendContainer, "X:", OnBendAngleChanged, OnBendEditBegin, OnBendEditEnd);
+		_bendAngleY = CreateSpinBoxRow(bendContainer, "Y:", OnBendAngleChanged, OnBendEditBegin, OnBendEditEnd);
+		_bendAngleZ = CreateSpinBoxRow(bendContainer, "Z:", OnBendAngleChanged, OnBendEditBegin, OnBendEditEnd);
+
+		ConfigureSpinBox(_bendAngleX);
+		ConfigureSpinBox(_bendAngleY);
+		ConfigureSpinBox(_bendAngleZ);
 	}
 
 	private SpinBox CreateSpinBoxRow(VBoxContainer parent, string labelText, Action onChanged,
@@ -667,6 +720,37 @@ public partial class ObjectPropertiesPanel : Panel
 				_materialAlphaSlider.SetValueNoSignal(1.0);
 				_materialAlphaLabel.Text = "N/A";
 			}
+
+			// Bend section - show only if this bone has bend parameters
+			if (boneObject.BendParameters.HasValue)
+			{
+				_bendSection.Visible = true;
+				var bp = boneObject.BendParameters.Value;
+
+				// Show part direction
+				_bendPartLabel.Text = bp.Part.ToString();
+
+				// Show active axes
+				var axes = new System.Text.StringBuilder();
+				if (bp.AxisX) axes.Append("X ");
+				if (bp.AxisY) axes.Append("Y ");
+				if (bp.AxisZ) axes.Append("Z ");
+				_bendAxisLabel.Text = axes.Length > 0 ? axes.ToString().Trim() : "none";
+
+				// Populate angle spinboxes
+				_bendAngleX.SetValueNoSignal(Math.Round(bp.Angle.X, 2));
+				_bendAngleY.SetValueNoSignal(Math.Round(bp.Angle.Y, 2));
+				_bendAngleZ.SetValueNoSignal(Math.Round(bp.Angle.Z, 2));
+
+				// Disable axes that are not active
+				_bendAngleX.Editable = bp.AxisX;
+				_bendAngleY.Editable = bp.AxisY;
+				_bendAngleZ.Editable = bp.AxisZ;
+			}
+			else
+			{
+				_bendSection.Visible = false;
+			}
 		}
 		else
 		{
@@ -692,6 +776,8 @@ public partial class ObjectPropertiesPanel : Panel
 				_materialAlphaLabel.Text = "1.00";
 				_materialAlphaModeDropdown.Selected = 0; // Default to Disabled
 			}
+
+			_bendSection.Visible = false;
 		}
 	}
 
@@ -722,6 +808,11 @@ public partial class ObjectPropertiesPanel : Panel
 		_lightIndirectEnergySpinBox.SetValueNoSignal(1.0);
 		_lightSpecularSpinBox.SetValueNoSignal(0.5);
 		_lightShadowCheckbox.SetPressedNoSignal(true);
+		// Hide bend section
+		_bendSection.Visible = false;
+		_bendAngleX.SetValueNoSignal(0);
+		_bendAngleY.SetValueNoSignal(0);
+		_bendAngleZ.SetValueNoSignal(0);
 	}
 
 	private void OnVisibilityChanged(bool visible)
@@ -1394,6 +1485,93 @@ public partial class ObjectPropertiesPanel : Panel
 		AutoKeyframe("light.color.r");
 		AutoKeyframe("light.color.g");
 		AutoKeyframe("light.color.b");
+	}
+
+	// ── Bend property handlers ────────────────────────────────────────────────
+
+	/// <summary>
+	/// Called when the user starts editing a bend angle spinbox.
+	/// Captures the current bend angle as the pre-edit baseline.
+	/// </summary>
+	private void OnBendEditBegin()
+	{
+		if (_currentObject is not BoneSceneObject boneObj) return;
+		if (!boneObj.BendParameters.HasValue) return;
+		_preEditBendAngle = boneObj.BendParameters.Value.Angle;
+	}
+
+	/// <summary>
+	/// Called when the user finishes editing a bend angle spinbox.
+	/// Records an undo command if the angle changed.
+	/// </summary>
+	private void OnBendEditEnd()
+	{
+		if (_currentObject is not BoneSceneObject boneObj) return;
+		if (!boneObj.BendParameters.HasValue) return;
+		if (EditorCommandHistory.Instance == null) return;
+
+		var newAngle = boneObj.BendParameters.Value.Angle;
+		if (newAngle == _preEditBendAngle) return;
+
+		var capturedObj = boneObj;
+		var capturedPre = _preEditBendAngle;
+		var capturedNew = newAngle;
+
+		EditorCommandHistory.Instance.PushWithoutExecute(
+			new PropertyChangeCommand<Godot.Vector3>(
+				"Change Bend Angle",
+				capturedPre, capturedNew,
+				v =>
+				{
+					capturedObj.SetBendAngle(v);
+					if (Instance != null && SelectionManager.Instance != null &&
+						SelectionManager.Instance.SelectedObjects.Contains(capturedObj))
+						Instance.RefreshFromObject();
+				}));
+
+		_preEditBendAngle = newAngle;
+	}
+
+	/// <summary>
+	/// Called whenever a bend angle spinbox value changes.
+	/// Applies the new angle to the bone and regenerates its meshes in real time.
+	/// </summary>
+	private void OnBendAngleChanged()
+	{
+		if (_currentObject is not BoneSceneObject boneObj) return;
+		if (!boneObj.BendParameters.HasValue) return;
+
+		var newAngle = new Vector3(
+			(float)_bendAngleX.Value,
+			(float)_bendAngleY.Value,
+			(float)_bendAngleZ.Value
+		);
+
+		boneObj.SetBendAngle(newAngle);
+
+		// Auto-keyframe bend angle
+		AutoKeyframe("bend.angle.x");
+		AutoKeyframe("bend.angle.y");
+		AutoKeyframe("bend.angle.z");
+	}
+
+	/// <summary>
+	/// Resets the bend angle to zero (straight/undeformed).
+	/// </summary>
+	private void OnResetBendAngle()
+	{
+		if (_currentObject is not BoneSceneObject boneObj) return;
+		if (!boneObj.BendParameters.HasValue) return;
+
+		boneObj.SetBendAngle(Vector3.Zero);
+
+		_bendAngleX.SetValueNoSignal(0);
+		_bendAngleY.SetValueNoSignal(0);
+		_bendAngleZ.SetValueNoSignal(0);
+
+		AutoKeyframe("bend.angle.x");
+		AutoKeyframe("bend.angle.y");
+		AutoKeyframe("bend.angle.z");
 	}
 }
 

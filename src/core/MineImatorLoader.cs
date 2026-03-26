@@ -416,40 +416,56 @@ public class MineImatorLoader
 		// Now add meshes to the BoneSceneObjects
 		foreach (var (part, boneIdx, parentIdx, accumulatedParentScale) in boneDataList)
 		{
+			string boneName = skeleton.GetBoneName(boneIdx);
+			if (!character.BoneObjects.TryGetValue(boneName, out var boneObject))
+				continue;
+
+			// Compute this part's own scale
+			Vector3 partScale = Vector3.One;
+			if (part.Scale != null && part.Scale.Length >= 3)
+			{
+				partScale = new Vector3(part.Scale[0], part.Scale[1], part.Scale[2]);
+			}
+			// Full accumulated scale for shapes = parent accumulated scale * this part's scale
+			Vector3 accumulatedScale = accumulatedParentScale * partScale;
+
+			// Parse bend parameters from this part (if any)
+			// Pass the part's own scale so offset/size are scaled correctly
+			BendParams? bendParams = BendHelper.ParseBend(part.Bend, part.Scale);
+
+			// Store bend params and lock_bend on the bone for later editing
+			float lockBend = part.LockBend ?? 0f;
+			boneObject.SetBendParameters(bendParams, lockBend);
+
 			if (part.Shapes != null && part.Shapes.Count > 0)
 			{
-				string boneName = skeleton.GetBoneName(boneIdx);
-				if (character.BoneObjects.TryGetValue(boneName, out var boneObject))
+				int shapeIndex = 0;
+				foreach (var shape in part.Shapes)
 				{
-					// Compute this part's own scale
-					Vector3 partScale = Vector3.One;
-					if (part.Scale != null && part.Scale.Length >= 3)
+					// Get texture for this shape (supports multi-texture)
+					// First check if shape has its own texture, then check part, then fall back to model
+					ImageTexture shapeTexture = GetShapeTexture(shape, part, model);
+
+					var meshInstance = CreateShapeMesh(part.Name, shapeIndex, shape, model, shapeTexture, accumulatedScale, bendParams);
+					if (meshInstance != null)
 					{
-						partScale = new Vector3(part.Scale[0], part.Scale[1], part.Scale[2]);
+						// Add the mesh as a visual child of the BoneSceneObject
+						boneObject.AddVisualInstance(meshInstance);
+						meshInstance.Name = $"{part.Name}_Shape{shapeIndex}";
 					}
-					// Full accumulated scale for shapes = parent accumulated scale * this part's scale
-					Vector3 accumulatedScale = accumulatedParentScale * partScale;
-					
-					// Parse bend parameters from this part (if any)
-					// Pass the part's own scale so offset/size are scaled correctly
-					BendParams? bendParams = BendHelper.ParseBend(part.Bend, part.Scale);
-					
-					int shapeIndex = 0;
-					foreach (var shape in part.Shapes)
+
+					// Register shape data so meshes can be regenerated when bend angle changes
+					boneObject.RegisterShapeData(new BoneShapeData
 					{
-						// Get texture for this shape (supports multi-texture)
-						// First check if shape has its own texture, then check part, then fall back to model
-						ImageTexture shapeTexture = GetShapeTexture(shape, part, model);
-						
-						var meshInstance = CreateShapeMesh(part.Name, shapeIndex, shape, model, shapeTexture, accumulatedScale, bendParams);
-						if (meshInstance != null)
-						{
-							// Add the mesh as a visual child of the BoneSceneObject
-							boneObject.AddVisualInstance(meshInstance);
-							meshInstance.Name = $"{part.Name}_Shape{shapeIndex}";
-						}
-						shapeIndex++;
-					}
+						PartName = part.Name,
+						ShapeIndex = shapeIndex,
+						Shape = shape,
+						Model = model,
+						Texture = shapeTexture,
+						AccumulatedScale = accumulatedScale
+					});
+
+					shapeIndex++;
 				}
 			}
 		}
@@ -592,6 +608,12 @@ public class MineImatorLoader
 		}
 	}
 	
+	/// <summary>
+	/// Public wrapper for <see cref="CreateShapeMesh"/> used by <see cref="BoneSceneObject.RegenerateMeshes"/>.
+	/// </summary>
+	public MeshInstance3D CreateShapeMeshPublic(string partName, int shapeIndex, MiShape shape, MiModel model, ImageTexture texture, Vector3 accumulatedParentScale, BendParams? bendParams = null)
+		=> CreateShapeMesh(partName, shapeIndex, shape, model, texture, accumulatedParentScale, bendParams);
+
 	/// <summary>
 	/// Creates a MeshInstance3D for a single shape
 	/// </summary>
