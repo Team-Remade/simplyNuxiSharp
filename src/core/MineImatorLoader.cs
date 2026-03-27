@@ -434,7 +434,7 @@ public class MineImatorLoader
 			BendParams? bendParams = BendHelper.ParseBend(part.Bend, part.Scale);
 
 			// Store bend params and lock_bend on the bone for later editing
-			float lockBend = part.LockBend ?? 0f;
+			float lockBend = part.LockBend ?? 1f;
 			boneObject.SetBendParameters(bendParams, lockBend);
 
 			if (part.Shapes != null && part.Shapes.Count > 0)
