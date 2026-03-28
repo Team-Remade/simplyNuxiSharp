@@ -13,7 +13,7 @@ Requirements
 
 1. Clone the repo
 2. Download the Godot build
-3. Run `dotnet nuget add source <full/folder/path/to/GodotNuget>` --name GodotNuget
+3. Run `dotnet nuget add source <full/folder/path/to/GodotNuget/>` --name GodotNuget
 4. Open the project in Godot
 5. Run the project
 

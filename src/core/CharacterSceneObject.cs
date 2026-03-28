@@ -28,6 +28,12 @@ public partial class CharacterSceneObject : SceneObject
 	}
 	
 	/// <summary>
+	/// The character name (e.g., "Steve", "Alex") used to look up the character's GLB file.
+	/// This is stored separately from ObjectType which is always "Character".
+	/// </summary>
+	public string CharacterName { get; set; } = "";
+	
+	/// <summary>
 	/// Sets up the character from a loaded GLB scene
 	/// Creates BoneSceneObjects for each bone in the skeleton
 	/// </summary>

@@ -909,6 +909,10 @@ public static class ProjectManager
 		if (!string.IsNullOrEmpty(obj.TextureType))
 			entry.ExtraData["TextureType"] = obj.TextureType;
 
+		// Store character name for CharacterSceneObject instances so we can restore them
+		if (obj is CharacterSceneObject characterObj && !string.IsNullOrEmpty(characterObj.CharacterName))
+			entry.ExtraData["CharacterName"] = characterObj.CharacterName;
+
 		// Store the source asset path so we can restore the model on load
 		if (!string.IsNullOrEmpty(obj.SourceAssetPath))
 		{
@@ -928,6 +932,53 @@ public static class ProjectManager
 			else
 			{
 				entry.ExtraData["AssetRelativePath"] = obj.SourceAssetPath;
+			}
+		}
+
+		// Store CastShadow setting
+		entry.ExtraData["CastShadow"] = obj.CastShadow.ToString();
+
+		// Store material properties from the first mesh instance's first surface material
+		var meshInstances = obj.GetMeshInstancesRecursively(obj.Visual);
+		if (meshInstances.Count > 0 && meshInstances[0].Mesh != null && meshInstances[0].Mesh.GetSurfaceCount() > 0)
+		{
+			var material = meshInstances[0].Mesh.SurfaceGetMaterial(0);
+			if (material is StandardMaterial3D stdMat)
+			{
+				entry.ExtraData["MatAlbedoColor"] = stdMat.AlbedoColor.ToHtml(false);
+				entry.ExtraData["MatMetallic"] = stdMat.Metallic.ToString(System.Globalization.CultureInfo.InvariantCulture);
+				entry.ExtraData["MatRoughness"] = stdMat.Roughness.ToString(System.Globalization.CultureInfo.InvariantCulture);
+				entry.ExtraData["MatNormalEnabled"] = stdMat.NormalEnabled.ToString();
+				if (stdMat.NormalTexture != null && !string.IsNullOrEmpty(stdMat.NormalTexture.ResourcePath))
+					entry.ExtraData["MatNormalPath"] = stdMat.NormalTexture.ResourcePath;
+				entry.ExtraData["MatTransparency"] = ((int)stdMat.Transparency).ToString();
+				entry.ExtraData["MatAlpha"] = stdMat.AlbedoColor.A.ToString(System.Globalization.CultureInfo.InvariantCulture);
+				entry.ExtraData["MatEmissionEnabled"] = stdMat.EmissionEnabled.ToString();
+				entry.ExtraData["MatEmissionColor"] = stdMat.Emission.ToHtml(false);
+				entry.ExtraData["MatEmissionEnergy"] = stdMat.EmissionEnergyMultiplier.ToString(System.Globalization.CultureInfo.InvariantCulture);
+			}
+		}
+
+
+		// Store CastShadow setting
+		entry.ExtraData["CastShadow"] = obj.CastShadow.ToString();
+
+		if (meshInstances.Count > 0 && meshInstances[0].Mesh != null && meshInstances[0].Mesh.GetSurfaceCount() > 0)
+		{
+			var material = meshInstances[0].Mesh.SurfaceGetMaterial(0);
+			if (material is StandardMaterial3D stdMat)
+			{
+				entry.ExtraData["MatAlbedoColor"] = stdMat.AlbedoColor.ToHtml(false);
+				entry.ExtraData["MatMetallic"] = stdMat.Metallic.ToString(System.Globalization.CultureInfo.InvariantCulture);
+				entry.ExtraData["MatRoughness"] = stdMat.Roughness.ToString(System.Globalization.CultureInfo.InvariantCulture);
+				entry.ExtraData["MatNormalEnabled"] = stdMat.NormalEnabled.ToString();
+				if (stdMat.NormalTexture != null && !string.IsNullOrEmpty(stdMat.NormalTexture.ResourcePath))
+					entry.ExtraData["MatNormalPath"] = stdMat.NormalTexture.ResourcePath;
+				entry.ExtraData["MatTransparency"] = ((int)stdMat.Transparency).ToString();
+				entry.ExtraData["MatAlpha"] = stdMat.AlbedoColor.A.ToString(System.Globalization.CultureInfo.InvariantCulture);
+				entry.ExtraData["MatEmissionEnabled"] = stdMat.EmissionEnabled.ToString();
+				entry.ExtraData["MatEmissionColor"] = stdMat.Emission.ToHtml(false);
+				entry.ExtraData["MatEmissionEnergy"] = stdMat.EmissionEnergyMultiplier.ToString(System.Globalization.CultureInfo.InvariantCulture);
 			}
 		}
 
@@ -1039,6 +1090,40 @@ public static class ProjectManager
 			{
 				restored = Main.Instance?.SpawnLightObject(entry.Name);
 			}
+			// ── Character (Minecraft character / rigged model) ─────────────────
+			// Characters use CharacterLoader to get the path based on CharacterName
+			else if (string.Equals(entry.ObjectType, "Character", StringComparison.OrdinalIgnoreCase) ||
+			         string.Equals(spawnCategory, "Character", StringComparison.OrdinalIgnoreCase))
+			{
+				// Get the character name from ExtraData
+				if (entry.ExtraData.TryGetValue("CharacterName", out var characterName) && !string.IsNullOrEmpty(characterName))
+				{
+					// Use CharacterLoader to get the path for this character
+					var characterPath = CharacterLoader.Instance.GetCharacterPath(characterName);
+					if (!string.IsNullOrEmpty(characterPath))
+					{
+						// Spawn the character using the same method as CreateCharacter in SpawnMenu
+						// Count objects before spawn so we can find the new one afterwards
+						int countBefore = CountSceneObjects(viewport);
+						await Main.Instance.SpawnModelFromPathAsync(characterPath);
+						restored = FindNewestSceneObject(viewport, countBefore);
+						if (restored != null && restored is CharacterSceneObject characterObj)
+						{
+							characterObj.CharacterName = characterName;
+						}
+					}
+					else
+					{
+						GD.PrintErr($"ProjectManager.RestoreSceneState: character '{entry.Name}' (type '{characterName}') cannot be restored - character not found in CharacterLoader.");
+						continue;
+					}
+				}
+				else
+				{
+					GD.PrintErr($"ProjectManager.RestoreSceneState: character '{entry.Name}' cannot be restored - no CharacterName in ExtraData.");
+					continue;
+				}
+			}
 			// ── Minecraft block ───────────────────────────────────────────────
 			else if (string.Equals(spawnCategory, "Blocks", StringComparison.OrdinalIgnoreCase))
 			{
@@ -1088,7 +1173,17 @@ public static class ProjectManager
 			}
 			else
 			{
-				GD.Print($"ProjectManager.RestoreSceneState: skipping '{entry.Name}' (type '{entry.ObjectType}' / category '{spawnCategory}' not supported)");
+				// Check if this might be a character/custom model that was saved without AssetRelativePath
+				if (!entry.ExtraData.ContainsKey("AssetRelativePath"))
+				{
+					GD.PrintErr($"ProjectManager.RestoreSceneState: object '{entry.Name}' (type '{entry.ObjectType}') cannot be restored - no AssetRelativePath and not a recognized built-in type. " +
+						$"This may be a character or custom model whose source file path was not saved. " +
+						$"AssetRelativePath should be set when the object is created.");
+				}
+				else
+				{
+					GD.Print($"ProjectManager.RestoreSceneState: skipping '{entry.Name}' (type '{entry.ObjectType}' / category '{spawnCategory}' not supported)");
+				}
 				continue;
 			}
 
@@ -1119,7 +1214,17 @@ public static class ProjectManager
 					restored.SetLocalScale(new Vector3(entry.Scale[0], entry.Scale[1], entry.Scale[2]));
 	
 				restored.SetObjectVisible(entry.Visible);
-	
+
+								// Restore CastShadow setting
+				if (entry.ExtraData.TryGetValue("CastShadow", out var castShadowStr) &&
+				    Enum.TryParse<GeometryInstance3D.ShadowCastingSetting>(castShadowStr, out var castShadow))
+				{
+					restored.CastShadow = castShadow;
+				}
+
+				// Restore material properties
+				RestoreMaterialProperties(restored, entry);
+
 				// Restore keyframes for the top-level object
 				ApplyKeyframesToObject(restored, entry);
 	
@@ -1133,6 +1238,80 @@ public static class ProjectManager
 		// Final progress update
 		onProgress?.Invoke(total, total, "");
 	}
+
+		/// <summary>
+	/// Restores material properties from the saved entry onto the SceneObject's mesh instances.
+	/// </summary>
+	private static void RestoreMaterialProperties(SceneObject obj, SceneObjectEntry entry)
+	{
+		// Collect material property values from ExtraData
+		var hasMaterialData = false;
+		Color albedoColor = Colors.White;
+		float metallic = 0f;
+		float roughness = 0.5f;
+		bool normalEnabled = false;
+		string normalPath = null;
+		BaseMaterial3D.TransparencyEnum transparency = BaseMaterial3D.TransparencyEnum.Disabled;
+		float alpha = 1f;
+		bool emissionEnabled = false;
+		Color emissionColor = Colors.Black;
+		float emissionEnergy = 1f;
+
+		if (entry.ExtraData.TryGetValue("MatAlbedoColor", out var albedoStr)) { try { albedoColor = new Color(albedoStr); hasMaterialData = true; } catch { }}
+		if (entry.ExtraData.TryGetValue("MatMetallic", out var metallicStr) && float.TryParse(metallicStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out metallic)) hasMaterialData = true;
+		if (entry.ExtraData.TryGetValue("MatRoughness", out var roughnessStr) && float.TryParse(roughnessStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out roughness)) hasMaterialData = true;
+		if (entry.ExtraData.TryGetValue("MatNormalEnabled", out var normalEnabledStr) && bool.TryParse(normalEnabledStr, out normalEnabled)) hasMaterialData = true;
+		if (entry.ExtraData.TryGetValue("MatNormalPath", out normalPath) && !string.IsNullOrEmpty(normalPath)) hasMaterialData = true;
+		if (entry.ExtraData.TryGetValue("MatTransparency", out var transparencyStr) && int.TryParse(transparencyStr, out var transparencyInt)) { transparency = (BaseMaterial3D.TransparencyEnum)transparencyInt; hasMaterialData = true; }
+		if (entry.ExtraData.TryGetValue("MatAlpha", out var alphaStr) && float.TryParse(alphaStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out alpha)) hasMaterialData = true;
+		if (entry.ExtraData.TryGetValue("MatEmissionEnabled", out var emissionEnabledStr) && bool.TryParse(emissionEnabledStr, out emissionEnabled)) hasMaterialData = true;
+		if (entry.ExtraData.TryGetValue("MatEmissionColor", out var emissionStr)) { try { emissionColor = new Color(emissionStr); } catch { }}
+		if (entry.ExtraData.TryGetValue("MatEmissionEnergy", out var emissionEnergyStr) && float.TryParse(emissionEnergyStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out emissionEnergy)) hasMaterialData = true;
+
+		if (!hasMaterialData) return;
+
+		// Apply material properties to all mesh instances
+		var meshInstances = obj.GetMeshInstancesRecursively(obj.Visual);
+		foreach (var meshInstance in meshInstances)
+		{
+			if (meshInstance.Mesh == null) continue;
+
+			for (int i = 0; i < meshInstance.Mesh.GetSurfaceCount(); i++)
+			{
+				var material = meshInstance.Mesh.SurfaceGetMaterial(i);
+				StandardMaterial3D stdMat;
+
+				if (material is StandardMaterial3D existingMat)
+				{
+					stdMat = existingMat;
+				}
+				else
+				{
+					// Create a new StandardMaterial3D if the current material isn't one
+					stdMat = new StandardMaterial3D();
+					meshInstance.Mesh.SurfaceSetMaterial(i, stdMat);
+				}
+
+				// Apply the saved properties
+				albedoColor.A = alpha;
+				stdMat.AlbedoColor = albedoColor;
+				stdMat.Metallic = metallic;
+				stdMat.Roughness = roughness;
+				stdMat.NormalEnabled = normalEnabled;
+				if (normalEnabled && !string.IsNullOrEmpty(normalPath))
+				{
+					var normalTex = GD.Load<Texture2D>(normalPath);
+					if (normalTex != null)
+						stdMat.NormalTexture = normalTex;
+				}
+				stdMat.Transparency = transparency;
+				stdMat.EmissionEnabled = emissionEnabled;
+				stdMat.Emission = emissionColor;
+				stdMat.EmissionEnergyMultiplier = emissionEnergy;
+			}
+		}
+	}
+
 
 	private static int CountSceneObjects(Node viewport)
 	{

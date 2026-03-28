@@ -103,6 +103,20 @@ public partial class SceneObject : Node3D
 
 	public Node3D Visual;
 
+	/// <summary>
+	/// Controls whether this object casts shadows. Default is On.
+	/// </summary>
+	private GeometryInstance3D.ShadowCastingSetting _castShadow = GeometryInstance3D.ShadowCastingSetting.On;
+	public GeometryInstance3D.ShadowCastingSetting CastShadow
+	{
+		get => _castShadow;
+		set
+		{
+			_castShadow = value;
+			ApplyCastShadow();
+		}
+	}
+
 	// Stores the local transform set by the user (position/rotation/scale before inheritance is applied)
 	private Vector3 _localPosition = Vector3.Zero;
 	private Vector3 _localRotation = Vector3.Zero;
@@ -430,6 +444,20 @@ public partial class SceneObject : Node3D
 		}
 		
 		return meshInstances;
+	}
+
+	/// <summary>
+	/// Applies the CastShadow setting to all mesh instances in the Visual hierarchy.
+	/// </summary>
+	public void ApplyCastShadow()
+	{
+		if (Visual == null) return;
+
+		var meshInstances = GetMeshInstancesRecursively(Visual);
+		foreach (var meshInstance in meshInstances)
+		{
+			meshInstance.CastShadow = _castShadow;
+		}
 	}
 	
 	public void AddVisualInstance(Node3D visual)

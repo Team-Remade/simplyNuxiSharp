@@ -1319,8 +1319,11 @@ public partial class SpawnMenu : PopupPanel
 	       var characterObject = new CharacterSceneObject
 	       {
 	           Name = fullObjectName,
-	           ObjectType = characterName
+	           ObjectType = "Character",  // Use "Character" as the object type for all characters
+	           SpawnCategory = "Character",  // Mark as Character for proper save/restore
 	       };
+	       // Store the actual character name (e.g., "Steve") so we can restore it
+	       characterObject.CharacterName = characterName;
 
 	       // Add to viewport first
 	       Viewport.AddChild(characterObject);

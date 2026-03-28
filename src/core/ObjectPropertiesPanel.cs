@@ -33,6 +33,7 @@ public partial class ObjectPropertiesPanel : Panel
 	private CheckBox _inheritRotationCheckbox;
 	private CheckBox _inheritScaleCheckbox;
 	private CheckBox _inheritVisibilityCheckbox;
+	private CheckBox _castShadowCheckbox;
 	private CheckBox _linkScaleCheckbox;
 	private bool _isUpdatingScale = false;
 	private CollapsibleSection _materialSection;
@@ -40,6 +41,28 @@ public partial class ObjectPropertiesPanel : Panel
 	private Label _materialAlphaLabel;
 	private OptionButton _materialAlphaModeDropdown;
 	private SceneObject _currentObject;
+	
+	// Material editor controls
+	private ColorPickerButton _materialAlbedoPicker;
+	private HSlider _materialMetallicSlider;
+	private Label _materialMetallicLabel;
+	private HSlider _materialRoughnessSlider;
+	private Label _materialRoughnessLabel;
+	private Button _materialNormalMapButton;
+	private Label _materialNormalMapLabel;
+	private CheckBox _materialEmissionEnabledCheckbox;
+	private ColorPickerButton _materialEmissionPicker;
+	private HSlider _materialEmissionEnergySlider;
+	private Label _materialEmissionEnergyLabel;
+	
+	// Pre-edit state for material properties
+	private Godot.Color _preEditAlbedoColor;
+	private float _preEditMetallic;
+	private float _preEditRoughness;
+	private string _preEditNormalMapPath;
+	private bool _preEditEmissionEnabled;
+	private Godot.Color _preEditEmissionColor;
+	private float _preEditEmissionEnergy;
 	
 	// Light-specific controls
 	private CollapsibleSection _lightSection;
@@ -180,6 +203,21 @@ public partial class ObjectPropertiesPanel : Panel
 		_inheritVisibilityCheckbox.TooltipText = "When checked, this object inherits the parent's visibility";
 		_inheritVisibilityCheckbox.Toggled += OnInheritVisibilityChanged;
 		inheritVisibilityRow.AddChild(_inheritVisibilityCheckbox);
+
+		// Cast Shadow checkbox
+		var castShadowRow = new HBoxContainer();
+		vbox.AddChild(castShadowRow);
+		var castShadowLabel = new Label();
+		castShadowLabel.Text = "Cast Shadows:";
+		castShadowLabel.CustomMinimumSize = new Vector2(100, 0);
+		castShadowRow.AddChild(castShadowLabel);
+		_castShadowCheckbox = new CheckBox();
+		_castShadowCheckbox.Name = "CastShadowCheckbox";
+		_castShadowCheckbox.Text = "";
+		_castShadowCheckbox.ButtonPressed = true;
+		_castShadowCheckbox.TooltipText = "When checked, this object casts shadows";
+		_castShadowCheckbox.Toggled += OnCastShadowChanged;
+		castShadowRow.AddChild(_castShadowCheckbox);
 
 		// Position section with toggle arrow
 		_positionSection = new CollapsibleSection("Position");
@@ -364,6 +402,161 @@ public partial class ObjectPropertiesPanel : Panel
 		_materialAlphaModeDropdown.Selected = 0; // Default to Disabled
 		_materialAlphaModeDropdown.ItemSelected += OnMaterialAlphaModeChanged;
 		alphaModeRow.AddChild(_materialAlphaModeDropdown);
+
+		// Separator
+		var separator = new HSeparator();
+		separator.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		materialContainer.AddChild(separator);
+
+		// Albedo color row
+		var albedoRow = new HBoxContainer();
+		materialContainer.AddChild(albedoRow);
+		var albedoLabel = new Label();
+		albedoLabel.Text = "Albedo:";
+		albedoLabel.CustomMinimumSize = new Vector2(60, 0);
+		albedoRow.AddChild(albedoLabel);
+		_materialAlbedoPicker = new ColorPickerButton();
+		_materialAlbedoPicker.Name = "MaterialAlbedoPicker";
+		_materialAlbedoPicker.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_materialAlbedoPicker.CustomMinimumSize = new Vector2(0, 30);
+		_materialAlbedoPicker.EditAlpha = true;
+		_materialAlbedoPicker.ColorChanged += OnMaterialAlbedoChanged;
+		_materialAlbedoPicker.GetPopup().AboutToPopup += () => _preEditAlbedoColor = _materialAlbedoPicker.Color;
+		_materialAlbedoPicker.GetPopup().PopupHide += () =>
+		{
+			var pre = _preEditAlbedoColor;
+			var cur = _materialAlbedoPicker.Color;
+			if (pre == cur || EditorCommandHistory.Instance == null) return;
+			EditorCommandHistory.Instance.PushWithoutExecute(
+				new PropertyChangeCommand<Godot.Color>(
+					"Change Albedo Color", pre, cur,
+					v => { _materialAlbedoPicker.Color = v; ApplyMaterialProperty("albedo", v); }));
+		};
+		albedoRow.AddChild(_materialAlbedoPicker);
+
+		// Metallic slider row
+		var metallicRow = new HBoxContainer();
+		materialContainer.AddChild(metallicRow);
+		var metallicLabel = new Label();
+		metallicLabel.Text = "Metallic:";
+		metallicLabel.CustomMinimumSize = new Vector2(60, 0);
+		metallicRow.AddChild(metallicLabel);
+		_materialMetallicSlider = new HSlider();
+		_materialMetallicSlider.Name = "MaterialMetallicSlider";
+		_materialMetallicSlider.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_materialMetallicSlider.MinValue = 0.0;
+		_materialMetallicSlider.MaxValue = 1.0;
+		_materialMetallicSlider.Step = 0.01;
+		_materialMetallicSlider.Value = 0.0;
+		_materialMetallicSlider.ValueChanged += OnMaterialMetallicChanged;
+		metallicRow.AddChild(_materialMetallicSlider);
+		_materialMetallicLabel = new Label();
+		_materialMetallicLabel.Text = "0.00";
+		_materialMetallicLabel.CustomMinimumSize = new Vector2(40, 0);
+		metallicRow.AddChild(_materialMetallicLabel);
+
+		// Roughness slider row
+		var roughnessRow = new HBoxContainer();
+		materialContainer.AddChild(roughnessRow);
+		var roughnessLabel = new Label();
+		roughnessLabel.Text = "Roughness:";
+		roughnessLabel.CustomMinimumSize = new Vector2(60, 0);
+		roughnessRow.AddChild(roughnessLabel);
+		_materialRoughnessSlider = new HSlider();
+		_materialRoughnessSlider.Name = "MaterialRoughnessSlider";
+		_materialRoughnessSlider.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_materialRoughnessSlider.MinValue = 0.0;
+		_materialRoughnessSlider.MaxValue = 1.0;
+		_materialRoughnessSlider.Step = 0.01;
+		_materialRoughnessSlider.Value = 0.5;
+		_materialRoughnessSlider.ValueChanged += OnMaterialRoughnessChanged;
+		roughnessRow.AddChild(_materialRoughnessSlider);
+		_materialRoughnessLabel = new Label();
+		_materialRoughnessLabel.Text = "0.50";
+		_materialRoughnessLabel.CustomMinimumSize = new Vector2(40, 0);
+		roughnessRow.AddChild(_materialRoughnessLabel);
+
+		// Normal map row
+		var normalMapRow = new HBoxContainer();
+		materialContainer.AddChild(normalMapRow);
+		var normalMapLabel = new Label();
+		normalMapLabel.Text = "Normal:";
+		normalMapLabel.CustomMinimumSize = new Vector2(60, 0);
+		normalMapRow.AddChild(normalMapLabel);
+		_materialNormalMapButton = new Button();
+		_materialNormalMapButton.Name = "MaterialNormalMapButton";
+		_materialNormalMapButton.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_materialNormalMapButton.Text = "None";
+		_materialNormalMapButton.TooltipText = "Click to select a normal map texture";
+		_materialNormalMapButton.Pressed += OnMaterialNormalMapPressed;
+		normalMapRow.AddChild(_materialNormalMapButton);
+		var clearNormalMapBtn = new Button();
+		clearNormalMapBtn.Name = "ClearNormalMapButton";
+		clearNormalMapBtn.Text = "X";
+		clearNormalMapBtn.TooltipText = "Clear normal map";
+		clearNormalMapBtn.Pressed += OnClearNormalMapPressed;
+		normalMapRow.AddChild(clearNormalMapBtn);
+
+		// Emission enabled checkbox
+		var emissionEnabledRow = new HBoxContainer();
+		materialContainer.AddChild(emissionEnabledRow);
+		var emissionEnabledLabel = new Label();
+		emissionEnabledLabel.Text = "Emission:";
+		emissionEnabledLabel.CustomMinimumSize = new Vector2(60, 0);
+		emissionEnabledRow.AddChild(emissionEnabledLabel);
+		_materialEmissionEnabledCheckbox = new CheckBox();
+		_materialEmissionEnabledCheckbox.Name = "MaterialEmissionEnabledCheckbox";
+		_materialEmissionEnabledCheckbox.Text = "";
+		_materialEmissionEnabledCheckbox.ButtonPressed = false;
+		_materialEmissionEnabledCheckbox.TooltipText = "Enable emission";
+		_materialEmissionEnabledCheckbox.Toggled += OnMaterialEmissionEnabledChanged;
+		emissionEnabledRow.AddChild(_materialEmissionEnabledCheckbox);
+
+		// Emission color picker
+		var emissionColorRow = new HBoxContainer();
+		materialContainer.AddChild(emissionColorRow);
+		var emissionColorSpacer = new Label();
+		emissionColorSpacer.CustomMinimumSize = new Vector2(60, 0);
+		emissionColorRow.AddChild(emissionColorSpacer);
+		_materialEmissionPicker = new ColorPickerButton();
+		_materialEmissionPicker.Name = "MaterialEmissionPicker";
+		_materialEmissionPicker.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_materialEmissionPicker.CustomMinimumSize = new Vector2(0, 30);
+		_materialEmissionPicker.EditAlpha = false;
+		_materialEmissionPicker.ColorChanged += OnMaterialEmissionColorChanged;
+		_materialEmissionPicker.GetPopup().AboutToPopup += () => _preEditEmissionColor = _materialEmissionPicker.Color;
+		_materialEmissionPicker.GetPopup().PopupHide += () =>
+		{
+			var pre = _preEditEmissionColor;
+			var cur = _materialEmissionPicker.Color;
+			if (pre == cur || EditorCommandHistory.Instance == null) return;
+			EditorCommandHistory.Instance.PushWithoutExecute(
+				new PropertyChangeCommand<Godot.Color>(
+					"Change Emission Color", pre, cur,
+					v => { _materialEmissionPicker.Color = v; ApplyMaterialProperty("emission_color", v); }));
+		};
+		emissionColorRow.AddChild(_materialEmissionPicker);
+
+		// Emission energy slider
+		var emissionEnergyRow = new HBoxContainer();
+		materialContainer.AddChild(emissionEnergyRow);
+		var emissionEnergyLabel = new Label();
+		emissionEnergyLabel.Text = "Emission E.:";
+		emissionEnergyLabel.CustomMinimumSize = new Vector2(60, 0);
+		emissionEnergyRow.AddChild(emissionEnergyLabel);
+		_materialEmissionEnergySlider = new HSlider();
+		_materialEmissionEnergySlider.Name = "MaterialEmissionEnergySlider";
+		_materialEmissionEnergySlider.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+		_materialEmissionEnergySlider.MinValue = 0.0;
+		_materialEmissionEnergySlider.MaxValue = 10.0;
+		_materialEmissionEnergySlider.Step = 0.1;
+		_materialEmissionEnergySlider.Value = 1.0;
+		_materialEmissionEnergySlider.ValueChanged += OnMaterialEmissionEnergyChanged;
+		emissionEnergyRow.AddChild(_materialEmissionEnergySlider);
+		_materialEmissionEnergyLabel = new Label();
+		_materialEmissionEnergyLabel.Text = "1.00";
+		_materialEmissionEnergyLabel.CustomMinimumSize = new Vector2(40, 0);
+		emissionEnergyRow.AddChild(_materialEmissionEnergyLabel);
 
 		// Light section (initially hidden, shown only for LightSceneObject)
 		_lightSection = new CollapsibleSection("Light");
@@ -704,6 +897,7 @@ public partial class ObjectPropertiesPanel : Panel
 		_inheritRotationCheckbox.SetPressedNoSignal(_currentObject.InheritRotation);
 		_inheritScaleCheckbox.SetPressedNoSignal(_currentObject.InheritScale);
 		_inheritVisibilityCheckbox.SetPressedNoSignal(_currentObject.InheritVisibility);
+		_castShadowCheckbox.SetPressedNoSignal(_currentObject.CastShadow == GeometryInstance3D.ShadowCastingSetting.On);
 
 		// Material Alpha - special handling for bones
 		if (_currentObject is BoneSceneObject boneObject)
@@ -768,6 +962,31 @@ public partial class ObjectPropertiesPanel : Panel
 					// Update alpha mode dropdown to show current mode
 					var transparencyMode = stdMat.Transparency;
 					_materialAlphaModeDropdown.Selected = (int)transparencyMode;
+
+					// Update material editor controls
+					_materialAlbedoPicker.Color = stdMat.AlbedoColor;
+					_materialMetallicSlider.SetValueNoSignal(stdMat.Metallic);
+					_materialMetallicLabel.Text = stdMat.Metallic.ToString("F2");
+					_materialRoughnessSlider.SetValueNoSignal(stdMat.Roughness);
+					_materialRoughnessLabel.Text = stdMat.Roughness.ToString("F2");
+
+					// Normal map
+					if (stdMat.NormalTexture != null)
+					{
+						_materialNormalMapButton.Text = stdMat.NormalTexture.ResourcePath != null 
+							? System.IO.Path.GetFileName(stdMat.NormalTexture.ResourcePath) 
+							: "Normal Map";
+					}
+					else
+					{
+						_materialNormalMapButton.Text = "None";
+					}
+
+					// Emission
+					_materialEmissionEnabledCheckbox.SetPressedNoSignal(stdMat.EmissionEnabled);
+					_materialEmissionPicker.Color = stdMat.Emission;
+					_materialEmissionEnergySlider.SetValueNoSignal(stdMat.EmissionEnergyMultiplier);
+					_materialEmissionEnergyLabel.Text = stdMat.EmissionEnergyMultiplier.ToString("F2");
 				}
 			}
 			else
@@ -775,6 +994,18 @@ public partial class ObjectPropertiesPanel : Panel
 				_materialAlphaSlider.SetValueNoSignal(1.0);
 				_materialAlphaLabel.Text = "1.00";
 				_materialAlphaModeDropdown.Selected = 0; // Default to Disabled
+
+				// Reset material editor controls to defaults
+				_materialAlbedoPicker.Color = Colors.White;
+				_materialMetallicSlider.SetValueNoSignal(0.0);
+				_materialMetallicLabel.Text = "0.00";
+				_materialRoughnessSlider.SetValueNoSignal(0.5);
+				_materialRoughnessLabel.Text = "0.50";
+				_materialNormalMapButton.Text = "None";
+				_materialEmissionEnabledCheckbox.SetPressedNoSignal(false);
+				_materialEmissionPicker.Color = Colors.White;
+				_materialEmissionEnergySlider.SetValueNoSignal(1.0);
+				_materialEmissionEnergyLabel.Text = "1.00";
 			}
 
 			_bendSection.Visible = false;
@@ -802,6 +1033,27 @@ public partial class ObjectPropertiesPanel : Panel
 		_inheritRotationCheckbox.SetPressedNoSignal(true);
 		_inheritScaleCheckbox.SetPressedNoSignal(true);
 		_inheritVisibilityCheckbox.SetPressedNoSignal(true);
+		_castShadowCheckbox.SetPressedNoSignal(true);
+
+		// Reset material editor controls to defaults
+		_materialAlphaSlider.SetValueNoSignal(1.0);
+		_materialAlphaLabel.Text = "1.00";
+		_materialAlphaModeDropdown.Selected = 0;
+		_materialAlbedoPicker.Color = Colors.White;
+		_materialMetallicSlider.SetValueNoSignal(0.0);
+		_materialMetallicLabel.Text = "0.00";
+		_materialRoughnessSlider.SetValueNoSignal(0.5);
+		_materialRoughnessLabel.Text = "0.50";
+		_materialNormalMapButton.Text = "None";
+		_materialEmissionEnabledCheckbox.SetPressedNoSignal(false);
+		_materialEmissionPicker.Color = Colors.White;
+		_materialEmissionEnergySlider.SetValueNoSignal(1.0);
+		_materialEmissionEnergyLabel.Text = "1.00";
+		_inheritPositionCheckbox.SetPressedNoSignal(true);
+		_inheritRotationCheckbox.SetPressedNoSignal(true);
+		_inheritScaleCheckbox.SetPressedNoSignal(true);
+		_inheritVisibilityCheckbox.SetPressedNoSignal(true);
+		_castShadowCheckbox.SetPressedNoSignal(true);
 		// Clear light controls
 		_lightEnergySpinBox.SetValueNoSignal(1.0);
 		_lightRangeSpinBox.SetValueNoSignal(5.0);
@@ -1033,6 +1285,15 @@ public partial class ObjectPropertiesPanel : Panel
 		_currentObject.InheritVisibility = inherit;
 		RecordBoolPropertyCommand("Change Inherit Visibility", old, inherit,
 			v => { _currentObject.InheritVisibility = v; _inheritVisibilityCheckbox.SetPressedNoSignal(v); });
+	}
+
+	private void OnCastShadowChanged(bool castShadow)
+	{
+		if (_currentObject == null) return;
+		var old = _currentObject.CastShadow == GeometryInstance3D.ShadowCastingSetting.On;
+		_currentObject.CastShadow = castShadow ? GeometryInstance3D.ShadowCastingSetting.On : GeometryInstance3D.ShadowCastingSetting.Off;
+		RecordBoolPropertyCommand("Change Cast Shadow", old, castShadow,
+			v => { _currentObject.CastShadow = v ? GeometryInstance3D.ShadowCastingSetting.On : GeometryInstance3D.ShadowCastingSetting.Off; _castShadowCheckbox.SetPressedNoSignal(v); });
 	}
 
 	/// <summary>
@@ -1402,6 +1663,184 @@ public partial class ObjectPropertiesPanel : Panel
 				}
 			}
 		}
+	}
+
+	private void OnMaterialAlbedoChanged(Godot.Color color)
+	{
+		ApplyMaterialProperty("albedo", color);
+		AutoKeyframe("material.albedo");
+	}
+
+	private void OnMaterialMetallicChanged(double value)
+	{
+		var metallic = (float)value;
+		_materialMetallicLabel.Text = metallic.ToString("F2");
+		ApplyMaterialProperty("metallic", metallic);
+		AutoKeyframe("material.metallic");
+	}
+
+	private void OnMaterialRoughnessChanged(double value)
+	{
+		var roughness = (float)value;
+		_materialRoughnessLabel.Text = roughness.ToString("F2");
+		ApplyMaterialProperty("roughness", roughness);
+		AutoKeyframe("material.roughness");
+	}
+
+	private void OnMaterialNormalMapPressed()
+	{
+		NativeFileDialog.ShowOpenFile(
+			title: "Select Normal Map",
+			filters: NativeFileDialog.Filters.Images,
+			callback: OnNormalMapFileSelected
+		);
+	}
+
+	private void OnNormalMapFileSelected(bool success, string path)
+	{
+		if (!success || string.IsNullOrEmpty(path)) return;
+		
+		var texture = GD.Load<Texture2D>(path);
+		if (texture != null)
+		{
+			ApplyMaterialProperty("normal", texture);
+			_materialNormalMapButton.Text = System.IO.Path.GetFileName(path);
+			AutoKeyframe("material.normal");
+		}
+	}
+
+	private void OnClearNormalMapPressed()
+	{
+		ApplyMaterialProperty("normal", null);
+		_materialNormalMapButton.Text = "None";
+		AutoKeyframe("material.normal");
+	}
+
+	private void OnMaterialEmissionEnabledChanged(bool enabled)
+	{
+		ApplyMaterialProperty("emission_enabled", enabled);
+		AutoKeyframe("material.emission_enabled");
+	}
+
+	private void OnMaterialEmissionColorChanged(Godot.Color color)
+	{
+		ApplyMaterialProperty("emission_color", color);
+		AutoKeyframe("material.emission_color");
+	}
+
+	private void OnMaterialEmissionEnergyChanged(double value)
+	{
+		var energy = (float)value;
+		_materialEmissionEnergyLabel.Text = energy.ToString("F2");
+		ApplyMaterialProperty("emission_energy", energy);
+		AutoKeyframe("material.emission_energy");
+	}
+
+	/// <summary>
+	/// Applies a material property to all surfaces of all mesh instances on the current object.
+	/// </summary>
+	private void ApplyMaterialProperty(string propertyName, object value)
+	{
+		if (_currentObject == null) return;
+
+		// Special handling for bones with alpha overrides
+		if (_currentObject is BoneSceneObject boneObj)
+		{
+			// For bones in a skinned mesh, material editing is not supported through this path
+			return;
+		}
+
+		var meshInstances = _currentObject.GetMeshInstancesRecursively(_currentObject.Visual);
+		foreach (var meshInstance in meshInstances)
+		{
+			if (meshInstance.Mesh == null) continue;
+
+			for (int i = 0; i < meshInstance.Mesh.GetSurfaceCount(); i++)
+			{
+				var material = meshInstance.Mesh.SurfaceGetMaterial(i);
+				if (material is not StandardMaterial3D stdMat) continue;
+
+				switch (propertyName)
+				{
+					case "albedo":
+						if (value is Godot.Color color)
+						{
+							stdMat.AlbedoColor = color;
+						}
+						break;
+					case "metallic":
+						if (value is float metallic)
+						{
+							stdMat.Metallic = metallic;
+						}
+						break;
+					case "roughness":
+						if (value is float roughness)
+						{
+							stdMat.Roughness = roughness;
+						}
+						break;
+					case "normal":
+						if (value is Texture2D normalTex)
+						{
+							stdMat.NormalEnabled = true;
+							stdMat.NormalTexture = normalTex;
+						}
+						else
+						{
+							stdMat.NormalEnabled = false;
+							stdMat.NormalTexture = null;
+						}
+						break;
+					case "emission_enabled":
+						if (value is bool enabled)
+						{
+							stdMat.EmissionEnabled = enabled;
+						}
+						break;
+					case "emission_color":
+						if (value is Godot.Color emissionColor)
+						{
+							stdMat.Emission = emissionColor;
+						}
+						break;
+					case "emission_energy":
+						if (value is float emissionEnergy)
+						{
+							stdMat.EmissionEnergyMultiplier = emissionEnergy;
+						}
+						break;
+				}
+			}
+		}
+	}
+
+	/// <summary>
+	/// Gets the current material property value from the first available material.
+	/// </summary>
+	private T GetMaterialProperty<T>(string propertyName)
+	{
+		if (_currentObject == null) return default;
+
+		var meshInstances = _currentObject.GetMeshInstancesRecursively(_currentObject.Visual);
+		if (meshInstances.Count > 0 && meshInstances[0].Mesh != null && meshInstances[0].Mesh.GetSurfaceCount() > 0)
+		{
+			var material = meshInstances[0].Mesh.SurfaceGetMaterial(0);
+			if (material is StandardMaterial3D stdMat)
+			{
+				switch (propertyName)
+				{
+					case "albedo": return (T)(object)stdMat.AlbedoColor;
+					case "metallic": return (T)(object)stdMat.Metallic;
+					case "roughness": return (T)(object)stdMat.Roughness;
+					case "normal": return (T)(object)stdMat.NormalTexture;
+					case "emission_enabled": return (T)(object)stdMat.EmissionEnabled;
+					case "emission_color": return (T)(object)stdMat.Emission;
+					case "emission_energy": return (T)(object)stdMat.EmissionEnergyMultiplier;
+				}
+			}
+		}
+		return default;
 	}
 
 	// ── Light property handlers ──────────────────────────────────────────────
