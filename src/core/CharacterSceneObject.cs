@@ -32,6 +32,12 @@ public partial class CharacterSceneObject : SceneObject
 	/// This is stored separately from ObjectType which is always "Character".
 	/// </summary>
 	public string CharacterName { get; set; } = "";
+
+	/// <summary>
+	/// Bend style for this character model (Realistic, Blocky, or ProjectDefault).
+	/// When set to ProjectDefault, uses the project-level bend style setting.
+	/// </summary>
+	public BendStyle ModelBendStyle { get; set; } = BendStyle.ProjectDefault;
 	
 	/// <summary>
 	/// Sets up the character from a loaded GLB scene
@@ -190,6 +196,7 @@ public class BoneShapeData
 	public MiModel Model;
 	public ImageTexture Texture;
 	public Vector3 AccumulatedScale;
+	public BendStyle ModelBendStyle;
 }
 
 /// <summary>
@@ -306,7 +313,7 @@ public partial class BoneSceneObject : SceneObject
 		{
 			var meshInstance = loader.CreateShapeMeshPublic(
 				sd.PartName, sd.ShapeIndex, sd.Shape, sd.Model,
-				sd.Texture, sd.AccumulatedScale, BendParameters);
+				sd.Texture, sd.AccumulatedScale, BendParameters, sd.ModelBendStyle);
 			if (meshInstance != null)
 			{
 				AddVisualInstance(meshInstance);
@@ -326,15 +333,17 @@ public partial class BoneSceneObject : SceneObject
 	/// for children that have lock_bend enabled.
 	/// This is the transform applied at the bend point (weight = LockBend).
 	/// </summary>
-	public Transform3D GetBentHalfTransform()
+	/// <param name="shapePosition">The locked child's position in the parent's space (Godot units).
+	/// This is used to correctly calculate the bend pivot so the child's position
+	/// follows the end of the bend.</param>
+	public Transform3D GetBentHalfTransform(Vector3 shapePosition)
 	{
 		if (!BendParameters.HasValue || LockBend <= 0f)
 			return Transform3D.Identity;
 
 		var b = BendParameters.Value;
 		var bendVec = BendHelper.GetBendVector(b.Angle, LockBend);
-		// Use zero shape position/rotation for the bone-level transform
-		return BendHelper.GetBendMatrix(b, bendVec, Vector3.Zero);
+		return BendHelper.GetBendMatrix(b, bendVec, shapePosition);
 	}
 
 	public int BoneIndex => _boneIdx;
@@ -459,20 +468,28 @@ public partial class BoneSceneObject : SceneObject
 		// Get the bone's rest pose
 		var boneRest = _skeleton.GetBoneRest(_boneIdx);
 		
-		// Store the base pose position and rotation
+		// Store the base pose position
 		_basePosePosition = boneRest.Origin;
-		_basePoseRotation = boneRest.Basis.GetEuler();
+		Scale = boneRest.Basis.Scale;
 		
 		// Set the internal transform to match the bone's rest position
 		_internalPosition = _basePosePosition;
-		_internalRotation = _basePoseRotation;
 		base.Position = _internalPosition;
-		base.Rotation = _internalRotation;
-        Scale = boneRest.Basis.Scale;
-		
+        
 		// Initialize target position and rotation to zero (relative to base pose)
 		_targetPosition = Vector3.Zero;
 		_targetRotation = Vector3.Zero;
+	}
+
+	/// <summary>
+	/// Sets the base pose rotation directly to preserve original euler values.
+	/// Call this after UpdateFromSkeleton() when loading from MineImator.
+	/// </summary>
+	public void SetBasePoseRotation(Vector3 rotationEuler)
+	{
+		_basePoseRotation = rotationEuler;
+		_internalRotation = _basePoseRotation;
+		base.Rotation = _internalRotation;
 	}
 	
 	/// <summary>

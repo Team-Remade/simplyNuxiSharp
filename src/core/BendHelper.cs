@@ -18,6 +18,16 @@ public enum BendPart
 }
 
 /// <summary>
+/// Bend style setting for character models.
+/// </summary>
+public enum BendStyle
+{
+	Realistic,
+	Blocky,
+	ProjectDefault
+}
+
+/// <summary>
 /// Holds all bend parameters for a part, derived from MiBend JSON data.
 /// All size/offset values are in Minecraft pixels (not Godot units).
 /// </summary>
@@ -31,6 +41,9 @@ public struct BendParams
 	
 	/// <summary>Bend region size in pixels (default 4)</summary>
 	public float BendSize;
+
+	/// <summary>Whether BendSize was explicitly set in the JSON (vs defaulting to 4)</summary>
+	public bool ExplicitBendSize;
 	
 	/// <summary>Which directional half of the part is bent</summary>
 	public BendPart Part;
@@ -152,6 +165,7 @@ public static class BendHelper
 		
 		// Parse offset and size (in pixels)
 		float offset = bend.Offset ?? 0.0f;
+		bool explicitBendSize = bend.Size.HasValue;
 		float size = bend.Size ?? 4.0f; // Modelbench default is 4 pixels
 		
 		// Scale offset/size by part scale (matching el_update_part.gml)
@@ -185,6 +199,7 @@ public static class BendHelper
 			Angle = angle,
 			BendOffset = offset,
 			BendSize = size,
+			ExplicitBendSize = explicitBendSize,
 			Part = part,
 			AxisX = axisX,
 			AxisY = axisY,
@@ -225,41 +240,39 @@ public static class BendHelper
 	///
 	/// So the final transform is just a ROTATION AROUND THE ORIGIN (no translation).
 	/// The pos/T values cancel out completely.
-	/// 
+	///
 	/// IMPORTANT: The bend angles are stored in Modelbench's internal Z-up coordinate system:
 	///   - bend.X = left/right rotation (around Modelbench X axis)
 	///   - bend.Y = front/back rotation (around Modelbench Y axis in Z-up, becomes Godot Z)
 	///   - bend.Z = up/down rotation (around Modelbench Z axis in Z-up, becomes Godot Y)
 	/// We need to remap to Godot's Y-up axes for proper rotation.
+	///
+	/// NOTE: Shape rotation is no longer applied here. It must be baked into the mesh
+	/// vertices before calling this method.
 	/// </summary>
 	/// <param name="b">Bend parameters</param>
 	/// <param name="bendVec">Bend angle vector in degrees (Modelbench internal Z-up axes)</param>
-	/// <param name="shapePosition">Shape position in part-local space (Godot units) - unused for zero-rotation shapes</param>
-	/// <param name="shapeRotation">Shape rotation in radians (Godot Y-up Euler angles) - applied when non-zero</param>
-	public static Transform3D GetBendMatrix(BendParams b, Vector3 bendVec, Vector3 shapePosition, Vector3 shapeRotation = default)
+	/// <param name="shapePosition">Shape position in part-local space (Godot units)</param>
+	public static Transform3D GetBendMatrix(BendParams b, Vector3 bendVec, Vector3 shapePosition)
 	{
 		// If no rotation, return identity
 		if (bendVec.X == 0 && bendVec.Y == 0 && bendVec.Z == 0)
 			return Transform3D.Identity;
 		
 		// Convert from Modelbench Z-up to Godot Y-up coordinate system:
-		// Modelbench X (left/right) -> Godot X (same)
-		// Modelbench Y (front/back in Z-up) -> Godot Z (front/back)
-		// Modelbench Z (up/down in Z-up) -> Godot Y (up/down)
-		// So we swap: bendVec.Y <-> bendVec.Z
-		float godotX = bendVec.X;  // Modelbench X -> Godot X
-		float godotY = bendVec.Z;  // Modelbench Z (up/down in Z-up) -> Godot Y
-		float godotZ = bendVec.Y;  // Modelbench Y (front/back in Z-up) -> Godot Z
+		// After ParseAxisString/SetVec3Component, bendVec is already in Godot Y-up:
+		//   bendVec.X = JSON "x" (left/right) -> Godot X
+		//   bendVec.Y = JSON "y" (up/down, height) -> Godot Y
+		//   bendVec.Z = JSON "z" (front/back, depth) -> Godot Z
+		float godotX = bendVec.X;
+		float godotY = bendVec.Y;
+		float godotZ = -bendVec.Z;
 		
 		// Build rotation from bend angles (in degrees -> radians).
 		// Modelbench's matrix_build(pos, rotX, rotY, rotZ, scale) applies rotations in YXZ order.
-		// The bendVec contains (Modelbench X rot, Modelbench Y rot, Modelbench Z rot).
-		// In Godot Y-up:
-		//   - Modelbench X (left/right) -> Godot X axis
-		//   - Modelbench Y (front/back in Z-up) -> Godot Z axis
-		//   - Modelbench Z (up/down in Z-up) -> Godot Y axis
-		// So bendVec = (rotX, rotY, rotZ) becomes Godot euler = (godotY, godotX, godotZ)
-		// But the rotations are applied as: Y first, then X, then Z.
+		// bendVec is already in Godot Y-up coordinates, so direct mapping applies:
+		//   godotX = bendVec.X (left/right), godotY = bendVec.Y (up/down), godotZ = bendVec.Z (front/back)
+		// Rotations are applied as: Y first, then X, then Z.
 		Vector3 godotEuler = new Vector3(godotY, godotX, godotZ);
 		
 		// Apply rotations in YXZ order to match matrix_build
@@ -299,31 +312,7 @@ public static class BendHelper
 		translateForward.Origin = pivotPos;
 		
 		// Final transform: translate(pivot) * rotate * translate(-pivot)
-		var result = translateForward * transform * translateBack;
-		
-		// Apply shape rotation if present (second matrix multiplication from Modelbench)
-		// Modelbench: mat = matrix_multiply(matrix_build(-pos, rotation, 1), mat)
-		// This applies the bend first, then the rotation.
-		// Combined: v2 = R_rot * (R_bend * (v - pivot) + pivot) - pivot
-		//            = R_rot*R_bend*v - R_rot*R_bend*pivot + R_rot*pivot - pivot
-		if (shapeRotation != Vector3.Zero)
-		{
-			// Build rotation transform from shape's Euler angles (already in radians, Godot Y-up)
-			var shapeRotTransform = Transform3D.Identity;
-			shapeRotTransform = shapeRotTransform.Rotated(Vector3.Up, shapeRotation.Y);      // Y first
-			shapeRotTransform = shapeRotTransform.Rotated(Vector3.Right, shapeRotation.X);  // Then X
-			shapeRotTransform = shapeRotTransform.Rotated(Vector3.Forward, shapeRotation.Z); // Then Z
-			
-			// Build the matrix_build(pos, rotation, 1) transform
-			var translateNegPivot = Transform3D.Identity;
-			translateNegPivot.Origin = pivotPos;
-			
-			// The correct formula is: matrix_build(-pos, rotation, 1) * matrix_build(pos, bend, 1)
-			// Which translates to: translate(-pivot) * R(shape) * translate(pivot) * R(bend) * translate(-pivot)
-			result = translateNegPivot * shapeRotTransform * translateForward * transform * translateBack;
-		}
-		
-		return result;
+		return translateForward * transform * translateBack;
 	}
 	
 	// ── Easing functions ──────────────────────────────────────────────────────
@@ -368,17 +357,17 @@ public static class BendHelper
 	private static void ParseAxisString(string axis, ref bool axisX, ref bool axisY, ref bool axisZ,
 		System.Collections.Generic.List<int> indices)
 	{
-		// Modelbench internal axis mapping (Z-up coordinate system):
-		//   "x" -> internal X (index 0) - left/right rotation, easeinoutquint easing
-		//   "z" -> internal Y (index 1) - front/back rotation, easeinoutquint easing
-		//   "y" -> internal Z (index 2) - up/down rotation, linear easing
+		// JSON axis mapping (Y-up coordinate system, Godot convention):
+		//   "x" -> index 0 (Godot X) - left/right rotation, easeinoutquint easing
+		//   "y" -> index 1 (Godot Y) - up/down rotation (height), linear easing
+		//   "z" -> index 2 (Godot Z) - front/back rotation (depth), easeinoutquint easing
 		// The JSON uses Mine Imator's Y-up convention where "y" = height.
-		// We keep Modelbench's internal mapping to preserve the correct easing behavior.
+		// We use Godot's index mapping directly for correct axis correspondence.
 		switch (axis?.ToLowerInvariant())
 		{
 			case "x": axisX = true; indices.Add(0); break;
-			case "z": axisY = true; indices.Add(1); break;
-			case "y": axisZ = true; indices.Add(2); break;
+			case "z": axisZ = true; indices.Add(2); break;
+			case "y": axisY = true; indices.Add(1); break;
 		}
 	}
 	

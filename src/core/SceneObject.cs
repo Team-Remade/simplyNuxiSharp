@@ -494,10 +494,12 @@ public partial class SceneObject : Node3D
 
 		// If the parent is a BoneSceneObject with LockBend > 0, apply the parent's
 		// bent-half transform so this child appears attached to the bent portion.
+		// Pass the child's pivot offset so the bend pivot is calculated correctly,
+		// causing the child's position to follow the end of the bend.
 		var parentBone = GetParent() as BoneSceneObject;
 		if (parentBone != null && parentBone.LockBend > 0f && parentBone.BendParameters.HasValue)
 		{
-			var bentTransform = parentBone.GetBentHalfTransform();
+			var bentTransform = parentBone.GetBentHalfTransform(-pivotOffset);
 			// Compose: bent transform applied to the pivot-offset position
 			Visual.Transform = bentTransform * new Transform3D(Basis.Identity, pivotOffset);
 		}

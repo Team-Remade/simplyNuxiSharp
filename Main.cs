@@ -16,8 +16,13 @@ namespace simplyRemadeNuxi;
 public partial class Main : Control
 {
 	public static Main Instance;
-	
+
 	public RandomNumberGenerator Random = new RandomNumberGenerator();
+
+	/// <summary>
+	/// Project-level bend style setting. Default is Blocky.
+	/// </summary>
+	public static BendStyle ProjectBendStyle { get; set; } = BendStyle.Blocky;
 	
 	[Export] private Texture2D CheggTexture;
 	
@@ -52,7 +57,7 @@ public partial class Main : Control
 	private ProgressBar _ffmpegProgressBar;
 	
 	// Debug toggle: set to true to skip the asset downloader on startup
-	private const bool DebugSkipAssetDownloader = false;
+	private const bool DebugSkipAssetDownloader = true;
 	
 	public override void _EnterTree()
 	{
