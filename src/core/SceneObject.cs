@@ -156,8 +156,10 @@ public partial class SceneObject : Node3D
 	/// </summary>
 	private void ApplyInheritanceTransform()
 	{
-		// If all components are inherited, use normal Godot parenting (TopLevel = false)
-		if (InheritPosition && InheritRotation && InheritScale)
+		var bendAncestor = GetBendAncestor();
+
+		// If all components are inherited and no bend, use normal Godot parenting (TopLevel = false)
+		if (InheritPosition && InheritRotation && InheritScale && bendAncestor == null)
 		{
 			if (TopLevel)
 			{
@@ -170,7 +172,7 @@ public partial class SceneObject : Node3D
 			return;
 		}
 
-		// At least one component is not inherited — switch to TopLevel and manually compose
+		// At least one component is not inherited OR we have a bend — switch to TopLevel and manually compose
 		if (!TopLevel)
 		{
 			// Cache current local transform before switching to TopLevel
@@ -190,6 +192,14 @@ public partial class SceneObject : Node3D
 			return;
 		}
 
+		var bendTransform = Transform3D.Identity;
+		
+		if (bendAncestor != null)
+		{
+			var pivotOffset = -GetAccumulatedPivotOffset();
+			bendTransform = bendAncestor.GetBentHalfTransform(pivotOffset);
+		}
+
 		var parentGlobalPos = parent.GlobalPosition;
 		var parentGlobalRot = parent.GlobalRotation;
 		var parentGlobalScale = parent.GlobalTransform.Basis.Scale;
@@ -201,11 +211,29 @@ public partial class SceneObject : Node3D
 			? new Vector3(parentGlobalScale.X * _localScale.X, parentGlobalScale.Y * _localScale.Y, parentGlobalScale.Z * _localScale.Z)
 			: _localScale;
 
-		GlobalPosition = worldPos;
-		GlobalRotation = worldRot;
-		GlobalTransform = new Transform3D(
-			GlobalTransform.Basis.Scaled(worldScale / GlobalTransform.Basis.Scale),
-			GlobalTransform.Origin);
+		var composedTransform = new Transform3D(
+			Basis.FromEuler(worldRot) * Basis.FromScale(worldScale),
+			worldPos);
+		
+		// Apply bend transformation: bend at the bend ancestor's pivot, then apply local offset
+		if (bendAncestor != null)
+		{
+			GlobalTransform = parent.GlobalTransform * bendTransform * new Transform3D(Basis.Identity, _localPosition);
+		}
+		else
+		{
+			GlobalTransform = composedTransform;
+		}
+	}
+
+	private BoneSceneObject GetBendAncestor()
+	{
+		var parent = GetParent() as Node;
+		if (parent is BoneSceneObject bone && bone.LockBend > 0f && bone.BendParameters.HasValue)
+		{
+			return bone;
+		}
+		return null;
 	}
 
 	/// <summary>
@@ -489,24 +517,8 @@ public partial class SceneObject : Node3D
 	{
 		if (Visual == null) return;
 
-		// Base pivot offset
 		var pivotOffset = -GetAccumulatedPivotOffset();
-
-		// If the parent is a BoneSceneObject with LockBend > 0, apply the parent's
-		// bent-half transform so this child appears attached to the bent portion.
-		// Pass the child's pivot offset so the bend pivot is calculated correctly,
-		// causing the child's position to follow the end of the bend.
-		var parentBone = GetParent() as BoneSceneObject;
-		if (parentBone != null && parentBone.LockBend > 0f && parentBone.BendParameters.HasValue)
-		{
-			var bentTransform = parentBone.GetBentHalfTransform(-pivotOffset);
-			// Compose: bent transform applied to the pivot-offset position
-			Visual.Transform = bentTransform * new Transform3D(Basis.Identity, pivotOffset);
-		}
-		else
-		{
-			Visual.Position = pivotOffset;
-		}
+		Visual.Position = pivotOffset;
 	}
 
 	private void UpdateChildrenPivotOffsets()

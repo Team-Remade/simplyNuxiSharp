@@ -321,10 +321,11 @@ public partial class BoneSceneObject : SceneObject
 			}
 		}
 
-		// Update children's visual positions so they track the new bend
-		foreach (var child in GetChildrenObjects())
+		// Update ALL descendants' visual positions so they track the new bend.
+		// This includes direct children and any nested objects parented to this bone.
+		foreach (var descendant in GetAllDescendants())
 		{
-			child.UpdateVisualPosition();
+			descendant.UpdateVisualPosition();
 		}
 	}
 
