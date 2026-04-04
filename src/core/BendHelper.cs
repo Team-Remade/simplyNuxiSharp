@@ -267,6 +267,13 @@ public static class BendHelper
 		float godotX = bendVec.X;
 		float godotY = bendVec.Y;
 		float godotZ = -bendVec.Z;
+
+		if (b.InvertX)
+			godotX = -godotX;
+		if (b.InvertY)
+			godotY = -godotY;
+		if (b.InvertZ)
+			godotZ = -godotZ;
 		
 		// Build rotation from bend angles (in degrees -> radians).
 		// Modelbench's matrix_build(pos, rotX, rotY, rotZ, scale) applies rotations in YXZ order.

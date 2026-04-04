@@ -215,10 +215,24 @@ public partial class SceneObject : Node3D
 			Basis.FromEuler(worldRot) * Basis.FromScale(worldScale),
 			worldPos);
 		
+		// Skip bend application if selected to allow transform gizmo to work
+		if (bendAncestor != null && IsSelected)
+		{
+			var worldToBend = (parent.GlobalTransform * bendTransform).AffineInverse();
+			var bentLocal = worldToBend * GlobalTransform;
+			_localPosition = bentLocal.Origin;
+			_localRotation = bentLocal.Basis.GetEuler();
+			_localScale = bentLocal.Basis.Scale;
+			return;
+		}
+
 		// Apply bend transformation: bend at the bend ancestor's pivot, then apply local offset
 		if (bendAncestor != null)
 		{
-			GlobalTransform = parent.GlobalTransform * bendTransform * new Transform3D(Basis.Identity, _localPosition);
+			var localTransform = new Transform3D(
+				Basis.FromEuler(_localRotation) * Basis.FromScale(_localScale),
+				_localPosition);
+			GlobalTransform = parent.GlobalTransform * bendTransform * localTransform;
 		}
 		else
 		{
