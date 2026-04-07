@@ -371,6 +371,110 @@ public static class BendHelper
 		return t * t * t;
 	}
 	
+	/// <summary>
+	/// Calculates the number of bend segments for a given bend size.
+	/// Matches MineImator's segment count calculation logic.
+	/// </summary>
+	/// <param name="bendSize">Bend size in pixels</param>
+	/// <param name="detail">Optional explicit detail value</param>
+	/// <returns>Number of segments (minimum 1)</returns>
+	public static int CalculateSegmentCount(float bendSize, float? detail = null)
+	{
+		if (detail.HasValue)
+		{
+			return Math.Max(1, (int)Math.Ceiling(detail.Value));
+		}
+		
+		// MineImator default: 1 segment per 2 pixels of bend size
+		// Minimum 1 segment, maximum 16 segments
+		int segments = (int)Math.Ceiling(bendSize / 2.0f);
+		return Math.Clamp(segments, 1, 16);
+	}
+	
+	/// <summary>
+	/// Calculates anti-pinching scale correction for blocky bending.
+	/// Matches Modelbench's model_shape_get_bend_scale() exactly.
+	/// </summary>
+	/// <param name="bendStart">Start position of bend region</param>
+	/// <param name="bendEnd">End position of bend region</param>
+	/// <param name="weight">Segment weight (0-1)</param>
+	/// <param name="bendPosition">Current position along bend axis</param>
+	/// <param name="bendAngle">Current bend angle vector</param>
+	/// <param name="bendParams">Bend parameters</param>
+	/// <returns>Scale correction vector</returns>
+	public static Vector3 GetBendScaleCorrection(float bendStart, float bendEnd, float weight, float bendPosition, Vector3 bendAngle, BendParams bendParams)
+	{
+		if (bendPosition > bendStart && bendPosition < bendEnd)
+		{
+			Vector3 bendScale;
+			
+			if (weight <= 0.5f)
+				bendScale = new Vector3(weight * 2, weight * 2, weight * 2);
+			else
+				bendScale = new Vector3((1 - weight) * 2, (1 - weight) * 2, (1 - weight) * 2);
+			
+			int bendAxis = -1;
+			if (bendParams.AxisX && !bendParams.AxisY && !bendParams.AxisZ)
+				bendAxis = 0;
+			else if (!bendParams.AxisX && bendParams.AxisY && !bendParams.AxisZ)
+				bendAxis = 1;
+			else if (!bendParams.AxisX && !bendParams.AxisY && bendParams.AxisZ)
+				bendAxis = 2;
+			
+			if (bendAxis == -1)
+				return Vector3.Zero;
+			
+			float bendAng = Math.Abs(bendAngle[bendAxis]);
+			
+			if (bendAng > 90)
+				bendAng -= (bendAng - 90) * 2;
+			
+			float bendPerc = bendAng / 90.0f;
+			bendPerc = Math.Clamp(bendPerc, 0, 1);
+			bendScale *= bendPerc;
+			
+			bendScale.X = EaseInCubic(bendScale.X);
+			bendScale.Y = EaseInCubic(bendScale.Y);
+			bendScale.Z = EaseInCubic(bendScale.Z);
+			
+			bendScale /= 2.5f;
+			
+			bendScale[bendAxis] = 0;
+			
+			return bendScale;
+		}
+		else
+		{
+			return Vector3.Zero;
+		}
+	}
+	
+	/// <summary>
+	/// Calculates the effective bend size based on part dimensions and bend style.
+	/// Matches MineImator's bend size calculation logic.
+	/// </summary>
+	/// <param name="partSize">Size of the part along the bend axis</param>
+	/// <param name="bendStyle">Bend style setting</param>
+	/// <param name="explicitBendSize">Optional explicit bend size from JSON</param>
+	/// <returns>Effective bend size in pixels</returns>
+	public static float CalculateBendSize(float partSize, BendStyle bendStyle, float? explicitBendSize = null)
+	{
+		if (explicitBendSize.HasValue)
+		{
+			return explicitBendSize.Value;
+		}
+		
+		if (bendStyle == BendStyle.Blocky)
+		{
+			return 1.0f;
+		}
+		else
+		{
+			// Realistic style: default 4 pixels, clamped to part size
+			return Math.Clamp(4.0f, 1.0f, partSize);
+		}
+	}
+	
 	// ── Private helpers ───────────────────────────────────────────────────────
 	
 	private static void ParseAxisString(string axis, ref bool axisX, ref bool axisY, ref bool axisZ,

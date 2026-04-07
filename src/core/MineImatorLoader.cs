@@ -1024,8 +1024,8 @@ public class MineImatorLoader
             int activeAxes = (b.AxisX ? 1 : 0) + (b.AxisY ? 1 : 0) + (b.AxisZ ? 1 : 0);
             bool sharpBend = (effectiveStyle == BendStyle.Blocky) && !b.ExplicitBendSize && (activeAxes == 1);
 
-            // Number of segments: use explicit detail if set, otherwise sharpbend ? 2 : max(bendsize, 2)
-            float detail = Math.Max(b.Detail ?? (sharpBend ? 2.0f : Math.Max(b.BendSize, 2.0f)), 2.0f);
+            // Number of segments: use MineImator calculation logic
+            float detail = BendHelper.CalculateSegmentCount(b.BendSize, b.Detail);
 
             // Adjust detail based on shape scale along the bend axis.
             // When the part is stretched along the bend axis, reduce segment count to maintain visual density.
@@ -1360,11 +1360,15 @@ public class MineImatorLoader
 
                 Vector3 segBendVec = BendHelper.GetBendVector(b.Angle, segP);
                 Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition);
-
-                np1 = segMat * np1;
-                np2 = segMat * np2;
-                np3 = segMat * np3;
-                np4 = segMat * np4;
+                
+                // Apply bend scale correction (anti-pinching)
+                Vector3 scaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, segP, segPos, segBendVec, b);
+                
+                // Apply bend transform first, then scale correction
+                np1 = segMat * (np1 + (np1 - shapePosition) * scaleCorrection);
+                np2 = segMat * (np2 + (np2 - shapePosition) * scaleCorrection);
+                np3 = segMat * (np3 + (np3 - shapePosition) * scaleCorrection);
+                np4 = segMat * (np4 + (np4 - shapePosition) * scaleCorrection);
                 nn1 = (segMat.Basis * nn1).Normalized();
                 nn2 = (segMat.Basis * nn2).Normalized();
                 nn3 = (segMat.Basis * nn3).Normalized();
@@ -1763,9 +1767,13 @@ public class MineImatorLoader
 
             Vector3 segBendVec = BendHelper.GetBendVector(b.Angle, segP);
             Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition);
-
-            np1 = segMat * np1;
-            np2 = segMat * np2;
+            
+            // Apply bend scale correction (anti-pinching)
+            Vector3 scaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, segP, segPos, segBendVec, b);
+            
+            // Apply bend transform first, then scale correction
+            np1 = segMat * (np1 + (np1 - shapePosition) * scaleCorrection);
+            np2 = segMat * (np2 + (np2 - shapePosition) * scaleCorrection);
             var nn1 = (segMat.Basis * shapeRotMat.Basis * shapeScaleMat.Basis * Vector3.Forward).Normalized();
             var nn2 = (segMat.Basis * shapeRotMat.Basis * shapeScaleMat.Basis * Vector3.Back).Normalized();
 
@@ -2027,9 +2035,13 @@ public class MineImatorLoader
 
                 Vector3 bendVec = BendHelper.GetBendVector(b.Angle, segP);
                 Transform3D mat = BendHelper.GetBendMatrix(b, bendVec, shapePosition);
-
-                gridBot[outer, inner] = mat * pBot;
-                gridTop[outer, inner] = mat * pTop;
+                
+                // Apply bend scale correction (anti-pinching)
+                Vector3 scaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, segP, innerPos, bendVec, b);
+                
+                // Apply bend transform first, then scale correction
+                gridBot[outer, inner] = mat * (pBot + (pBot - shapePosition) * scaleCorrection);
+                gridTop[outer, inner] = mat * (pTop + (pTop - shapePosition) * scaleCorrection);
             }
         }
 
