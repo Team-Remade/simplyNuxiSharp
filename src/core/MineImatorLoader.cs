@@ -1024,8 +1024,8 @@ public class MineImatorLoader
             int activeAxes = (b.AxisX ? 1 : 0) + (b.AxisY ? 1 : 0) + (b.AxisZ ? 1 : 0);
             bool sharpBend = (effectiveStyle == BendStyle.Blocky) && !b.ExplicitBendSize && (activeAxes == 1);
 
-            // Number of segments: sharpbend ? 2 : max(bendsize, 2)
-            float detail = sharpBend ? 2.0f : Math.Max(b.BendSize, 2.0f);
+            // Number of segments: use explicit detail if set, otherwise sharpbend ? 2 : max(bendsize, 2)
+            float detail = Math.Max(b.Detail ?? (sharpBend ? 2.0f : Math.Max(b.BendSize, 2.0f)), 2.0f);
 
             // Adjust detail based on shape scale along the bend axis.
             // When the part is stretched along the bend axis, reduce segment count to maintain visual density.
@@ -1922,11 +1922,11 @@ public class MineImatorLoader
         bool sharpBend = (effectiveStyle == BendStyle.Blocky) && !b.ExplicitBendSize && (activeAxes == 1);
 
         // Number of segments: sharpbend ? 2 : max(bendsize, 2)
+        int segAxis = bendAlongX ? 0 : 1; // X=0, Y=1
         float detail = sharpBend ? 2.0f : Math.Max(b.BendSize, 2.0f);
 
         // Adjust detail based on shape scale along the bend axis.
         // When the part is stretched along the bend axis, reduce segment count to maintain visual density.
-        int segAxis = bendAlongX ? 0 : 1; // X=0, Y=1
         if (b.BendSize >= 1 && shapeScale[segAxis] > .5f)
             detail /= shapeScale[segAxis];
 

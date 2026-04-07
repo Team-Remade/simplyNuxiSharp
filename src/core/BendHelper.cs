@@ -44,6 +44,9 @@ public struct BendParams
 
 	/// <summary>Whether BendSize was explicitly set in the JSON (vs defaulting to 4)</summary>
 	public bool ExplicitBendSize;
+
+	/// <summary>Number of bend segments (default auto-calculated)</summary>
+	public float? Detail;
 	
 	/// <summary>Which directional half of the part is bent</summary>
 	public BendPart Part;
@@ -163,9 +166,10 @@ public static class BendHelper
 		// Clamp angle to direction limits and apply invert
 		angle = ClampAndInvertAngle(angle, dirMin, dirMax, invertX, invertY, invertZ, axisX, axisY, axisZ);
 		
-		// Parse offset and size (in pixels)
+		// Parse offset, size, and detail (in pixels)
 		float offset = bend.Offset ?? 0.0f;
 		bool explicitBendSize = bend.Size.HasValue;
+		float? detail = bend.Detail;
 
 		// Resolve bend style to effective style
 		BendStyle effectiveStyle = (bendStyle == BendStyle.ProjectDefault)
@@ -207,6 +211,7 @@ public static class BendHelper
 			BendOffset = offset,
 			BendSize = size,
 			ExplicitBendSize = explicitBendSize,
+			Detail = detail,
 			Part = part,
 			AxisX = axisX,
 			AxisY = axisY,
