@@ -443,7 +443,7 @@ public class MineImatorLoader
 
             // Parse bend parameters from this part (if any)
             // Pass the part's own scale so offset/size are scaled correctly
-            BendParams? bendParams = BendHelper.ParseBend(part.Bend, part.Scale);
+            BendParams? bendParams = BendHelper.ParseBend(part.Bend, part.Scale, _currentCharacter.ModelBendStyle);
 
             // Store bend params and lock_bend on the bone for later editing
             float lockBend = part.LockBend ?? 1f;
@@ -1009,7 +1009,7 @@ public class MineImatorLoader
             float z1 = from.Z, z2 = to.Z;
 
             // Bend region size (in Godot units = pixels/16)
-            // Modelbench default is 4 pixels = 0.25 blocks
+            // Modelbench default is 4 pixels for realistic, 1 for blocky
             float bendSize = b.BendSize / 16.0f;
             float bendOffset = b.BendOffset / 16.0f;
 
@@ -1018,19 +1018,6 @@ public class MineImatorLoader
                 ? simplyRemadeNuxi.Main.ProjectBendStyle
                 : bendStyle;
 
-            // Determine effective bend size based on GML logic:
-            // bendsize = (bend_size = null ? (app.project_bend_style = "realistic" ? 4 : 1) : bend_size)
-            float effectiveBendSize;
-            if (!b.ExplicitBendSize)
-            {
-                // Bend size was not explicitly set, use project style default
-                effectiveBendSize = (effectiveStyle == BendStyle.Realistic) ? 4.0f : 1.0f;
-            }
-            else
-            {
-                effectiveBendSize = b.BendSize;
-            }
-
             // Check for sharp bend: project=blocky AND bend_size was null AND only one axis active
             // sharpbend = app.project_bend_style = "blocky" && bend_size = null &&
             //   ((bend_axis[X] && !bend_axis[Y] && !bend_axis[Z]) || ...)
@@ -1038,11 +1025,11 @@ public class MineImatorLoader
             bool sharpBend = (effectiveStyle == BendStyle.Blocky) && !b.ExplicitBendSize && (activeAxes == 1);
 
             // Number of segments: sharpbend ? 2 : max(bendsize, 2)
-            float detail = sharpBend ? 2.0f : Math.Max(effectiveBendSize, 2.0f);
+            float detail = sharpBend ? 2.0f : Math.Max(b.BendSize, 2.0f);
 
             // Adjust detail based on shape scale along the bend axis.
             // When the part is stretched along the bend axis, reduce segment count to maintain visual density.
-            if (effectiveBendSize >= 1 && shapeScale[segAxis] > .5f)
+            if (b.BendSize >= 1 && shapeScale[segAxis] > .5f)
                 detail /= shapeScale[segAxis];
 
             float segSize = bendSize / detail;
@@ -1614,30 +1601,17 @@ public class MineImatorLoader
             ? simplyRemadeNuxi.Main.ProjectBendStyle
             : bendStyle;
 
-        // Determine effective bend size based on GML logic:
-        // bendsize = (bend_size = null ? (app.project_bend_style = "realistic" ? 4 : 1) : bend_size)
-        float effectiveBendSize;
-        if (!b.ExplicitBendSize)
-        {
-            // Bend size was not explicitly set, use project style default
-            effectiveBendSize = (effectiveStyle == BendStyle.Realistic) ? 4.0f : 1.0f;
-        }
-        else
-        {
-            effectiveBendSize = b.BendSize;
-        }
-
         // Check for sharp bend: project=blocky AND bend_size was null AND only one axis active
         // For planes, we check which axis is used based on bend direction
         int activeAxes = (b.AxisX ? 1 : 0) + (b.AxisY ? 1 : 0) + (b.AxisZ ? 1 : 0);
         bool sharpBend = (effectiveStyle == BendStyle.Blocky) && !b.ExplicitBendSize && (activeAxes == 1);
 
         // Number of segments: sharpbend ? 2 : max(bendsize, 2)
-        float detail = sharpBend ? 2.0f : Math.Max(effectiveBendSize, 2.0f);
+        float detail = sharpBend ? 2.0f : Math.Max(b.BendSize, 2.0f);
 
         // Adjust detail based on shape scale along the bend axis.
         // When the part is stretched along the bend axis, reduce segment count to maintain visual density.
-        if (effectiveBendSize >= 1 && shapeScale[segAxis] > .5f)
+        if (b.BendSize >= 1 && shapeScale[segAxis] > .5f)
             detail /= shapeScale[segAxis];
 
         float segSize = bendSize / detail;
@@ -1943,30 +1917,17 @@ public class MineImatorLoader
             ? simplyRemadeNuxi.Main.ProjectBendStyle
             : bendStyle;
 
-        // Determine effective bend size based on GML logic:
-        // bendsize = (bend_size = null ? (app.project_bend_style = "realistic" ? 4 : 1) : bend_size)
-        float effectiveBendSize;
-        if (!b.ExplicitBendSize)
-        {
-            // Bend size was not explicitly set, use project style default
-            effectiveBendSize = (effectiveStyle == BendStyle.Realistic) ? 4.0f : 1.0f;
-        }
-        else
-        {
-            effectiveBendSize = b.BendSize;
-        }
-
         // Check for sharp bend: project=blocky AND bend_size was null AND only one axis active
         int activeAxes = (b.AxisX ? 1 : 0) + (b.AxisY ? 1 : 0) + (b.AxisZ ? 1 : 0);
         bool sharpBend = (effectiveStyle == BendStyle.Blocky) && !b.ExplicitBendSize && (activeAxes == 1);
 
         // Number of segments: sharpbend ? 2 : max(bendsize, 2)
-        float detail = sharpBend ? 2.0f : Math.Max(effectiveBendSize, 2.0f);
+        float detail = sharpBend ? 2.0f : Math.Max(b.BendSize, 2.0f);
 
         // Adjust detail based on shape scale along the bend axis.
         // When the part is stretched along the bend axis, reduce segment count to maintain visual density.
         int segAxis = bendAlongX ? 0 : 1; // X=0, Y=1
-        if (effectiveBendSize >= 1 && shapeScale[segAxis] > .5f)
+        if (b.BendSize >= 1 && shapeScale[segAxis] > .5f)
             detail /= shapeScale[segAxis];
 
         float segSize = bendSize / detail;

@@ -70,7 +70,7 @@ public static class BendHelper
 	/// Parses a MiBend JSON object into a BendParams struct.
 	/// Matches the logic in Modelbench's model_load_part.gml and el_update_part.gml.
 	/// </summary>
-	public static BendParams? ParseBend(MiBend bend, float[] partScale)
+	public static BendParams? ParseBend(MiBend bend, float[] partScale, BendStyle bendStyle = BendStyle.ProjectDefault)
 	{
 		if (bend == null) return null;
 		
@@ -166,7 +166,14 @@ public static class BendHelper
 		// Parse offset and size (in pixels)
 		float offset = bend.Offset ?? 0.0f;
 		bool explicitBendSize = bend.Size.HasValue;
-		float size = bend.Size ?? 4.0f; // Modelbench default is 4 pixels
+
+		// Resolve bend style to effective style
+		BendStyle effectiveStyle = (bendStyle == BendStyle.ProjectDefault)
+			? simplyRemadeNuxi.Main.ProjectBendStyle
+			: bendStyle;
+
+		float defaultBendSize = (effectiveStyle == BendStyle.Realistic) ? 4.0f : 1.0f;
+		float size = bend.Size ?? defaultBendSize;
 		
 		// Scale offset/size by part scale (matching el_update_part.gml)
 		float scaleX = partScale != null && partScale.Length > 0 ? partScale[0] : 1.0f;
