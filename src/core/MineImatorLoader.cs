@@ -1937,6 +1937,40 @@ public class MineImatorLoader
 
         float bendSize = b.BendSize / 16.0f;
         float bendOffset = b.BendOffset / 16.0f;
+
+        // Determine effective bend style (use model override or fall back to project setting)
+        BendStyle effectiveStyle = (bendStyle == BendStyle.ProjectDefault)
+            ? simplyRemadeNuxi.Main.ProjectBendStyle
+            : bendStyle;
+
+        // Determine effective bend size based on GML logic:
+        // bendsize = (bend_size = null ? (app.project_bend_style = "realistic" ? 4 : 1) : bend_size)
+        float effectiveBendSize;
+        if (!b.ExplicitBendSize)
+        {
+            // Bend size was not explicitly set, use project style default
+            effectiveBendSize = (effectiveStyle == BendStyle.Realistic) ? 4.0f : 1.0f;
+        }
+        else
+        {
+            effectiveBendSize = b.BendSize;
+        }
+
+        // Check for sharp bend: project=blocky AND bend_size was null AND only one axis active
+        int activeAxes = (b.AxisX ? 1 : 0) + (b.AxisY ? 1 : 0) + (b.AxisZ ? 1 : 0);
+        bool sharpBend = (effectiveStyle == BendStyle.Blocky) && !b.ExplicitBendSize && (activeAxes == 1);
+
+        // Number of segments: sharpbend ? 2 : max(bendsize, 2)
+        float detail = sharpBend ? 2.0f : Math.Max(effectiveBendSize, 2.0f);
+
+        // Adjust detail based on shape scale along the bend axis.
+        // When the part is stretched along the bend axis, reduce segment count to maintain visual density.
+        int segAxis = bendAlongX ? 0 : 1; // X=0, Y=1
+        if (effectiveBendSize >= 1 && shapeScale[segAxis] > .5f)
+            detail /= shapeScale[segAxis];
+
+        float segSize = bendSize / detail;
+
         bool invAngle = (b.Part == BendPart.Lower || b.Part == BendPart.Back || b.Part == BendPart.Left);
 
         // Bend region start/end
@@ -2011,15 +2045,22 @@ public class MineImatorLoader
                 pBot = shapeRotMat * shapeScaleMat * pBot;
                 pTop = shapeRotMat * shapeScaleMat * pTop;
 
-                // Apply bend transform based on inner position (along bend axis)
+                // Apply bend transform based on segment (same logic as regular bent plane)
                 float innerPos = inner * (bendAlongX ? pixScaleX : pixScaleY);
+
+                // Determine which segment this position belongs to
                 float segP;
-                if (innerPos < bendStart)
-                    segP = 0.0f;
-                else if (innerPos >= bendEnd)
-                    segP = 1.0f;
+                if (innerPos >= bendEnd)
+                    segP = 1.0f; // Past bend region
+                else if (innerPos < bendStart)
+                    segP = 0.0f; // Before bend region
                 else
-                    segP = 1.0f - (bendEnd - innerPos) / bendSize;
+                {
+                    // Within bend region: find the segment
+                    float relPos = innerPos - bendStart;
+                    float segmentIndex = Math.Min((float)Math.Floor(relPos / segSize), detail - 1);
+                    segP = segmentIndex / (detail - 1);
+                }
 
                 if (invAngle) segP = 1.0f - segP;
 
