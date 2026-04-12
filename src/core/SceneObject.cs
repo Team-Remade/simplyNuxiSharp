@@ -118,9 +118,9 @@ public partial class SceneObject : Node3D
 	}
 
 	// Stores the local transform set by the user (position/rotation/scale before inheritance is applied)
-	private Vector3 _localPosition = Vector3.Zero;
-	private Vector3 _localRotation = Vector3.Zero;
-	private Vector3 _localScale = Vector3.One;
+	[Export] private Vector3 _localPosition = Vector3.Zero;
+	[Export] private Vector3 _localRotation = Vector3.Zero;
+	[Export] private Vector3 _localScale = Vector3.One;
 	
 	public SceneObject()
 	{
@@ -243,7 +243,7 @@ public partial class SceneObject : Node3D
 	private BoneSceneObject GetBendAncestor()
 	{
 		var parent = GetParent() as Node;
-		if (parent is BoneSceneObject bone && bone.LockBend > 0f && bone.BendParameters.HasValue)
+		if (parent is BoneSceneObject bone && bone.LockBend == 0f && bone.BendParameters.HasValue)
 		{
 			return bone;
 		}
