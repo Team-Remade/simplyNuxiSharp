@@ -680,6 +680,8 @@ public partial class SpawnMenu : PopupPanel
 				main.PreviewViewportControl?.OnCameraSpawned(cameraObject);
 				main.SceneTreePanel.Refresh();
 			}
+
+			ApplyCameraMaterial(cameraObject);
 			
 			return;
 		}
@@ -814,7 +816,36 @@ public partial class SpawnMenu : PopupPanel
 		cameraObject.Name = objectName;
 		Viewport.AddChild(cameraObject);
 		cameraObject.GlobalPosition = Vector3.Zero;
+
+		ApplyCameraMaterial(cameraObject);
+
 		return cameraObject;
+	}
+
+	/// <summary>
+	/// Applies CameraMaterial.tres to all mesh instances of a CameraSceneObject.
+	/// </summary>
+	private void ApplyCameraMaterial(CameraSceneObject cameraObject)
+	{
+		if (cameraObject == null) return;
+
+		var material = GD.Load<StandardMaterial3D>("res://assets/mesh/CameraMaterial.tres");
+		if (material == null)
+		{
+			GD.PrintErr("ApplyCameraMaterial: failed to load CameraMaterial.tres");
+			return;
+		}
+
+		var meshInstances = cameraObject.GetMeshInstancesRecursively(cameraObject.Visual);
+		foreach (var meshInstance in meshInstances)
+		{
+			if (meshInstance.Mesh == null) continue;
+
+			for (int i = 0; i < meshInstance.Mesh.GetSurfaceCount(); i++)
+			{
+				meshInstance.Mesh.SurfaceSetMaterial(i, material);
+			}
+		}
 	}
 
 	/// <summary>

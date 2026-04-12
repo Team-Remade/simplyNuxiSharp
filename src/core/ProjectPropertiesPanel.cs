@@ -169,6 +169,9 @@ public partial class ProjectPropertiesPanel : Panel
 		// Reload floor and background settings from the saved project data
 		LoadCurrentFloorSettings();
 		LoadCurrentBackgroundSettings();
+
+		// Restore WorkCamera position and rotation
+		RestoreWorkCameraState();
 	}
 
 	/// <summary>
@@ -1289,6 +1292,37 @@ public partial class ProjectPropertiesPanel : Panel
 
 		// Load sky colors and sun rotation
 		LoadCurrentSkySettings();
+	}
+
+	/// <summary>
+	/// Restores the WorkCamera position and rotation from the saved project settings.
+	/// </summary>
+	private void RestoreWorkCameraState()
+	{
+		var settings = ProjectManager.GetSettings();
+		if (settings == null) return;
+
+		var viewport = Main.Instance?.Viewport;
+		if (viewport == null) return;
+
+		var workCam = viewport.GetNodeOrNull<WorkCamera>("WorkCam");
+		if (workCam == null) return;
+
+		if (settings.WorkCameraPosition != null && settings.WorkCameraPosition.Length == 3)
+		{
+			workCam.GlobalPosition = new Godot.Vector3(
+				settings.WorkCameraPosition[0],
+				settings.WorkCameraPosition[1],
+				settings.WorkCameraPosition[2]);
+		}
+
+		if (settings.WorkCameraRotation != null && settings.WorkCameraRotation.Length == 3)
+		{
+			workCam.GlobalRotation = new Godot.Vector3(
+				settings.WorkCameraRotation[0],
+				settings.WorkCameraRotation[1],
+				settings.WorkCameraRotation[2]);
+		}
 	}
 
 	private void LoadBackgroundColorFromScene()

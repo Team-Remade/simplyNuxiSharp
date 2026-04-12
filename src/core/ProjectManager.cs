@@ -651,6 +651,9 @@ public static class ProjectManager
 		// Save the current timeline frame number
 		_currentData.CurrentFrame = TimelinePanel.Instance?.CurrentFrame ?? 0;
 
+		// Save WorkCamera transform
+		CollectWorkCameraState();
+
 		// Save floor and background settings
 		CollectProjectSettingsState();
 
@@ -661,6 +664,39 @@ public static class ProjectManager
 		{
 			if (child is SceneObject sceneObject)
 				CollectSceneObjectRecursive(sceneObject, null);
+		}
+	}
+
+	/// <summary>
+	/// Saves the WorkCamera position and rotation to project settings.
+	/// </summary>
+	private static void CollectWorkCameraState()
+	{
+		try
+		{
+			var viewport = Main.Instance?.Viewport;
+			if (viewport == null) return;
+
+			var workCam = viewport.GetNodeOrNull<WorkCamera>("WorkCam");
+			if (workCam == null) return;
+
+			_currentData.Settings.WorkCameraPosition = new float[]
+			{
+				workCam.GlobalPosition.X,
+				workCam.GlobalPosition.Y,
+				workCam.GlobalPosition.Z
+			};
+
+			_currentData.Settings.WorkCameraRotation = new float[]
+			{
+				workCam.GlobalRotation.X,
+				workCam.GlobalRotation.Y,
+				workCam.GlobalRotation.Z
+			};
+		}
+		catch (Exception ex)
+		{
+			GD.PrintErr($"CollectWorkCameraState failed: {ex.Message}");
 		}
 	}
 
@@ -1247,6 +1283,9 @@ public static class ProjectManager
 					    float.TryParse(farStr, System.Globalization.NumberStyles.Float,
 					                  System.Globalization.CultureInfo.InvariantCulture, out var far))
 						cameraRestored.Far = far;
+
+					// Apply CameraMaterial.tres to camera mesh
+					ApplyCameraMaterial(cameraRestored);
 				}
 				restored = cameraRestored;
 			}
@@ -1390,6 +1429,32 @@ public static class ProjectManager
 				stdMat.EmissionEnabled = emissionEnabled;
 				stdMat.Emission = emissionColor;
 				stdMat.EmissionEnergyMultiplier = emissionEnergy;
+			}
+		}
+	}
+
+	/// <summary>
+	/// Applies CameraMaterial.tres to all mesh instances of a CameraSceneObject.
+	/// </summary>
+	private static void ApplyCameraMaterial(CameraSceneObject cameraObj)
+	{
+		if (cameraObj == null) return;
+
+		var material = GD.Load<StandardMaterial3D>("res://assets/mesh/CameraMaterial.tres");
+		if (material == null)
+		{
+			GD.PrintErr("ApplyCameraMaterial: failed to load CameraMaterial.tres");
+			return;
+		}
+
+		var meshInstances = cameraObj.GetMeshInstancesRecursively(cameraObj.Visual);
+		foreach (var meshInstance in meshInstances)
+		{
+			if (meshInstance.Mesh == null) continue;
+
+			for (int i = 0; i < meshInstance.Mesh.GetSurfaceCount(); i++)
+			{
+				meshInstance.Mesh.SurfaceSetMaterial(i, material);
 			}
 		}
 	}
@@ -1913,6 +1978,10 @@ public class ProjectSettings
 	public float  AdvSkySunDiscFeather    { get; set; } = float.NaN;
 	public float  AdvSkySunDiscIntensity  { get; set; } = float.NaN;
 	public float  AdvSkyStarsExposure     { get; set; } = float.NaN;
+
+	// Work camera transform (position and rotation in radians)
+	public float[] WorkCameraPosition { get; set; } = null;
+	public float[] WorkCameraRotation { get; set; } = null;
 }
 
 /// <summary>Manifest entry for a single imported asset file.</summary>
