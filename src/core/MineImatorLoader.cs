@@ -1004,9 +1004,10 @@ public class MineImatorLoader
             }
 
             // Block extents along each axis
-            float x1 = from.X, x2 = to.X;
-            float y1 = from.Y, y2 = to.Y;
-            float z1 = from.Z, z2 = to.Z;
+            // Use min/max (not from/to directly) so that inflate is already applied
+            float x1 = min.X, x2 = max.X;
+            float y1 = min.Y, y2 = max.Y;
+            float z1 = min.Z, z2 = max.Z;
 
             // Bend region size (in Godot units = pixels/16)
             // Modelbench default is 4 pixels for realistic, 1 for blocky
