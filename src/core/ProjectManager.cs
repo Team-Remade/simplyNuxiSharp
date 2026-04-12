@@ -872,9 +872,30 @@ public static class ProjectManager
 	{
 		// Capture the actual visual transform at the current frame (Position reflects keyframe
 		// animation applied by the timeline, whereas LocalPosition is the rest-pose value).
-		var actualPos   = obj.Position;
-		var actualRot   = obj.Rotation;
-		var actualScale = obj.Scale;
+		// For BoneSceneObjects, Position/Rotation use 'new' (non-virtual) hiding, so a
+		// SceneObject-typed reference would call Node3D.Position instead of the bone override.
+		// We must cast explicitly to get TargetPosition/TargetRotation (the user-facing offset
+		// from the rest pose) rather than the internal base+offset value.
+		Vector3 actualPos, actualRot, actualScale;
+		if (obj is BoneSceneObject boneObjSave)
+		{
+			actualPos   = boneObjSave.TargetPosition;
+			actualRot   = boneObjSave.TargetRotation;
+			actualScale = boneObjSave.Scale;
+		}
+		else
+		{
+			actualPos   = obj.Position;
+			actualRot   = obj.Rotation;
+			actualScale = obj.Scale;
+		}
+
+		// For bones, LocalPosition/LocalRotation are backed by SceneObject fields that are not
+		// kept in sync by BoneSceneObject (which uses its own _targetPosition/_targetRotation).
+		// Use the correctly-typed values for the rest-pose fallback fields as well.
+		var restPos   = obj is BoneSceneObject boneObjRest  ? boneObjRest.TargetPosition  : obj.LocalPosition;
+		var restRot   = obj is BoneSceneObject boneObjRestR ? boneObjRestR.TargetRotation : obj.LocalRotation;
+		var restScale = obj.LocalScale;
 
 		var entry = new SceneObjectEntry
 		{
@@ -883,9 +904,9 @@ public static class ProjectManager
 			Name       = obj.Name,
 			ObjectType = obj.ObjectType,
 			Visible    = obj.ObjectVisible,
-			Position   = new float[] { obj.LocalPosition.X, obj.LocalPosition.Y, obj.LocalPosition.Z },
-			Rotation   = new float[] { obj.LocalRotation.X, obj.LocalRotation.Y, obj.LocalRotation.Z },
-			Scale      = new float[] { obj.LocalScale.X,    obj.LocalScale.Y,    obj.LocalScale.Z    },
+			Position   = new float[] { restPos.X,   restPos.Y,   restPos.Z   },
+			Rotation   = new float[] { restRot.X,   restRot.Y,   restRot.Z   },
+			Scale      = new float[] { restScale.X, restScale.Y, restScale.Z },
 			CurrentFramePosition = new float[] { actualPos.X,   actualPos.Y,   actualPos.Z   },
 			CurrentFrameRotation = new float[] { actualRot.X,   actualRot.Y,   actualRot.Z   },
 			CurrentFrameScale    = new float[] { actualScale.X, actualScale.Y, actualScale.Z },
@@ -963,6 +984,19 @@ public static class ProjectManager
 		// Store CastShadow setting
 		entry.ExtraData["CastShadow"] = obj.CastShadow.ToString();
 
+		// Store transform inheritance flags
+		entry.ExtraData["InheritPosition"] = obj.InheritPosition.ToString();
+		entry.ExtraData["InheritRotation"] = obj.InheritRotation.ToString();
+		entry.ExtraData["InheritScale"] = obj.InheritScale.ToString();
+		entry.ExtraData["InheritVisibility"] = obj.InheritVisibility.ToString();
+		entry.ExtraData["InheritPivotOffset"] = obj.InheritPivotOffset.ToString();
+
+		// Store PivotOffset (scaled by 16 like the UI display)
+		var pivotOffset = obj.PivotOffset;
+		entry.ExtraData["PivotOffsetX"] = (pivotOffset.X * 16).ToString(System.Globalization.CultureInfo.InvariantCulture);
+		entry.ExtraData["PivotOffsetY"] = (pivotOffset.Y * 16).ToString(System.Globalization.CultureInfo.InvariantCulture);
+		entry.ExtraData["PivotOffsetZ"] = (pivotOffset.Z * 16).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
 		if (meshInstances.Count > 0 && meshInstances[0].Mesh != null && meshInstances[0].Mesh.GetSurfaceCount() > 0)
 		{
 			var material = meshInstances[0].Mesh.SurfaceGetMaterial(0);
@@ -979,6 +1013,42 @@ public static class ProjectManager
 				entry.ExtraData["MatEmissionEnabled"] = stdMat.EmissionEnabled.ToString();
 				entry.ExtraData["MatEmissionColor"] = stdMat.Emission.ToHtml(false);
 				entry.ExtraData["MatEmissionEnergy"] = stdMat.EmissionEnergyMultiplier.ToString(System.Globalization.CultureInfo.InvariantCulture);
+			}
+		}
+
+		// Store Light-specific properties
+		if (obj is LightSceneObject lightObj)
+		{
+			entry.ExtraData["LightColor"] = lightObj.LightColor.ToHtml(false);
+			entry.ExtraData["LightEnergy"] = lightObj.LightEnergy.ToString(System.Globalization.CultureInfo.InvariantCulture);
+			entry.ExtraData["LightRange"] = lightObj.LightRange.ToString(System.Globalization.CultureInfo.InvariantCulture);
+			entry.ExtraData["LightIndirectEnergy"] = lightObj.LightIndirectEnergy.ToString(System.Globalization.CultureInfo.InvariantCulture);
+			entry.ExtraData["LightSpecular"] = lightObj.LightSpecular.ToString(System.Globalization.CultureInfo.InvariantCulture);
+			entry.ExtraData["LightShadowEnabled"] = lightObj.LightShadowEnabled.ToString();
+		}
+
+		// Store Bone-specific properties (for CharacterSceneObject children)
+		if (obj is BoneSceneObject boneObj)
+		{
+			entry.ExtraData["BoneIndex"] = boneObj.BoneIndex.ToString();
+
+			// Store bend parameters if present
+			if (boneObj.BendParameters.HasValue)
+			{
+				var bp = boneObj.BendParameters.Value;
+				entry.ExtraData["BendAngleX"] = bp.Angle.X.ToString(System.Globalization.CultureInfo.InvariantCulture);
+				entry.ExtraData["BendAngleY"] = bp.Angle.Y.ToString(System.Globalization.CultureInfo.InvariantCulture);
+				entry.ExtraData["BendAngleZ"] = bp.Angle.Z.ToString(System.Globalization.CultureInfo.InvariantCulture);
+				entry.ExtraData["BendPart"] = bp.Part.ToString();
+				entry.ExtraData["BendAxisX"] = bp.AxisX.ToString();
+				entry.ExtraData["BendAxisY"] = bp.AxisY.ToString();
+				entry.ExtraData["BendAxisZ"] = bp.AxisZ.ToString();
+			}
+
+			// Store the alpha override if this bone controls a single mesh
+			if (boneObj.ControlsSingleMesh())
+			{
+				entry.ExtraData["BoneAlphaOverride"] = boneObj.AlphaOverride.ToString(System.Globalization.CultureInfo.InvariantCulture);
 			}
 		}
 
@@ -1083,6 +1153,13 @@ public static class ProjectManager
 
 				// Find the newly added SceneObject (last one added)
 				restored = FindNewestSceneObject(viewport, countBefore);
+
+				// Reset to rest pose for rigged models (characters with skeletons)
+				// This ensures the model appears in its default T-pose rather than a potentially deformed pose
+				if (restored is CharacterSceneObject character)
+				{
+					character.ResetToRestPose();
+				}
 			}
 			// ── Light ─────────────────────────────────────────────────────────
 			else if (entry.ObjectType == "Point Light" ||
@@ -1110,6 +1187,8 @@ public static class ProjectManager
 						if (restored != null && restored is CharacterSceneObject characterObj)
 						{
 							characterObj.CharacterName = characterName;
+							// Reset to rest pose to ensure the character appears in T-pose
+							characterObj.ResetToRestPose();
 						}
 					}
 					else
@@ -1225,6 +1304,9 @@ public static class ProjectManager
 				// Restore material properties
 				RestoreMaterialProperties(restored, entry);
 
+				// Restore object properties (inherit flags, pivot offset, light, bone data)
+				RestoreObjectProperties(restored, entry);
+
 				// Restore keyframes for the top-level object
 				ApplyKeyframesToObject(restored, entry);
 	
@@ -1313,6 +1395,124 @@ public static class ProjectManager
 	}
 
 
+	/// <summary>
+	/// Restores object-level properties from the saved entry (inherit flags, pivot offset, light, bone data).
+	/// </summary>
+	private static void RestoreObjectProperties(SceneObject obj, SceneObjectEntry entry)
+	{
+		// Restore inheritance flags
+		if (entry.ExtraData.TryGetValue("InheritPosition", out var inheritPosStr) &&
+		    bool.TryParse(inheritPosStr, out var inheritPos))
+			obj.InheritPosition = inheritPos;
+
+		if (entry.ExtraData.TryGetValue("InheritRotation", out var inheritRotStr) &&
+		    bool.TryParse(inheritRotStr, out var inheritRot))
+			obj.InheritRotation = inheritRot;
+
+		if (entry.ExtraData.TryGetValue("InheritScale", out var inheritScaleStr) &&
+		    bool.TryParse(inheritScaleStr, out var inheritScale))
+			obj.InheritScale = inheritScale;
+
+		if (entry.ExtraData.TryGetValue("InheritVisibility", out var inheritVisStr) &&
+		    bool.TryParse(inheritVisStr, out var inheritVis))
+			obj.InheritVisibility = inheritVis;
+
+		if (entry.ExtraData.TryGetValue("InheritPivotOffset", out var inheritPivotStr) &&
+		    bool.TryParse(inheritPivotStr, out var inheritPivot))
+			obj.InheritPivotOffset = inheritPivot;
+
+		// Restore PivotOffset (stored divided by 16 to match UI display scale)
+		if (entry.ExtraData.TryGetValue("PivotOffsetX", out var pivotXStr) &&
+		    entry.ExtraData.TryGetValue("PivotOffsetY", out var pivotYStr) &&
+		    entry.ExtraData.TryGetValue("PivotOffsetZ", out var pivotZStr) &&
+		    float.TryParse(pivotXStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var pivotX) &&
+		    float.TryParse(pivotYStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var pivotY) &&
+		    float.TryParse(pivotZStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var pivotZ))
+		{
+			obj.PivotOffset = new Vector3(pivotX / 16f, pivotY / 16f, pivotZ / 16f);
+		}
+
+		// Restore Light-specific properties
+		if (obj is LightSceneObject lightObj)
+		{
+			if (entry.ExtraData.TryGetValue("LightColor", out var lightColorStr))
+			{
+				try { lightObj.LightColor = new Color(lightColorStr); } catch { }
+			}
+			if (entry.ExtraData.TryGetValue("LightEnergy", out var lightEnergyStr) &&
+			    float.TryParse(lightEnergyStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var lightEnergy))
+				lightObj.LightEnergy = lightEnergy;
+			if (entry.ExtraData.TryGetValue("LightRange", out var lightRangeStr) &&
+			    float.TryParse(lightRangeStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var lightRange))
+				lightObj.LightRange = lightRange;
+			if (entry.ExtraData.TryGetValue("LightIndirectEnergy", out var lightIndEnergyStr) &&
+			    float.TryParse(lightIndEnergyStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var lightIndEnergy))
+				lightObj.LightIndirectEnergy = lightIndEnergy;
+			if (entry.ExtraData.TryGetValue("LightSpecular", out var lightSpecularStr) &&
+			    float.TryParse(lightSpecularStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var lightSpecular))
+				lightObj.LightSpecular = lightSpecular;
+			if (entry.ExtraData.TryGetValue("LightShadowEnabled", out var lightShadowStr) &&
+			    bool.TryParse(lightShadowStr, out var lightShadow))
+				lightObj.LightShadowEnabled = lightShadow;
+		}
+
+		// Restore Bone-specific properties
+		if (obj is BoneSceneObject boneObj)
+		{
+			// Restore the actual bone transform (TargetPosition/TargetRotation) from saved values
+			// This is separate from keyframes - it's the direct transform value
+			if (entry.CurrentFramePosition is { Length: 3 })
+			{
+				var pos = new Vector3(entry.CurrentFramePosition[0], entry.CurrentFramePosition[1], entry.CurrentFramePosition[2]);
+				boneObj.TargetPosition = pos;
+			}
+			else if (entry.Position is { Length: 3 })
+			{
+				var pos = new Vector3(entry.Position[0], entry.Position[1], entry.Position[2]);
+				boneObj.TargetPosition = pos;
+			}
+
+			if (entry.CurrentFrameRotation is { Length: 3 })
+			{
+				var rot = new Vector3(entry.CurrentFrameRotation[0], entry.CurrentFrameRotation[1], entry.CurrentFrameRotation[2]);
+				boneObj.TargetRotation = rot;
+			}
+			else if (entry.Rotation is { Length: 3 })
+			{
+				var rot = new Vector3(entry.Rotation[0], entry.Rotation[1], entry.Rotation[2]);
+				boneObj.TargetRotation = rot;
+			}
+
+			// Restore scale if saved
+			if (entry.CurrentFrameScale is { Length: 3 })
+				boneObj.Scale = new Vector3(entry.CurrentFrameScale[0], entry.CurrentFrameScale[1], entry.CurrentFrameScale[2]);
+			else if (entry.Scale is { Length: 3 })
+				boneObj.Scale = new Vector3(entry.Scale[0], entry.Scale[1], entry.Scale[2]);
+
+			// Push the restored transform to the actual skeleton
+			boneObj.UpdateSkeleton();
+
+			// Restore bend parameters
+			if (entry.ExtraData.TryGetValue("BendAngleX", out var bendXStr) &&
+			    entry.ExtraData.TryGetValue("BendAngleY", out var bendYStr) &&
+			    entry.ExtraData.TryGetValue("BendAngleZ", out var bendZStr) &&
+			    float.TryParse(bendXStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var bendX) &&
+			    float.TryParse(bendYStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var bendY) &&
+			    float.TryParse(bendZStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var bendZ))
+			{
+				boneObj.SetBendAngle(new Vector3(bendX, bendY, bendZ));
+			}
+
+			// Restore alpha override if this bone controls a single mesh
+			if (entry.ExtraData.TryGetValue("BoneAlphaOverride", out var alphaOverrideStr) &&
+			    float.TryParse(alphaOverrideStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var alphaOverride))
+			{
+				boneObj.AlphaOverride = alphaOverride;
+			}
+		}
+	}
+
+
 	private static int CountSceneObjects(Node viewport)
 	{
 		int count = 0;
@@ -1379,15 +1579,22 @@ public static class ProjectManager
 
 	/// <summary>
 	/// Finds the live SceneObject descendant of <paramref name="root"/> whose name matches
-	/// <paramref name="entry"/>.Name, applies keyframes, then recurses into its children.
+	/// <paramref name="entry"/>.Name, applies keyframes and object properties, then recurses into its children.
 	/// </summary>
 	private static void RestoreChildKeyframesRecursive(SceneObject root, SceneObjectEntry entry)
 	{
 		// Search all descendants of root for a SceneObject with the matching name
 		var match = FindDescendantByName(root, entry.Name);
-		if (match != null && entry.Keyframes.Count > 0)
+		if (match != null)
 		{
-			ApplyKeyframesToObject(match, entry);
+			// Apply keyframes if any
+			if (entry.Keyframes.Count > 0)
+			{
+				ApplyKeyframesToObject(match, entry);
+			}
+
+			// Restore object properties (inherit flags, pivot offset, light, bone data)
+			RestoreObjectProperties(match, entry);
 		}
 
 		// Recurse: find saved entries that are children of this entry

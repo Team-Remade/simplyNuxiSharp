@@ -62,6 +62,7 @@ public class TransformCommand : IEditorCommand
             boneObj.TargetPosition = pos;
             boneObj.TargetRotation = rot;
             _target.SetLocalScale(scale);
+            boneObj.UpdateSkeleton();
         }
         else
         {

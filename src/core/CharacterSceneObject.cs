@@ -182,6 +182,27 @@ public partial class CharacterSceneObject : SceneObject
 			boneObject.UpdateSkeleton();
 		}
 	}
+
+	/// <summary>
+	/// Resets all bones in the skeleton to their rest pose.
+	/// Called when loading a character from a saved project to ensure
+	/// the model appears in its default T-pose rather than a deformed pose.
+	/// </summary>
+	public void ResetToRestPose()
+	{
+		if (Skeleton == null) return;
+
+		for (int i = 0; i < Skeleton.GetBoneCount(); i++)
+		{
+			// Get the rest pose for this bone
+			var rest = Skeleton.GetBoneRest(i);
+
+			// Reset pose to rest position/rotation/scale
+			Skeleton.SetBonePosePosition(i, rest.Origin);
+			Skeleton.SetBonePoseRotation(i, rest.Basis.GetRotationQuaternion());
+			Skeleton.SetBonePoseScale(i, rest.Basis.Scale);
+		}
+	}
 }
 
 /// <summary>
@@ -473,9 +494,14 @@ public partial class BoneSceneObject : SceneObject
 		_basePosePosition = boneRest.Origin;
 		Scale = boneRest.Basis.Scale;
 		
+		// Extract the base pose rotation from the rest pose basis
+		_basePoseRotation = boneRest.Basis.GetEuler();
+		
 		// Set the internal transform to match the bone's rest position
 		_internalPosition = _basePosePosition;
+		_internalRotation = _basePoseRotation;
 		base.Position = _internalPosition;
+		base.Rotation = _internalRotation;
         
 		// Initialize target position and rotation to zero (relative to base pose)
 		_targetPosition = Vector3.Zero;

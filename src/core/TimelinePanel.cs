@@ -1999,6 +1999,16 @@ public partial class TimelinePanel : Panel
 			switch (propName)
 			{
 				case "position":
+					// BoneSceneObject hides Position with 'new' — must cast explicitly to read
+					// TargetPosition (the user-facing offset) rather than the internal Node3D pos.
+					if (obj is BoneSceneObject boneGetPos)
+						return component switch
+						{
+							"x" => boneGetPos.TargetPosition.X,
+							"y" => boneGetPos.TargetPosition.Y,
+							"z" => boneGetPos.TargetPosition.Z,
+							_ => 0f
+						};
 					return component switch
 					{
 						"x" => obj.Position.X,
@@ -2007,6 +2017,15 @@ public partial class TimelinePanel : Panel
 						_ => 0f
 					};
 				case "rotation":
+					// Same issue — read TargetRotation (radians) and convert to degrees.
+					if (obj is BoneSceneObject boneGetRot)
+						return component switch
+						{
+							"x" => Mathf.RadToDeg(boneGetRot.TargetRotation.X),
+							"y" => Mathf.RadToDeg(boneGetRot.TargetRotation.Y),
+							"z" => Mathf.RadToDeg(boneGetRot.TargetRotation.Z),
+							_ => 0f
+						};
 					return component switch
 					{
 						"x" => obj.RotationDegrees.X,
@@ -2295,25 +2314,60 @@ public partial class TimelinePanel : Panel
 			switch (propName)
 			{
 				case "position":
-					var pos = obj.Position;
-					switch (component)
+					// BoneSceneObject hides Position with 'new' (non-virtual), so a SceneObject-
+					// typed reference would call Node3D.Position and bypass bone target logic.
+					// Must cast explicitly and use TargetPosition/UpdateSkeleton().
+					if (obj is BoneSceneObject bonePos)
 					{
-						case "x": pos.X = value; break;
-						case "y": pos.Y = value; break;
-						case "z": pos.Z = value; break;
+						var pos = bonePos.TargetPosition;
+						switch (component)
+						{
+							case "x": pos.X = value; break;
+							case "y": pos.Y = value; break;
+							case "z": pos.Z = value; break;
+						}
+						bonePos.TargetPosition = pos;
+						bonePos.UpdateSkeleton();
 					}
-					obj.Position = pos;
+					else
+					{
+						var pos = obj.Position;
+						switch (component)
+						{
+							case "x": pos.X = value; break;
+							case "y": pos.Y = value; break;
+							case "z": pos.Z = value; break;
+						}
+						obj.Position = pos;
+					}
 					break;
 					
 				case "rotation":
-					var rot = obj.RotationDegrees;
-					switch (component)
+					// Same issue as position — must go through TargetRotation for bones.
+					// Keyframe values are stored in degrees (matching the UI), so convert.
+					if (obj is BoneSceneObject boneRot)
 					{
-						case "x": rot.X = value; break;
-						case "y": rot.Y = value; break;
-						case "z": rot.Z = value; break;
+						var rot = boneRot.TargetRotation;  // radians
+						switch (component)
+						{
+							case "x": rot.X = Mathf.DegToRad(value); break;
+							case "y": rot.Y = Mathf.DegToRad(value); break;
+							case "z": rot.Z = Mathf.DegToRad(value); break;
+						}
+						boneRot.TargetRotation = rot;
+						boneRot.UpdateSkeleton();
 					}
-					obj.RotationDegrees = rot;
+					else
+					{
+						var rot = obj.RotationDegrees;
+						switch (component)
+						{
+							case "x": rot.X = value; break;
+							case "y": rot.Y = value; break;
+							case "z": rot.Z = value; break;
+						}
+						obj.RotationDegrees = rot;
+					}
 					break;
 					
 				case "scale":
@@ -2325,6 +2379,8 @@ public partial class TimelinePanel : Panel
 						case "z": scale.Z = value; break;
 					}
 					obj.Scale = scale;
+					if (obj is BoneSceneObject boneSc)
+						boneSc.UpdateSkeleton();
 					break;
 					
 				case "material":
