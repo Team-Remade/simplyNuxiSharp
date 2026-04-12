@@ -131,7 +131,6 @@ public partial class AssetDownloaderWindow : Window
 				await Task.Delay(500);
 				await LoadMinecraftJsonFiles();
 				CloseAndLoadMainScene();
-				return;
 			}
 			else
 			{
@@ -155,7 +154,7 @@ public partial class AssetDownloaderWindow : Window
 			bool hasConnection = false;
 			bool requestCompleted = false;
 			
-			request.RequestCompleted += (result, responseCode, headers, body) =>
+			request.RequestCompleted += (_, responseCode, _, _) =>
 			{
 				hasConnection = (responseCode == 200);
 				requestCompleted = true;
@@ -197,7 +196,7 @@ public partial class AssetDownloaderWindow : Window
 			string remoteVersion = null;
 			bool requestCompleted = false;
 			
-			request.RequestCompleted += (result, responseCode, headers, body) =>
+			request.RequestCompleted += (_, responseCode, _, body) =>
 			{
 				if (responseCode == 200)
 				{
@@ -367,7 +366,7 @@ public partial class AssetDownloaderWindow : Window
 				
 				// Save the asset
 				var assetFilePath = Path.Combine(_assetsPath, asset.FileName);
-				File.WriteAllBytes(assetFilePath, assetData);
+				await File.WriteAllBytesAsync(assetFilePath, assetData);
 				
 				// Extract if it's a zip file
 				if (asset.FileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
@@ -385,7 +384,7 @@ public partial class AssetDownloaderWindow : Window
 			
 			// Save version information
 			var versionFile = Path.Combine(_assetsPath, "version.txt");
-			File.WriteAllText(versionFile, manifest.Version ?? DateTime.Now.ToString());
+			await File.WriteAllTextAsync(versionFile, manifest.Version ?? DateTime.Now.ToString());
 			
 			UpdateStatus("Assets downloaded successfully!", 100);
 			
@@ -476,7 +475,7 @@ public partial class AssetDownloaderWindow : Window
 	{
 		if (obj == null)
 			return true;
-		return !GodotObject.IsInstanceValid(obj);
+		return !IsInstanceValid(obj);
 	}
 	
 	private void ResetButtons()
@@ -547,15 +546,11 @@ public partial class AssetDownloaderWindow : Window
 			{
 				UpdateStatus(message, 66 + (int)(progress * 0.01f));
 			});
-			
-			if (charSuccess)
-			{
-				UpdateStatus($"Found {characterLoader.TotalCharactersFound} character files!", 100);
-			}
-			else
-			{
-				UpdateStatus("Failed to scan for character files. Check the console for details.", 100);
-			}
+
+			UpdateStatus(
+				charSuccess
+					? $"Found {characterLoader.TotalCharactersFound} character files!"
+					: "Failed to scan for character files. Check the console for details.", 100);
 
 			await Task.Delay(250);
 			

@@ -148,7 +148,7 @@ public partial class RenderImageDialog : Window
 		// Show native file dialog
 		NativeFileDialog.ShowSaveFile(
 			"Save Rendered Image",
-			new[] { extension },
+			[extension],
 			(success, filePath) =>
 			{
 				if (success && !string.IsNullOrEmpty(filePath))

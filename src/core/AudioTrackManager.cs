@@ -307,10 +307,8 @@ public partial class AudioTrackManager : Node
 	/// </summary>
 	public void UpdateTrackMute(string trackId, bool muted)
 	{
-		if (_players.TryGetValue(trackId, out var player) && player != null)
-		{
-			if (muted && player.Playing)
-				player.Stop();
-		}
+		if (!_players.TryGetValue(trackId, out var player) || player == null) return;
+		if (muted && player.Playing)
+			player.Stop();
 	}
 }

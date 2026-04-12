@@ -34,17 +34,18 @@ public class BlockPlacement
 /// </summary>
 public partial class BlockArrayGenerator : Node3D
 {
-	private VoxelTerrain _terrain;
-	private Dictionary<Vector3I, int> _blockMap = new();
+	private readonly Dictionary<Vector3I, int> _blockMap = new();
 	
 	/// <summary>The underlying VoxelTerrain node.</summary>
-	public VoxelTerrain Terrain => _terrain;
-	
+	public VoxelTerrain Terrain { get; private set; }
+
 	public override void _Ready()
 	{
-		_terrain = new VoxelTerrain();
-		_terrain.Mesher = VoxelSettings.Instance.Mesher;
-		AddChild(_terrain);
+		Terrain = new VoxelTerrain
+		{
+			Mesher = VoxelSettings.Instance.Mesher
+		};
+		AddChild(Terrain);
 	}
 	
 	/// <summary>
@@ -120,16 +121,18 @@ public partial class BlockArrayGenerator : Node3D
 		var generator = (VoxelGeneratorScript)(Variant)generatorObject;
 		
 		// Set terrain bounds
-		_terrain.Bounds = bounds;
+		Terrain.Bounds = bounds;
 		
 		// Assign the generator
-		_terrain.Generator = generator;
+		Terrain.Generator = generator;
 		
 		// Add a VoxelViewer to trigger chunk loading
-		var viewer = new VoxelViewer();
-		viewer.ViewDistance = viewDistance;
-		viewer.RequiresVisuals = true;
-		viewer.RequiresCollisions = false;
+		var viewer = new VoxelViewer
+		{
+			ViewDistance = viewDistance,
+			RequiresVisuals = true,
+			RequiresCollisions = false
+		};
 		((Node3D)viewer).Name = "Viewer";
 		AddChild(viewer);
 		

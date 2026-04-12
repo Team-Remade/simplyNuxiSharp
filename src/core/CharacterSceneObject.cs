@@ -1,6 +1,7 @@
 ﻿using Godot;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace simplyRemadeNuxi.core;
 
@@ -14,12 +15,12 @@ public partial class CharacterSceneObject : SceneObject
 	public MeshInstance3D SkinnedMesh { get; private set; }
 	
 	// Dictionary mapping bone names to their corresponding SceneObjects
-	public Dictionary<string, BoneSceneObject> BoneObjects { get; private set; }
+	public Dictionary<string, BoneSceneObject> BoneObjects { get; }
 	
 	// The skeleton that manages the bones
 	public Skeleton3D Skeleton { get; private set; }
 	
-	public CharacterSceneObject() : base()
+	public CharacterSceneObject()
 	{
 		BoneObjects = new Dictionary<string, BoneSceneObject>();
 		ObjectType = "Character";
@@ -96,19 +97,12 @@ public partial class CharacterSceneObject : SceneObject
 	/// </summary>
 	private MeshInstance3D FindSkinnedMesh(Node node)
 	{
-		if (node is MeshInstance3D meshInstance && meshInstance.Skin != null)
+		if (node is MeshInstance3D { Skin: not null } meshInstance)
 		{
 			return meshInstance;
 		}
-		
-		foreach (var child in node.GetChildren())
-		{
-			var found = FindSkinnedMesh(child);
-			if (found != null)
-				return found;
-		}
-		
-		return null;
+
+		return node.GetChildren().Select(FindSkinnedMesh).FirstOrDefault(found => found != null);
 	}
 	
 	/// <summary>
@@ -267,7 +261,7 @@ public partial class BoneSceneObject : SceneObject
 	public float LockBend { get; private set; }
 
 	/// <summary>Shape data list used to regenerate meshes when bend angle changes.</summary>
-	private List<BoneShapeData> _shapeDataList = new();
+	private readonly List<BoneShapeData> _shapeDataList = new();
 
 	/// <summary>
 	/// Sets the bend parameters for this bone.
@@ -429,7 +423,7 @@ public partial class BoneSceneObject : SceneObject
 		}
 	}
 	
-	public BoneSceneObject(Skeleton3D skeleton, int boneIdx) : base()
+	public BoneSceneObject(Skeleton3D skeleton, int boneIdx)
 	{
 		_skeleton = skeleton;
 		_boneIdx = boneIdx;
@@ -589,7 +583,6 @@ public partial class BoneSceneObject : SceneObject
 		if (characterParent?.SkinnedMesh != null)
 		{
 			// This is a skinned mesh - bone doesn't control a single mesh
-			return null;
 		}
 		
 		return null;
@@ -609,7 +602,7 @@ public partial class BoneSceneObject : SceneObject
 	private void ApplyAlphaToControlledMesh()
 	{
 		var controlledMesh = GetControlledMesh();
-		if (controlledMesh == null || controlledMesh.Mesh == null)
+		if (controlledMesh?.Mesh == null)
 			return;
 		
 		// Apply alpha to all surfaces of the controlled mesh
@@ -621,16 +614,6 @@ public partial class BoneSceneObject : SceneObject
 				var color = stdMat.AlbedoColor;
 				color.A = _alphaOverride;
 				stdMat.AlbedoColor = color;
-				
-				// Enable transparency if alpha < 1
-				if (_alphaOverride < 1.0f)
-				{
-					stdMat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-				}
-				else
-				{
-					stdMat.Transparency = BaseMaterial3D.TransparencyEnum.Disabled;
-				}
 			}
 		}
 	}

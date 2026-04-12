@@ -1,5 +1,6 @@
 ﻿using Godot;
 using System;
+using System.Linq;
 using simplyRemadeNuxi.core.commands;
 
 namespace simplyRemadeNuxi.core;
@@ -56,12 +57,12 @@ public partial class ObjectPropertiesPanel : Panel
 	private Label _materialEmissionEnergyLabel;
 	
 	// Pre-edit state for material properties
-	private Godot.Color _preEditAlbedoColor;
+	private Color _preEditAlbedoColor;
 	private float _preEditMetallic;
 	private float _preEditRoughness;
 	private string _preEditNormalMapPath;
 	private bool _preEditEmissionEnabled;
-	private Godot.Color _preEditEmissionColor;
+	private Color _preEditEmissionColor;
 	private float _preEditEmissionEnergy;
 	
 	// Light-specific controls
@@ -99,7 +100,7 @@ public partial class ObjectPropertiesPanel : Panel
 	private float _preEditLightRange;
 	private float _preEditLightIndirectEnergy;
 	private float _preEditLightSpecular;
-	private Godot.Color _preEditLightColor;
+	private Color _preEditLightColor;
 
 	// Pre-edit state for bend angle spinboxes
 	private Vector3 _preEditBendAngle = Vector3.Zero;
@@ -1366,7 +1367,7 @@ public partial class ObjectPropertiesPanel : Panel
 	/// <summary>
 	/// Helper that records a bool property change command only when the value actually changed.
 	/// </summary>
-	private void RecordBoolPropertyCommand(string description, bool oldValue, bool newValue, System.Action<bool> apply)
+	private void RecordBoolPropertyCommand(string description, bool oldValue, bool newValue, Action<bool> apply)
 	{
 		if (oldValue == newValue || EditorCommandHistory.Instance == null) return;
 		EditorCommandHistory.Instance.PushWithoutExecute(
@@ -1593,15 +1594,13 @@ public partial class ObjectPropertiesPanel : Panel
 				AutoKeyframe("material.alpha");
 				return;
 			}
-			else
-			{
-				// This bone is part of a skinned mesh or controls multiple meshes
-				// Alpha should be controlled by the material editor, not here
-				// Reset the slider to show that it's not applicable
-				_materialAlphaSlider.SetValueNoSignal(1.0);
-				_materialAlphaLabel.Text = "N/A";
-				return;
-			}
+
+			// This bone is part of a skinned mesh or controls multiple meshes
+			// Alpha should be controlled by the material editor, not here
+			// Reset the slider to show that it's not applicable
+			_materialAlphaSlider.SetValueNoSignal(1.0);
+			_materialAlphaLabel.Text = "N/A";
+			return;
 		}
 
 		// Update all materials on all surfaces of the object (for non-bone objects)
@@ -1649,10 +1648,8 @@ public partial class ObjectPropertiesPanel : Panel
 		
 		// Update all materials on all surfaces of the object
 		var meshInstances = _currentObject.GetMeshInstancesRecursively(_currentObject.Visual);
-		foreach (var meshInstance in meshInstances)
+		foreach (var meshInstance in meshInstances.Where(meshInstance => meshInstance.Mesh != null))
 		{
-			if (meshInstance.Mesh == null) continue;
-			
 			// Apply transparency mode to all surfaces
 			for (int i = 0; i < meshInstance.Mesh.GetSurfaceCount(); i++)
 			{
@@ -1665,7 +1662,7 @@ public partial class ObjectPropertiesPanel : Panel
 		}
 	}
 
-	private void OnMaterialAlbedoChanged(Godot.Color color)
+	private void OnMaterialAlbedoChanged(Color color)
 	{
 		ApplyMaterialProperty("albedo", color);
 		AutoKeyframe("material.albedo");
@@ -1741,20 +1738,18 @@ public partial class ObjectPropertiesPanel : Panel
 	/// </summary>
 	private void ApplyMaterialProperty(string propertyName, object value)
 	{
-		if (_currentObject == null) return;
-
-		// Special handling for bones with alpha overrides
-		if (_currentObject is BoneSceneObject boneObj)
+		switch (_currentObject)
 		{
+			case null:
+			// Special handling for bones with alpha overrides
 			// For bones in a skinned mesh, material editing is not supported through this path
-			return;
+			case BoneSceneObject:
+				return;
 		}
 
 		var meshInstances = _currentObject.GetMeshInstancesRecursively(_currentObject.Visual);
-		foreach (var meshInstance in meshInstances)
+		foreach (var meshInstance in meshInstances.Where(meshInstance => meshInstance.Mesh != null))
 		{
-			if (meshInstance.Mesh == null) continue;
-
 			for (int i = 0; i < meshInstance.Mesh.GetSurfaceCount(); i++)
 			{
 				var material = meshInstance.Mesh.SurfaceGetMaterial(i);
@@ -1763,7 +1758,7 @@ public partial class ObjectPropertiesPanel : Panel
 				switch (propertyName)
 				{
 					case "albedo":
-						if (value is Godot.Color color)
+						if (value is Color color)
 						{
 							stdMat.AlbedoColor = color;
 						}
@@ -1799,7 +1794,7 @@ public partial class ObjectPropertiesPanel : Panel
 						}
 						break;
 					case "emission_color":
-						if (value is Godot.Color emissionColor)
+						if (value is Color emissionColor)
 						{
 							stdMat.Emission = emissionColor;
 						}
@@ -2023,8 +2018,6 @@ public partial class CollapsibleSection : VBoxContainer
 	private Button _resetButton;
 	private VBoxContainer _contentContainer;
 	private bool _isExpanded = true;
-
-	public CollapsibleSection() : this("") { }
 
 	public CollapsibleSection(string title)
 	{

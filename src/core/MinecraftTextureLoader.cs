@@ -28,7 +28,6 @@ public class MinecraftTextureLoader
 	public bool IsLoaded => _isLoaded;
 	public int TotalTexturesLoaded => _totalTexturesLoaded;
 	public int TotalTexturesFailed => _totalTexturesFailedToLoad;
-	public int TotalMcmetaLoaded => _totalMcmetaLoaded;
 	
 	private MinecraftTextureLoader()
 	{
@@ -91,10 +90,7 @@ public class MinecraftTextureLoader
 					// Get all PNG files from block and item folders
 					var blockPath = Path.Combine(texturesPath, "block");
 					var itemPath = Path.Combine(texturesPath, "item");
-					
-					int blockCount = 0;
-					int itemCount = 0;
-					
+
 					if (Directory.Exists(blockPath))
 					{
 						var blockFiles = Directory.GetFiles(blockPath, "*.png", SearchOption.TopDirectoryOnly);
@@ -102,7 +98,6 @@ public class MinecraftTextureLoader
 						{
 							textureFilesWithBasePath.Add((file, texturesPath, namespaceName));
 						}
-						blockCount = blockFiles.Length;
 					}
 					
 					if (Directory.Exists(itemPath))
@@ -112,7 +107,6 @@ public class MinecraftTextureLoader
 						{
 							textureFilesWithBasePath.Add((file, texturesPath, namespaceName));
 						}
-						itemCount = itemFiles.Length;
 					}
 				}
 			}
@@ -315,7 +309,7 @@ public class MinecraftTextureLoader
 	public ImageTexture GetItemTexture(string itemName)
 	{
 		// Check if namespace is specified
-		if (itemName.Contains(":"))
+		if (itemName.Contains(':'))
 		{
 			var parts = itemName.Split(':', 2);
 			var texturePath = $"{parts[0]}/item/{parts[1]}.png";
@@ -369,11 +363,7 @@ public class MinecraftTextureLoader
 	{
 		var normalizedPath = relativePath.Replace('\\', '/');
 		
-		if (_textureMetadata.TryGetValue(normalizedPath, out var metadata))
-		{
-			return metadata;
-		}
-		return null;
+		return _textureMetadata.GetValueOrDefault(normalizedPath);
 	}
 	
 	/// <summary>
@@ -384,7 +374,7 @@ public class MinecraftTextureLoader
 	public MinecraftTextureMetadata GetBlockTextureMetadata(string blockName)
 	{
 		// Check if namespace is specified
-		if (blockName.Contains(":"))
+		if (blockName.Contains(':'))
 		{
 			var parts = blockName.Split(':', 2);
 			var texturePath = $"{parts[0]}/block/{parts[1]}.png";
@@ -404,7 +394,7 @@ public class MinecraftTextureLoader
 	public MinecraftTextureMetadata GetItemTextureMetadata(string itemName)
 	{
 		// Check if namespace is specified
-		if (itemName.Contains(":"))
+		if (itemName.Contains(':'))
 		{
 			var parts = itemName.Split(':', 2);
 			var texturePath = $"{parts[0]}/item/{parts[1]}.png";

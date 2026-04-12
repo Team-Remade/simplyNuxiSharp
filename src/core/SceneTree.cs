@@ -1,3 +1,4 @@
+using System.Linq;
 using Godot;
 using Godot.Collections;
 using simplyRemadeNuxi.core.commands;
@@ -109,14 +110,17 @@ public partial class SceneTree : Panel
 
 		if (Viewport == null) return;
 
-		var root = Tree.GetRoot();
-		if (root == null)
+		if (Tree != null)
 		{
-			root = Tree.CreateItem();
-			root.SetText(0, "Scene");
-		}
+			var root = Tree.GetRoot();
+			if (root == null)
+			{
+				root = Tree.CreateItem();
+				root.SetText(0, "Scene");
+			}
 		
-		BuildTreeRecursively(root, Viewport);
+			BuildTreeRecursively(root, Viewport);
+		}
 	}
 
 	private void BuildTreeRecursively(TreeItem parentItem, Node viewport)
@@ -126,11 +130,7 @@ public partial class SceneTree : Panel
 			if (child is SceneObject sceneObject)
 			{
 				var item = Tree.CreateItem(parentItem);
-				var parentName = "<empty>";
-				if (parentItem != null)
-				{
-					parentName = parentItem.GetText(0);
-				}
+				parentItem?.GetText(0);
 				SetupTreeItem(item, sceneObject);
 				ObjectMap[item] = sceneObject;
 				
@@ -174,7 +174,7 @@ public partial class SceneTree : Panel
 	private bool CanDropData(Vector2 position, Variant data)
 	{
 		var dict = data.AsGodotDictionary();
-		if (dict == null || !dict.ContainsKey("scene_object"))
+		if (!dict.ContainsKey("scene_object"))
 			return false;
 		
 		var draggedObject = dict["scene_object"].As<SceneObject>();
@@ -210,7 +210,7 @@ public partial class SceneTree : Panel
 	private void DropData(Vector2 position, Variant data)
 	{
 		var dict = data.AsGodotDictionary();
-		if (dict == null || !dict.ContainsKey("scene_object"))
+		if (!dict.ContainsKey("scene_object"))
 			return;
 		
 		var draggedObject = dict["scene_object"].As<SceneObject>();
@@ -233,16 +233,10 @@ public partial class SceneTree : Panel
 		}
 		else if (ObjectMap.TryGetValue(targetItem, out var targetObject))
 		{
-			if (dropSection == 0)
-			{
-				// Dropped on item - make it a child
-				newParent = targetObject;
-			}
-			else
-			{
+			// Dropped on item - make it a child
+			newParent = dropSection == 0 ? targetObject :
 				// Dropped above/below item - use same parent as target
-				newParent = targetObject.GetParent();
-			}
+				targetObject.GetParent();
 		}
 		
 		if (newParent != null && newParent != draggedObject.GetParent())
@@ -366,20 +360,29 @@ public partial class SceneTree : Panel
 	
 	private void OnContextMenuIndexPressed(long index)
 	{
-		if (index == 0) // Duplicate
+		switch (index)
 		{
-			if (_contextMenuItem != null && ObjectMap.TryGetValue(_contextMenuItem, out var sceneObject))
+			// Duplicate
+			case 0:
 			{
-				DuplicateObject(sceneObject);
-				_contextMenuItem = null;
+				if (_contextMenuItem != null && ObjectMap.TryGetValue(_contextMenuItem, out var sceneObject))
+				{
+					DuplicateObject(sceneObject);
+					_contextMenuItem = null;
+				}
+
+				break;
 			}
-		}
-		else if (index == 1) // Delete
-		{
-			if (_contextMenuItem != null && ObjectMap.TryGetValue(_contextMenuItem, out var sceneObject))
+			// Delete
+			case 1:
 			{
-				DeleteObject(sceneObject);
-				_contextMenuItem = null;
+				if (_contextMenuItem != null && ObjectMap.TryGetValue(_contextMenuItem, out var sceneObject))
+				{
+					DeleteObject(sceneObject);
+					_contextMenuItem = null;
+				}
+
+				break;
 			}
 		}
 	}
@@ -387,7 +390,21 @@ public partial class SceneTree : Panel
 	private int GetNextAvailableObjectNumber()
 	{
 		var existingNumbers = new System.Collections.Generic.HashSet<int>();
+
+		if (Viewport != null)
+		{
+			ScanNode(Viewport);
+		}
 		
+		// Find the lowest available number starting from 1
+		int nextNumber = 1;
+		while (existingNumbers.Contains(nextNumber))
+		{
+			nextNumber++;
+		}
+		
+		return nextNumber;
+
 		// Scan all existing SceneObjects to find used numbers
 		void ScanNode(Node node)
 		{
@@ -411,20 +428,6 @@ public partial class SceneTree : Panel
 				}
 			}
 		}
-		
-		if (Viewport != null)
-		{
-			ScanNode(Viewport);
-		}
-		
-		// Find the lowest available number starting from 1
-		int nextNumber = 1;
-		while (existingNumbers.Contains(nextNumber))
-		{
-			nextNumber++;
-		}
-		
-		return nextNumber;
 	}
 
 	/// <summary>
@@ -451,6 +454,14 @@ public partial class SceneTree : Panel
 	{
 		var existingNumbers = new System.Collections.Generic.HashSet<int>();
 
+		if (Viewport != null)
+			ScanNode(Viewport);
+
+		int next = 1;
+		while (existingNumbers.Contains(next))
+			next++;
+		return next;
+
 		void ScanNode(Node node)
 		{
 			foreach (var child in node.GetChildren())
@@ -472,14 +483,6 @@ public partial class SceneTree : Panel
 				}
 			}
 		}
-
-		if (Viewport != null)
-			ScanNode(Viewport);
-
-		int next = 1;
-		while (existingNumbers.Contains(next))
-			next++;
-		return next;
 	}
 
 	/// <summary>
@@ -553,16 +556,7 @@ public partial class SceneTree : Panel
 		// Deep-copy keyframes
 		foreach (var kvp in original.Keyframes)
 		{
-			var copiedFrames = new System.Collections.Generic.List<ObjectKeyframe>();
-			foreach (var kf in kvp.Value)
-			{
-				copiedFrames.Add(new ObjectKeyframe
-				{
-					Frame = kf.Frame,
-					Value = kf.Value,
-					InterpolationType = kf.InterpolationType
-				});
-			}
+			var copiedFrames = kvp.Value.Select(kf => new ObjectKeyframe { Frame = kf.Frame, Value = kf.Value, InterpolationType = kf.InterpolationType }).ToList();
 			duplicate.Keyframes[kvp.Key] = copiedFrames;
 		}
 

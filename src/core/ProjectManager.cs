@@ -2,6 +2,7 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -217,7 +218,7 @@ public static class ProjectManager
 		catch (Exception ex)
 		{
 			GD.PrintErr($"ProjectManager.LoadRecentProjects failed: {ex.Message}");
-			return new List<RecentProjectEntry>();
+			return [];
 		}
 	}
 
@@ -456,7 +457,7 @@ public static class ProjectManager
 			// .mimodel and .miobject files get their own sub-folder so their internal assets
 			// (textures, meshes, etc.) cannot collide with those of other model
 			// packages that happen to contain files with the same names.
-			if (ext == ".mimodel" || ext == ".miobject")
+			if (ext is ".mimodel" or ".miobject")
 			{
 				var baseName       = Path.GetFileNameWithoutExtension(fileName);
 				var modelSubFolder = GetUniqueDirectoryPath(ModelsFolder, baseName);
@@ -473,16 +474,17 @@ public static class ProjectManager
 
 			File.Copy(sourcePath, destPath, overwrite: false);
 
-			// For .mimodel and .miobject files, also copy all referenced assets so the
-			// model can be loaded from the project folder without needing the
-			// original source directory.
-			if (ext == ".mimodel")
+			switch (ext)
 			{
-				CopyMiModelAssets(sourcePath, destFolder);
-			}
-			else if (ext == ".miobject")
-			{
-				CopyMiObjectAssets(sourcePath, destFolder);
+				// For .mimodel and .miobject files, also copy all referenced assets so the
+				// model can be loaded from the project folder without needing the
+				// original source directory.
+				case ".mimodel":
+					CopyMiModelAssets(sourcePath, destFolder);
+					break;
+				case ".miobject":
+					CopyMiObjectAssets(sourcePath, destFolder);
+					break;
 			}
 
 			// Register in manifest
@@ -511,13 +513,12 @@ public static class ProjectManager
 	/// <summary>
 	/// Removes an asset from the project manifest (and optionally deletes the file).
 	/// </summary>
-	public static bool RemoveAsset(string relativePath, bool deleteFile = false)
+	public static void RemoveAsset(string relativePath, bool deleteFile = false)
 	{
 		var entry = _currentData.Assets.Find(a => a.RelativePath == relativePath);
 		if (entry == null)
 		{
 			GD.PrintErr($"ProjectManager.RemoveAsset: asset not found '{relativePath}'");
-			return false;
 		}
 
 		_currentData.Assets.Remove(entry);
@@ -534,7 +535,6 @@ public static class ProjectManager
 
 		MarkDirty();
 		AssetsChanged?.Invoke();
-		return true;
 	}
 
 	// ── Audio track management ────────────────────────────────────────────────
@@ -547,29 +547,27 @@ public static class ProjectManager
 	/// <paramref name="relativePath"/> should be the asset's relative path (from <see cref="AssetEntry.RelativePath"/>).
 	/// Returns the newly created <see cref="AudioTrackData"/>.
 	/// </summary>
-	public static AudioTrackData AddAudioTrack(string relativePath, string name = null, int startFrame = 0)
+	public static void AddAudioTrack(string relativePath, string name = null, int startFrame = 0)
 	{
 		var track = new AudioTrackData
 		{
 			RelativePath = relativePath,
-			Name         = name ?? System.IO.Path.GetFileNameWithoutExtension(relativePath),
+			Name         = name ?? Path.GetFileNameWithoutExtension(relativePath),
 			StartFrame   = startFrame,
 		};
 		_currentData.AudioTracks.Add(track);
 		MarkDirty();
 		AudioTracksChanged?.Invoke();
-		return track;
 	}
 
 	/// <summary>Removes an audio track by its <see cref="AudioTrackData.Id"/>.</summary>
-	public static bool RemoveAudioTrack(string trackId)
+	public static void RemoveAudioTrack(string trackId)
 	{
 		var track = _currentData.AudioTracks.Find(t => t.Id == trackId);
-		if (track == null) return false;
+		if (track == null) return;
 		_currentData.AudioTracks.Remove(track);
 		MarkDirty();
 		AudioTracksChanged?.Invoke();
-		return true;
 	}
 
 	/// <summary>Fired when the audio track list changes (add / remove / modify).</summary>
@@ -604,8 +602,7 @@ public static class ProjectManager
 	/// <summary>Returns the full absolute path for an asset entry.</summary>
 	public static string GetAssetFullPath(AssetEntry entry)
 	{
-		if (string.IsNullOrEmpty(CurrentProjectFolder)) return "";
-		return Path.Combine(CurrentProjectFolder, entry.RelativePath);
+		return string.IsNullOrEmpty(CurrentProjectFolder) ? "" : Path.Combine(CurrentProjectFolder, entry.RelativePath);
 	}
 
 	// ── Project settings accessors ────────────────────────────────────────────
@@ -675,24 +672,23 @@ public static class ProjectManager
 		try
 		{
 			var viewport = Main.Instance?.Viewport;
-			if (viewport == null) return;
 
-			var workCam = viewport.GetNodeOrNull<WorkCamera>("WorkCam");
+			var workCam = viewport?.GetNodeOrNull<WorkCamera>("WorkCam");
 			if (workCam == null) return;
 
-			_currentData.Settings.WorkCameraPosition = new float[]
-			{
+			_currentData.Settings.WorkCameraPosition =
+			[
 				workCam.GlobalPosition.X,
 				workCam.GlobalPosition.Y,
 				workCam.GlobalPosition.Z
-			};
+			];
 
-			_currentData.Settings.WorkCameraRotation = new float[]
-			{
+			_currentData.Settings.WorkCameraRotation =
+			[
 				workCam.GlobalRotation.X,
 				workCam.GlobalRotation.Y,
 				workCam.GlobalRotation.Z
-			};
+			];
 		}
 		catch (Exception ex)
 		{
@@ -761,15 +757,9 @@ public static class ProjectManager
 			{
 				// Copy the background image to the project's images folder
 				var savedImagePath = CopyBackgroundImageToProject(bgImagePath);
-				if (!string.IsNullOrEmpty(savedImagePath))
-				{
-					_currentData.Settings.BackgroundImagePath = savedImagePath;
-				}
-				else
-				{
+				_currentData.Settings.BackgroundImagePath = !string.IsNullOrEmpty(savedImagePath) ? savedImagePath :
 					// If copy failed (e.g., file not found), try to use the original path
-					_currentData.Settings.BackgroundImagePath = bgImagePath;
-				}
+					bgImagePath;
 			}
 			else
 			{
@@ -888,10 +878,9 @@ public static class ProjectManager
 		try
 		{
 			var propPanel = Main.Instance?.ProjectPropertyPanel;
-			if (propPanel == null) return "";
 
 			// Access the dropdown to get the selected texture name
-			var dropdown = propPanel.GetNodeOrNull<Godot.OptionButton>("FloorTextureDropdown");
+			var dropdown = propPanel?.GetNodeOrNull<Godot.OptionButton>("FloorTextureDropdown");
 			if (dropdown == null || dropdown.Selected < 0) return "";
 
 			// Get the text of the selected item
@@ -940,12 +929,12 @@ public static class ProjectManager
 			Name       = obj.Name,
 			ObjectType = obj.ObjectType,
 			Visible    = obj.ObjectVisible,
-			Position   = new float[] { restPos.X,   restPos.Y,   restPos.Z   },
-			Rotation   = new float[] { restRot.X,   restRot.Y,   restRot.Z   },
-			Scale      = new float[] { restScale.X, restScale.Y, restScale.Z },
-			CurrentFramePosition = new float[] { actualPos.X,   actualPos.Y,   actualPos.Z   },
-			CurrentFrameRotation = new float[] { actualRot.X,   actualRot.Y,   actualRot.Z   },
-			CurrentFrameScale    = new float[] { actualScale.X, actualScale.Y, actualScale.Z },
+			Position   = [restPos.X,   restPos.Y,   restPos.Z],
+			Rotation   = [restRot.X,   restRot.Y,   restRot.Z],
+			Scale      = [restScale.X, restScale.Y, restScale.Z],
+			CurrentFramePosition = [actualPos.X,   actualPos.Y,   actualPos.Z],
+			CurrentFrameRotation = [actualRot.X,   actualRot.Y,   actualRot.Z],
+			CurrentFrameScale    = [actualScale.X, actualScale.Y, actualScale.Z],
 		};
 
 		// Store camera-specific properties
@@ -1163,7 +1152,7 @@ public static class ProjectManager
 			var entry = topLevel[i];
 			onProgress?.Invoke(i, total, entry.Name);
 
-			SceneObject restored = null;
+			SceneObject restored;
 
 			entry.ExtraData.TryGetValue("SpawnCategory", out var spawnCategory);
 			entry.ExtraData.TryGetValue("BlockVariant",  out var blockVariant);
@@ -1448,10 +1437,8 @@ public static class ProjectManager
 		}
 
 		var meshInstances = cameraObj.GetMeshInstancesRecursively(cameraObj.Visual);
-		foreach (var meshInstance in meshInstances)
+		foreach (var meshInstance in meshInstances.Where(meshInstance => meshInstance.Mesh != null))
 		{
-			if (meshInstance.Mesh == null) continue;
-
 			for (int i = 0; i < meshInstance.Mesh.GetSurfaceCount(); i++)
 			{
 				meshInstance.Mesh.SurfaceSetMaterial(i, material);
@@ -1580,10 +1567,7 @@ public static class ProjectManager
 
 	private static int CountSceneObjects(Node viewport)
 	{
-		int count = 0;
-		foreach (var child in viewport.GetChildren())
-			if (child is SceneObject) count++;
-		return count;
+		return viewport.GetChildren().OfType<SceneObject>().Count();
 	}
 
 	/// <summary>
@@ -1609,16 +1593,7 @@ public static class ProjectManager
 	{
 		foreach (var kv in entry.Keyframes)
 		{
-			var keyframeList = new List<ObjectKeyframe>();
-			foreach (var kf in kv.Value)
-			{
-				keyframeList.Add(new ObjectKeyframe
-				{
-					Frame             = kf.Frame,
-					Value             = kf.Value,
-					InterpolationType = kf.InterpolationType,
-				});
-			}
+			var keyframeList = kv.Value.Select(kf => new ObjectKeyframe { Frame = kf.Frame, Value = kf.Value, InterpolationType = kf.InterpolationType, }).ToList();
 			obj.Keyframes[kv.Key] = keyframeList;
 		}
 	}
@@ -1633,11 +1608,8 @@ public static class ProjectManager
 	private static void RestoreChildKeyframes(SceneObject parent, string parentId)
 	{
 		// Find all saved entries that are direct children of parentId and recurse into each.
-		foreach (var childEntry in _currentData.SceneObjects)
+		foreach (var childEntry in _currentData.SceneObjects.Where(childEntry => childEntry.ParentId == parentId))
 		{
-			if (childEntry.ParentId != parentId)
-				continue;
-
 			RestoreChildKeyframesRecursive(parent, childEntry);
 		}
 	}
@@ -1663,11 +1635,8 @@ public static class ProjectManager
 		}
 
 		// Recurse: find saved entries that are children of this entry
-		foreach (var grandChildEntry in _currentData.SceneObjects)
+		foreach (var grandChildEntry in _currentData.SceneObjects.Where(grandChildEntry => grandChildEntry.ParentId == entry.Id))
 		{
-			if (grandChildEntry.ParentId != entry.Id)
-				continue;
-
 			RestoreChildKeyframesRecursive(root, grandChildEntry);
 		}
 	}
@@ -1752,11 +1721,11 @@ public static class ProjectManager
 			var sourceDir = Path.GetDirectoryName(miobjectSourcePath) ?? "";
 			var jsonText  = File.ReadAllText(miobjectSourcePath);
 
-			using var doc = System.Text.Json.JsonDocument.Parse(jsonText);
+			using var doc = JsonDocument.Parse(jsonText);
 			var root = doc.RootElement;
 
 			// Find the resources array
-			if (!root.TryGetProperty("resources", out var resources) || resources.ValueKind != System.Text.Json.JsonValueKind.Array)
+			if (!root.TryGetProperty("resources", out var resources) || resources.ValueKind != JsonValueKind.Array)
 			{
 				GD.Print($"ProjectManager: No resources section found in miobject '{miobjectSourcePath}'");
 				return;
@@ -1768,7 +1737,7 @@ public static class ProjectManager
 			{
 				if (resource.TryGetProperty("type", out var type) && type.GetString() == "model")
 				{
-					if (resource.TryGetProperty("filename", out var filename) && filename.ValueKind == System.Text.Json.JsonValueKind.String)
+					if (resource.TryGetProperty("filename", out var filename) && filename.ValueKind == JsonValueKind.String)
 					{
 						var filenameStr = filename.GetString();
 						if (!string.IsNullOrEmpty(filenameStr) && filenameStr.EndsWith(".mimodel", StringComparison.OrdinalIgnoreCase))
@@ -1811,15 +1780,14 @@ public static class ProjectManager
 	/// Recursively walks a JsonElement representing a mimodel (or part) and
 	/// adds every "texture" string value it finds to <paramref name="paths"/>.
 	/// </summary>
-	private static void CollectMiModelTexturePaths(System.Text.Json.JsonElement element,
-		HashSet<string> paths)
+	private static void CollectMiModelTexturePaths(JsonElement element, HashSet<string> paths)
 	{
-		if (element.ValueKind == System.Text.Json.JsonValueKind.Object)
+		if (element.ValueKind == JsonValueKind.Object)
 		{
 			foreach (var prop in element.EnumerateObject())
 			{
 				if (prop.Name.Equals("texture", StringComparison.OrdinalIgnoreCase)
-				    && prop.Value.ValueKind == System.Text.Json.JsonValueKind.String)
+				    && prop.Value.ValueKind == JsonValueKind.String)
 				{
 					var val = prop.Value.GetString();
 					if (!string.IsNullOrWhiteSpace(val))
@@ -1831,7 +1799,7 @@ public static class ProjectManager
 				}
 			}
 		}
-		else if (element.ValueKind == System.Text.Json.JsonValueKind.Array)
+		else if (element.ValueKind == JsonValueKind.Array)
 		{
 			foreach (var item in element.EnumerateArray())
 				CollectMiModelTexturePaths(item, paths);
@@ -1853,7 +1821,7 @@ public static class ProjectManager
 	{
 		return ext switch
 		{
-			".glb" or ".gltf" or ".mimodel" or ".miobject" or ".blend" => "Model",
+			".glb" or ".gltf" or ".mimodel" or ".miobject" => "Model",
 			".png" or ".jpg" or ".jpeg" or ".bmp" or ".webp" => "Image",
 			".wav" or ".mp3" or ".ogg" => "Audio",
 			_ => "Other",
@@ -2011,7 +1979,7 @@ public class SceneObjectEntry
 	/// <summary>Rest-pose local rotation (before keyframe animation is applied).</summary>
 	public float[]  Rotation   { get; set; } = new float[3];
 	/// <summary>Rest-pose local scale (before keyframe animation is applied).</summary>
-	public float[]  Scale      { get; set; } = new float[] { 1, 1, 1 };
+	public float[]  Scale      { get; set; } = [1, 1, 1];
 
 	/// <summary>
 	/// Actual position of the object at the frame when the project was saved.
@@ -2066,7 +2034,7 @@ public class UserPrefs
 public class AudioTrackData
 {
 	/// <summary>Unique identifier for this track.</summary>
-	public string Id { get; set; } = System.Guid.NewGuid().ToString();
+	public string Id { get; set; } = Guid.NewGuid().ToString();
 
 	/// <summary>Display name shown in the timeline.</summary>
 	public string Name { get; set; } = "Audio Track";
@@ -2088,7 +2056,7 @@ public class AudioTrackData
 	public int DurationFrames { get; set; } = 0;
 
 	/// <summary>The last frame occupied by this clip (StartFrame + DurationFrames - 1).</summary>
-	[System.Text.Json.Serialization.JsonIgnore]
+	[JsonIgnore]
 	public int EndFrame => DurationFrames > 0 ? StartFrame + DurationFrames - 1 : StartFrame;
 
 	/// <summary>Playback volume in the range [0, 1].</summary>

@@ -1,6 +1,7 @@
 ﻿using Godot;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace simplyRemadeNuxi.core;
 
@@ -844,12 +845,9 @@ public partial class TimelinePanel : Panel
 
 	private void OnPlayheadInput(InputEvent @event)
 	{
-		if (@event is InputEventMouseButton mouseButton)
+		if (@event is InputEventMouseButton { ButtonIndex: MouseButton.Left } mouseButton)
 		{
-			if (mouseButton.ButtonIndex == MouseButton.Left)
-			{
-				_isDraggingPlayhead = mouseButton.Pressed;
-			}
+			_isDraggingPlayhead = mouseButton.Pressed;
 		}
 	}
 
@@ -857,32 +855,36 @@ public partial class TimelinePanel : Panel
 	{
 		if (@event is InputEventMouseButton mouseButton)
 		{
-			if (mouseButton.ButtonIndex == MouseButton.Left && mouseButton.Pressed)
+			switch (mouseButton.ButtonIndex)
 			{
-				// Don't handle timeline scrubbing if we're starting a drag selection
-				// The drag selection handler will take care of it
-				// We'll handle the click in the mouse release if it wasn't a drag
-			}
-			else if (mouseButton.ButtonIndex == MouseButton.Left && !mouseButton.Pressed)
-			{
-				// Only move playhead on release if we weren't drag selecting
-				// Check _wasDragging to see if this was actually a drag operation
-				if (!_wasDragging)
+				case MouseButton.Left when mouseButton.Pressed:
+					// Don't handle timeline scrubbing if we're starting a drag selection
+					// The drag selection handler will take care of it
+					// We'll handle the click in the mouse release if it wasn't a drag
+					break;
+				case MouseButton.Left when !mouseButton.Pressed:
 				{
-					// Click to move playhead - account for horizontal scroll
-					float localX = mouseButton.Position.X + _keyframesScroll.ScrollHorizontal;
-					int newFrame = Mathf.Max(0, Mathf.RoundToInt(localX / _pixelsPerFrame));
-					
-					if (newFrame != _currentFrame)
+					// Only move playhead on release if we weren't drag selecting
+					// Check _wasDragging to see if this was actually a drag operation
+					if (!_wasDragging)
 					{
-						_currentFrame = newFrame;
-						_frameAccumulator = 0.0;
-						UpdatePlayheadPosition();
-						ApplyKeyframesAtCurrentFrame(); // Apply animation when clicking timeline
-						AudioTrackManager.Instance?.SyncToFrame(_currentFrame, _frameRate, _isPlaying, forceSeek: true);
-					}
+						// Click to move playhead - account for horizontal scroll
+						float localX = mouseButton.Position.X + _keyframesScroll.ScrollHorizontal;
+						int newFrame = Mathf.Max(0, Mathf.RoundToInt(localX / _pixelsPerFrame));
 					
-					// Don't start animated textures on click, only during playback/scrub
+						if (newFrame != _currentFrame)
+						{
+							_currentFrame = newFrame;
+							_frameAccumulator = 0.0;
+							UpdatePlayheadPosition();
+							ApplyKeyframesAtCurrentFrame(); // Apply animation when clicking timeline
+							AudioTrackManager.Instance?.SyncToFrame(_currentFrame, _frameRate, _isPlaying, forceSeek: true);
+						}
+					
+						// Don't start animated textures on click, only during playback/scrub
+					}
+
+					break;
 				}
 			}
 		}
@@ -893,63 +895,65 @@ public partial class TimelinePanel : Panel
 		// This handler runs AFTER child GuiInput handlers (like keyframes)
 		// So if a keyframe consumed the event, this won't be called
 		// And if _isDraggingKeyframe is set, we know not to start drag selection
-		
-		if (@event is InputEventMouseButton mouseButton)
+
+		switch (@event)
 		{
-			if (mouseButton.ButtonIndex == MouseButton.Left)
+			case InputEventMouseButton mouseButton:
 			{
-				if (mouseButton.Pressed)
+				if (mouseButton.ButtonIndex == MouseButton.Left)
 				{
-					// Don't start drag selection if dragging playhead or keyframe
-					if (_isDraggingPlayhead || _isDraggingKeyframe)
+					if (mouseButton.Pressed)
 					{
-						return;
-					}
+						// Don't start drag selection if dragging playhead or keyframe
+						if (_isDraggingPlayhead || _isDraggingKeyframe)
+						{
+							return;
+						}
 					
-					// Start potential drag selection
-					_isDragSelecting = true;
-					_wasDragging = false;
-					_dragSelectStart = mouseButton.Position;
-					_dragSelectEnd = mouseButton.Position;
+						// Start potential drag selection
+						_isDragSelecting = true;
+						_wasDragging = false;
+						_dragSelectStart = mouseButton.Position;
+						_dragSelectEnd = mouseButton.Position;
 					
-					// Clear selection if not holding Shift
-					if (!mouseButton.ShiftPressed)
-					{
-						_selectedKeyframes.Clear();
-						_keyframeOwners.Clear();
-					}
-					
-					_selectionBoxContainer?.QueueRedraw();
-				}
-				else
-				{
-					// End drag selection
-					if (_isDragSelecting)
-					{
-						_isDragSelecting = false;
-						
-						// If we didn't actually drag (just clicked), clear selection
-						if (!_wasDragging)
+						// Clear selection if not holding Shift
+						if (!mouseButton.ShiftPressed)
 						{
 							_selectedKeyframes.Clear();
 							_keyframeOwners.Clear();
-							// Redraw tracks to update keyframe colors
-							foreach (var track in _singlePropertyTracks)
-							{
-								track.QueueRedraw();
-							}
 						}
-						
-						_wasDragging = false;
+					
 						_selectionBoxContainer?.QueueRedraw();
 					}
+					else
+					{
+						// End drag selection
+						if (_isDragSelecting)
+						{
+							_isDragSelecting = false;
+						
+							// If we didn't actually drag (just clicked), clear selection
+							if (!_wasDragging)
+							{
+								_selectedKeyframes.Clear();
+								_keyframeOwners.Clear();
+								// Redraw tracks to update keyframe colors
+								foreach (var track in _singlePropertyTracks)
+								{
+									track.QueueRedraw();
+								}
+							}
+						
+							_wasDragging = false;
+							_selectionBoxContainer?.QueueRedraw();
+						}
+					}
 				}
+
+				break;
 			}
-		}
-		else if (@event is InputEventMouseMotion mouseMotion)
-		{
 			// Only handle motion if we're drag selecting and not dragging keyframe/playhead
-			if (_isDragSelecting && !_isDraggingKeyframe && !_isDraggingPlayhead)
+			case InputEventMouseMotion mouseMotion when _isDragSelecting && !_isDraggingKeyframe && !_isDraggingPlayhead:
 			{
 				// Check if we've moved enough to consider this a drag
 				float distance = _dragSelectStart.DistanceTo(mouseMotion.Position);
@@ -969,13 +973,19 @@ public partial class TimelinePanel : Panel
 				}
 				
 				_selectionBoxContainer?.QueueRedraw();
+				break;
 			}
-			else if (_isDragSelecting && (_isDraggingKeyframe || _isDraggingPlayhead))
+			case InputEventMouseMotion mouseMotion:
 			{
-				// Cancel drag selection if keyframe or playhead drag started
-				_isDragSelecting = false;
-				_wasDragging = false;
-				_selectionBoxContainer?.QueueRedraw();
+				if (_isDragSelecting && (_isDraggingKeyframe || _isDraggingPlayhead))
+				{
+					// Cancel drag selection if keyframe or playhead drag started
+					_isDragSelecting = false;
+					_wasDragging = false;
+					_selectionBoxContainer?.QueueRedraw();
+				}
+
+				break;
 			}
 		}
 	}
@@ -985,8 +995,6 @@ public partial class TimelinePanel : Panel
 		// Calculate selection rectangle accounting for scroll
 		var minX = Mathf.Min(_dragSelectStart.X, _dragSelectEnd.X) + _keyframesScroll.ScrollHorizontal;
 		var maxX = Mathf.Max(_dragSelectStart.X, _dragSelectEnd.X) + _keyframesScroll.ScrollHorizontal;
-		var minY = Mathf.Min(_dragSelectStart.Y, _dragSelectEnd.Y) + _keyframesScroll.ScrollVertical;
-		var maxY = Mathf.Max(_dragSelectStart.Y, _dragSelectEnd.Y) + _keyframesScroll.ScrollVertical;
 		
 		var minFrame = Mathf.FloorToInt(minX / _pixelsPerFrame);
 		var maxFrame = Mathf.CeilToInt(maxX / _pixelsPerFrame);
@@ -999,11 +1007,8 @@ public partial class TimelinePanel : Panel
 		}
 		
 		// Find all keyframes within the selection box
-		foreach (var kvp in _propertyKeyframes)
+		foreach (var (fullPath, keyframes) in _propertyKeyframes)
 		{
-			var fullPath = kvp.Key;
-			var keyframes = kvp.Value;
-			
 			// Parse the full path to get object and property
 			var dotIdx = fullPath.IndexOf('.');
 			if (dotIdx < 0) continue;
@@ -1012,33 +1017,17 @@ public partial class TimelinePanel : Panel
 			if (!ulong.TryParse(objectIdStr, out ulong objectId)) continue;
 			
 			// Find the object
-			SceneObject targetObject = null;
 			string propertyPath = fullPath.Substring(dotIdx + 1); // Everything after first dot
-			
-			foreach (var prop in _properties)
-			{
-				if (prop.Object.GetInstanceId() == objectId)
-				{
-					targetObject = prop.Object;
-					break;
-				}
-			}
-			
-			if (targetObject == null || propertyPath == null) continue;
+
+			SceneObject targetObject = (from prop in _properties where prop.Object.GetInstanceId() == objectId select prop.Object).FirstOrDefault();
+
+			if (targetObject == null) continue;
 			
 			// Check each keyframe
-			foreach (var keyframe in keyframes)
+			foreach (var keyframe in keyframes.Where(keyframe => keyframe.Frame >= minFrame && keyframe.Frame <= maxFrame).Where(keyframe => !_selectedKeyframes.Contains(keyframe)))
 			{
-				if (keyframe.Frame >= minFrame && keyframe.Frame <= maxFrame)
-				{
-					// Check if keyframe is within Y bounds (track height)
-					// This is a simplified check - you might want to calculate exact track positions
-					if (!_selectedKeyframes.Contains(keyframe))
-					{
-						_selectedKeyframes.Add(keyframe);
-						_keyframeOwners[keyframe] = (targetObject, propertyPath);
-					}
-				}
+				_selectedKeyframes.Add(keyframe);
+				_keyframeOwners[keyframe] = (targetObject, propertyPath);
 			}
 		}
 		
@@ -1049,12 +1038,9 @@ public partial class TimelinePanel : Panel
 		}
 		
 		// Also redraw property group tracks
-		foreach (var prop in _properties)
+		foreach (var prop in _properties.Where(prop => prop.TrackGroup != null))
 		{
-			if (prop.TrackGroup != null)
-			{
-				prop.TrackGroup.QueueRedrawTracks();
-			}
+			prop.TrackGroup.QueueRedrawTracks();
 		}
 	}
 	
@@ -1112,12 +1098,12 @@ public partial class TimelinePanel : Panel
 			}
 		}
 
-		// Handle drag selection in _Input
-		// We need to use _Input because GuiInput on the container doesn't receive events
-		// when clicking on child controls (tracks)
-		if (@event is InputEventMouseButton mouseButton)
+		switch (@event)
 		{
-			if (mouseButton.ButtonIndex == MouseButton.Left && !mouseButton.Pressed)
+			// Handle drag selection in _Input
+			// We need to use _Input because GuiInput on the container doesn't receive events
+			// when clicking on child controls (tracks)
+			case InputEventMouseButton mouseButton when mouseButton.ButtonIndex == MouseButton.Left && !mouseButton.Pressed:
 			{
 				_isDraggingPlayhead = false;
 				
@@ -1145,102 +1131,111 @@ public partial class TimelinePanel : Panel
 					_wasDragging = false;
 					_selectionBoxContainer?.QueueRedraw();
 				}
+
+				break;
 			}
-			else if (mouseButton.ButtonIndex == MouseButton.Left && mouseButton.Pressed)
+			case InputEventMouseButton mouseButton:
 			{
-				// Don't prepare for drag selection yet - wait for mouse motion
-				// This allows GuiInput handlers to set _isDraggingKeyframe first
-				// We'll prepare in the motion handler if needed
-			}
-		}
-		else if (@event is InputEventMouseMotion mouseMotionEvent)
-		{
-			// Check if we should start or continue drag selection
-			// Don't start if a keyframe was clicked
-			if (!_isDragSelecting && !_isDraggingPlayhead && Input.IsMouseButtonPressed(MouseButton.Left))
-			{
-				if (_keyframeWasClicked)
-					return;
-				
-				// Check if we're in the keyframes area
-				if (_keyframesScroll != null && _keyframesTracksContainer != null)
+				if (mouseButton.ButtonIndex == MouseButton.Left && mouseButton.Pressed)
 				{
-					var scrollRect = _keyframesScroll.GetGlobalRect();
-					if (scrollRect.HasPoint(mouseMotionEvent.GlobalPosition))
-					{
-						var localPos = _keyframesTracksContainer.GetGlobalTransform().AffineInverse() * mouseMotionEvent.GlobalPosition;
-						
-						// If we don't have a drag start yet, set it now (first motion after click)
-						if (_dragSelectStart == Vector2.Zero)
-						{
-							_dragSelectStart = localPos;
-							_dragSelectEnd = localPos;
-						}
-					}
+					// Don't prepare for drag selection yet - wait for mouse motion
+					// This allows GuiInput handlers to set _isDraggingKeyframe first
+					// We'll prepare in the motion handler if needed
 				}
+
+				break;
 			}
-			
-			// Try to start drag selection if we have a drag start
-			if (!_isDragSelecting && _dragSelectStart != Vector2.Zero && !_isDraggingKeyframe && !_isDraggingPlayhead)
+			case InputEventMouseMotion mouseMotionEvent:
 			{
-				if (_keyframesScroll != null && _keyframesTracksContainer != null)
+				// Check if we should start or continue drag selection
+				// Don't start if a keyframe was clicked
+				if (!_isDragSelecting && !_isDraggingPlayhead && Input.IsMouseButtonPressed(MouseButton.Left))
 				{
-					var scrollRect = _keyframesScroll.GetGlobalRect();
-					if (scrollRect.HasPoint(mouseMotionEvent.GlobalPosition))
+					if (_keyframeWasClicked)
+						return;
+				
+					// Check if we're in the keyframes area
+					if (_keyframesScroll != null && _keyframesTracksContainer != null)
 					{
-						var localPos = _keyframesTracksContainer.GetGlobalTransform().AffineInverse() * mouseMotionEvent.GlobalPosition;
-						float distance = _dragSelectStart.DistanceTo(localPos);
-						
-						// Start drag selection if we've moved enough
-						if (distance >= DRAG_THRESHOLD)
+						var scrollRect = _keyframesScroll.GetGlobalRect();
+						if (scrollRect.HasPoint(mouseMotionEvent.GlobalPosition))
 						{
-							_isDragSelecting = true;
-							_wasDragging = false;
-							
-							// Clear selection if not holding Shift
-							if (!Input.IsKeyPressed(Key.Shift))
+							var localPos = _keyframesTracksContainer.GetGlobalTransform().AffineInverse() * mouseMotionEvent.GlobalPosition;
+						
+							// If we don't have a drag start yet, set it now (first motion after click)
+							if (_dragSelectStart == Vector2.Zero)
 							{
-								_selectedKeyframes.Clear();
-								_keyframeOwners.Clear();
+								_dragSelectStart = localPos;
+								_dragSelectEnd = localPos;
 							}
 						}
 					}
 				}
-			}
 			
-			// Update drag selection if active
-			if (_isDragSelecting)
-			{
-				// Don't update drag selection if we're dragging the playhead or a keyframe
-				if (_isDraggingPlayhead || _isDraggingKeyframe)
+				// Try to start drag selection if we have a drag start
+				if (!_isDragSelecting && _dragSelectStart != Vector2.Zero && !_isDraggingKeyframe && !_isDraggingPlayhead)
 				{
-					_isDragSelecting = false;
-					_selectionBoxContainer?.QueueRedraw();
-					return;
-				}
-					
-				// Update drag selection
-				if (_keyframesTracksContainer != null)
-				{
-					var localPos = _keyframesTracksContainer.GetGlobalTransform().AffineInverse() * mouseMotionEvent.GlobalPosition;
-					
-					// Check if we've moved enough to consider this a drag
-					float distance = _dragSelectStart.DistanceTo(localPos);
-					if (distance >= DRAG_THRESHOLD && !_wasDragging)
+					if (_keyframesScroll != null && _keyframesTracksContainer != null)
 					{
-						_wasDragging = true;
+						var scrollRect = _keyframesScroll.GetGlobalRect();
+						if (scrollRect.HasPoint(mouseMotionEvent.GlobalPosition))
+						{
+							var localPos = _keyframesTracksContainer.GetGlobalTransform().AffineInverse() * mouseMotionEvent.GlobalPosition;
+							float distance = _dragSelectStart.DistanceTo(localPos);
+						
+							// Start drag selection if we've moved enough
+							if (distance >= DRAG_THRESHOLD)
+							{
+								_isDragSelecting = true;
+								_wasDragging = false;
+							
+								// Clear selection if not holding Shift
+								if (!Input.IsKeyPressed(Key.Shift))
+								{
+									_selectedKeyframes.Clear();
+									_keyframeOwners.Clear();
+								}
+							}
+						}
+					}
+				}
+			
+				// Update drag selection if active
+				if (_isDragSelecting)
+				{
+					// Don't update drag selection if we're dragging the playhead or a keyframe
+					if (_isDraggingPlayhead || _isDraggingKeyframe)
+					{
+						_isDragSelecting = false;
+						_selectionBoxContainer?.QueueRedraw();
+						return;
 					}
 					
-					_dragSelectEnd = localPos;
-					
-					// Only update selection if we're actually dragging
-					if (_wasDragging)
+					// Update drag selection
+					if (_keyframesTracksContainer != null)
 					{
-						UpdateDragSelection();
-					}
+						var localPos = _keyframesTracksContainer.GetGlobalTransform().AffineInverse() * mouseMotionEvent.GlobalPosition;
 					
-					_selectionBoxContainer?.QueueRedraw();
+						// Check if we've moved enough to consider this a drag
+						float distance = _dragSelectStart.DistanceTo(localPos);
+						if (distance >= DRAG_THRESHOLD && !_wasDragging)
+						{
+							_wasDragging = true;
+						}
+					
+						_dragSelectEnd = localPos;
+					
+						// Only update selection if we're actually dragging
+						if (_wasDragging)
+						{
+							UpdateDragSelection();
+						}
+					
+						_selectionBoxContainer?.QueueRedraw();
+					}
 				}
+
+				break;
 			}
 		}
 	}
@@ -1329,7 +1324,7 @@ public partial class TimelinePanel : Panel
 		if (GetTree() == null) return;
 
 		var allNodes = GetTree().GetNodesInGroup("SceneObject");
-		var allSceneObjects = new System.Collections.Generic.List<SceneObject>();
+		var allSceneObjects = new List<SceneObject>();
 		foreach (var node in allNodes)
 		{
 			if (node is SceneObject so)
@@ -1450,7 +1445,7 @@ public partial class TimelinePanel : Panel
 				bool isSelected = _selectedKeyframes.Contains(keyframe);
 				
 				// Draw diamond shape
-				var points = new Vector2[]
+				var points = new[]
 				{
 					new Vector2(x, y - size),
 					new Vector2(x + size, y),
@@ -1695,8 +1690,8 @@ public partial class TimelinePanel : Panel
 			if (obj == null || obj.Keyframes.Count == 0) continue;
 
 			var paths = obj is LightSceneObject
-				? System.Linq.Enumerable.Concat(standardPaths, lightPaths)
-				: (System.Collections.Generic.IEnumerable<string>)standardPaths;
+				? standardPaths.Concat(lightPaths)
+				: standardPaths;
 
 			foreach (var propPath in paths)
 			{
@@ -1771,13 +1766,10 @@ public partial class TimelinePanel : Panel
 	{
 		var fullPath = $"{obj.GetInstanceId()}.{propertyPath}";
 		
-		if (!_propertyKeyframes.ContainsKey(fullPath) || _propertyKeyframes[fullPath].Count == 0)
+		if (!_propertyKeyframes.TryGetValue(fullPath, out List<Keyframe> value) || value.Count == 0)
 		{
 			// No keyframes in timeline, ensure object has none either
-			if (obj.Keyframes.ContainsKey(propertyPath))
-			{
-				obj.Keyframes.Remove(propertyPath);
-			}
+			obj.Keyframes.Remove(propertyPath);
 			return;
 		}
 		
@@ -1788,7 +1780,7 @@ public partial class TimelinePanel : Panel
 		}
 		
 		obj.Keyframes[propertyPath].Clear();
-		foreach (var keyframe in _propertyKeyframes[fullPath])
+		foreach (var keyframe in value)
 		{
 			obj.Keyframes[propertyPath].Add(new ObjectKeyframe
 			{
@@ -1807,12 +1799,13 @@ public partial class TimelinePanel : Panel
 		var value = GetPropertyValue(obj, propertyPath);
 		
 		// Check if keyframe already exists at this frame
-		if (!_propertyKeyframes.ContainsKey(fullPath))
+		if (!_propertyKeyframes.TryGetValue(fullPath, out List<Keyframe> value1))
 		{
-			_propertyKeyframes[fullPath] = new List<Keyframe>();
+            value1 = new List<Keyframe>();
+            _propertyKeyframes[fullPath] = value1;
 		}
 		
-		var existingKeyframe = _propertyKeyframes[fullPath].Find(k => k.Frame == frame);
+		var existingKeyframe = value1.Find(k => k.Frame == frame);
 		if (existingKeyframe != null)
 		{
 			// Update existing keyframe value
@@ -1827,8 +1820,8 @@ public partial class TimelinePanel : Panel
 				Value = value,
 				InterpolationType = "linear"
 			};
-			_propertyKeyframes[fullPath].Add(keyframe);
-			_propertyKeyframes[fullPath].Sort((a, b) => a.Frame.CompareTo(b.Frame));
+            value1.Add(keyframe);
+            value1.Sort((a, b) => a.Frame.CompareTo(b.Frame));
 		}
 		
 		// Extend timeline if keyframe is past the current max
@@ -1851,9 +1844,9 @@ public partial class TimelinePanel : Panel
 	{
 		var fullPath = $"{obj.GetInstanceId()}.{propertyPath}";
 		
-		if (_propertyKeyframes.ContainsKey(fullPath))
+		if (_propertyKeyframes.TryGetValue(fullPath, out List<Keyframe> value))
 		{
-			var keyframe = _propertyKeyframes[fullPath].Find(k => k.Frame == frame);
+			var keyframe = value.Find(k => k.Frame == frame);
 			if (keyframe != null)
 			{
 				_propertyKeyframes[fullPath].Remove(keyframe);
@@ -1870,9 +1863,9 @@ public partial class TimelinePanel : Panel
 	{
 		var fullPath = $"{obj.GetInstanceId()}.{propertyPath}";
 		
-		if (_propertyKeyframes.ContainsKey(fullPath))
+		if (_propertyKeyframes.TryGetValue(fullPath, out List<Keyframe> value))
 		{
-			var keyframe = _propertyKeyframes[fullPath].Find(k => k.Frame == fromFrame);
+			var keyframe = value.Find(k => k.Frame == fromFrame);
 			if (keyframe != null)
 			{
 				// Check if there's already a keyframe at the target frame
@@ -1905,12 +1898,12 @@ public partial class TimelinePanel : Panel
 	{
 		var fullPath = $"{obj.GetInstanceId()}.{propertyPath}";
 		
-		if (_propertyKeyframes.ContainsKey(fullPath))
+		if (_propertyKeyframes.TryGetValue(fullPath, out var property))
 		{
-			return _propertyKeyframes[fullPath];
+			return property;
 		}
 		
-		return new List<Keyframe>();
+		return [];
 	}
 	
 	private void DeleteSelectedKeyframes()
@@ -1935,19 +1928,18 @@ public partial class TimelinePanel : Panel
 			}
 			
 			// Delete all keyframes
-			foreach (var kvp in keyframesToDelete)
+			foreach (var (key, keyframes) in keyframesToDelete)
 			{
-				var obj = kvp.Key.Item1;
-				var propertyPath = kvp.Key.Item2;
-				var keyframes = kvp.Value;
-				
+				var obj = key.Item1;
+				var propertyPath = key.Item2;
+
 				var fullPath = $"{obj.GetInstanceId()}.{propertyPath}";
 				
-				if (_propertyKeyframes.ContainsKey(fullPath))
+				if (_propertyKeyframes.TryGetValue(fullPath, out List<Keyframe> value))
 				{
 					foreach (var keyframe in keyframes)
 					{
-						_propertyKeyframes[fullPath].Remove(keyframe);
+                        value.Remove(keyframe);
 					}
 					
 					// Save to SceneObject
@@ -1991,103 +1983,110 @@ public partial class TimelinePanel : Panel
 		
 		var parts = propertyPath.Split('.');
 		
-		if (parts.Length == 2)
+		switch (parts.Length)
 		{
-			var propName = parts[0];
-			var component = parts[1];
-			
-			switch (propName)
+			case 2:
 			{
-				case "position":
-					// BoneSceneObject hides Position with 'new' — must cast explicitly to read
-					// TargetPosition (the user-facing offset) rather than the internal Node3D pos.
-					if (obj is BoneSceneObject boneGetPos)
-						return component switch
-						{
-							"x" => boneGetPos.TargetPosition.X,
-							"y" => boneGetPos.TargetPosition.Y,
-							"z" => boneGetPos.TargetPosition.Z,
-							_ => 0f
-						};
-					return component switch
-					{
-						"x" => obj.Position.X,
-						"y" => obj.Position.Y,
-						"z" => obj.Position.Z,
-						_ => 0f
-					};
-				case "rotation":
-					// Same issue — read TargetRotation (radians) and convert to degrees.
-					if (obj is BoneSceneObject boneGetRot)
-						return component switch
-						{
-							"x" => Mathf.RadToDeg(boneGetRot.TargetRotation.X),
-							"y" => Mathf.RadToDeg(boneGetRot.TargetRotation.Y),
-							"z" => Mathf.RadToDeg(boneGetRot.TargetRotation.Z),
-							_ => 0f
-						};
-					return component switch
-					{
-						"x" => obj.RotationDegrees.X,
-						"y" => obj.RotationDegrees.Y,
-						"z" => obj.RotationDegrees.Z,
-						_ => 0f
-					};
-				case "scale":
-					return component switch
-					{
-						"x" => obj.Scale.X,
-						"y" => obj.Scale.Y,
-						"z" => obj.Scale.Z,
-						_ => 1f
-					};
-				case "material":
-					if (component == "alpha")
-					{
-						// Get alpha from first surface material if available
-						var meshInstances = obj.GetMeshInstancesRecursively(obj.Visual);
-						if (meshInstances.Count > 0 && meshInstances[0].Mesh != null && meshInstances[0].Mesh.GetSurfaceCount() > 0)
-						{
-							var material = meshInstances[0].Mesh.SurfaceGetMaterial(0);
-							if (material is StandardMaterial3D stdMat)
-							{
-								return stdMat.AlbedoColor.A;
-							}
-						}
-						return 1f; // Default to fully opaque
-					}
-					break;
-				case "light":
-					if (obj is LightSceneObject lightObj)
-					{
-						return component switch
-						{
-							"energy" => lightObj.LightEnergy,
-							"range" => lightObj.LightRange,
-							"indirect_energy" => lightObj.LightIndirectEnergy,
-							"specular" => lightObj.LightSpecular,
-							_ => 0f
-						};
-					}
-					break;
-			}
-		}
-		else if (parts.Length == 3)
-		{
-			// Handle 3-part paths like "light.color.r"
-			var propName = parts[0];
-			var subProp = parts[1];
-			var component = parts[2];
+				var propName = parts[0];
+				var component = parts[1];
 			
-			if (propName == "light" && subProp == "color" && obj is LightSceneObject lightColorObj)
-			{
-				return component switch
+				switch (propName)
 				{
-					"r" => lightColorObj.LightColor.R,
-					"g" => lightColorObj.LightColor.G,
-					"b" => lightColorObj.LightColor.B,
-					_ => 0f
-				};
+					case "position":
+						// BoneSceneObject hides Position with 'new' — must cast explicitly to read
+						// TargetPosition (the user-facing offset) rather than the internal Node3D pos.
+						if (obj is BoneSceneObject boneGetPos)
+							return component switch
+							{
+								"x" => boneGetPos.TargetPosition.X,
+								"y" => boneGetPos.TargetPosition.Y,
+								"z" => boneGetPos.TargetPosition.Z,
+								_ => 0f
+							};
+						return component switch
+						{
+							"x" => obj.Position.X,
+							"y" => obj.Position.Y,
+							"z" => obj.Position.Z,
+							_ => 0f
+						};
+					case "rotation":
+						// Same issue — read TargetRotation (radians) and convert to degrees.
+						if (obj is BoneSceneObject boneGetRot)
+							return component switch
+							{
+								"x" => Mathf.RadToDeg(boneGetRot.TargetRotation.X),
+								"y" => Mathf.RadToDeg(boneGetRot.TargetRotation.Y),
+								"z" => Mathf.RadToDeg(boneGetRot.TargetRotation.Z),
+								_ => 0f
+							};
+						return component switch
+						{
+							"x" => obj.RotationDegrees.X,
+							"y" => obj.RotationDegrees.Y,
+							"z" => obj.RotationDegrees.Z,
+							_ => 0f
+						};
+					case "scale":
+						return component switch
+						{
+							"x" => obj.Scale.X,
+							"y" => obj.Scale.Y,
+							"z" => obj.Scale.Z,
+							_ => 1f
+						};
+					case "material":
+						if (component == "alpha")
+						{
+							// Get alpha from first surface material if available
+							var meshInstances = obj.GetMeshInstancesRecursively(obj.Visual);
+							if (meshInstances.Count > 0 && meshInstances[0].Mesh != null && meshInstances[0].Mesh.GetSurfaceCount() > 0)
+							{
+								var material = meshInstances[0].Mesh.SurfaceGetMaterial(0);
+								if (material is StandardMaterial3D stdMat)
+								{
+									return stdMat.AlbedoColor.A;
+								}
+							}
+							return 1f; // Default to fully opaque
+						}
+						break;
+					case "light":
+						if (obj is LightSceneObject lightObj)
+						{
+							return component switch
+							{
+								"energy" => lightObj.LightEnergy,
+								"range" => lightObj.LightRange,
+								"indirect_energy" => lightObj.LightIndirectEnergy,
+								"specular" => lightObj.LightSpecular,
+								_ => 0f
+							};
+						}
+						break;
+				}
+
+				break;
+			}
+			case 3:
+			{
+				// Handle 3-part paths like "light.color.r"
+				var propName = parts[0];
+				var subProp = parts[1];
+				var component = parts[2];
+			
+				if (propName == "light" && subProp == "color" && obj is LightSceneObject lightColorObj)
+				{
+					return component switch
+					{
+						"r" => lightColorObj.LightColor.R,
+						"g" => lightColorObj.LightColor.G,
+						"b" => lightColorObj.LightColor.B,
+						_ => 0f
+					};
+				}
+
+				break;
 			}
 		}
 		
@@ -2117,34 +2116,25 @@ public partial class TimelinePanel : Panel
 		}
 		
 		// Update all single property track controls
-		foreach (var track in _singlePropertyTracks)
+		foreach (var track in _singlePropertyTracks.Where(track => track != null))
 		{
-			if (track != null)
-			{
-				track.CustomMinimumSize = new Vector2(scrollableWidth, track.CustomMinimumSize.Y);
-				track.QueueRedraw();
-			}
+			track.CustomMinimumSize = new Vector2(scrollableWidth, track.CustomMinimumSize.Y);
+			track.QueueRedraw();
 		}
 		
 		// Update all track group controls to new size
-		foreach (var prop in _properties)
+		foreach (var prop in _properties.Where(prop => prop.TrackGroup != null))
 		{
-			if (prop.TrackGroup != null)
-			{
-				prop.TrackGroup.UpdateMaxFrames(_maxFrames);
-			}
+			prop.TrackGroup.UpdateMaxFrames(_maxFrames);
 		}
 	}
 	
 	private void RefreshTracks()
 	{
 		// Queue draw on all tracks to update keyframe visualization
-		foreach (var prop in _properties)
+		foreach (var prop in _properties.Where(prop => prop.TrackGroup != null))
 		{
-			if (prop.TrackGroup != null)
-			{
-				prop.TrackGroup.QueueRedrawTracks();
-			}
+			prop.TrackGroup.QueueRedrawTracks();
 		}
 	}
 	
@@ -2176,17 +2166,9 @@ public partial class TimelinePanel : Panel
 			// Find the object
 			if (!ulong.TryParse(objectIdStr, out ulong objectId)) continue;
 			
-			SceneObject targetObject = null;
-				foreach (var prop in _properties)
-				{
-					if (prop.Object.GetInstanceId() == objectId)
-					{
-						targetObject = prop.Object;
-						break;
-					}
-				}
-				
-				// If not found in the selected-objects list, search the full scene tree.
+			SceneObject targetObject = (from prop in _properties where prop.Object.GetInstanceId() == objectId select prop.Object).FirstOrDefault();
+
+			// If not found in the selected-objects list, search the full scene tree.
 				// This ensures keyframes are applied to every object in the scene, not
 				// just the ones that are currently selected / shown in the timeline UI.
 				if (targetObject == null && GetTree() != null)
@@ -2541,7 +2523,6 @@ public partial class TimelinePanel : Panel
 	private void AddAudioTrackRow(AudioTrackData track)
 	{
 		const float rowHeight = 32f;
-		var scrollableWidth = _maxFrames * _pixelsPerFrame * 1.5f;
 
 		// ── Left side row ─────────────────────────────────────────────────────
 		var leftRow = new HBoxContainer();
@@ -2949,9 +2930,9 @@ public partial class KeyframeTrackGroup : VBoxContainer
 			}
 		}
 		
-		if (inputEvent is InputEventMouseButton mouseButton)
+		switch (inputEvent)
 		{
-			if (mouseButton.ButtonIndex == MouseButton.Left)
+			case InputEventMouseButton mouseButton when mouseButton.ButtonIndex == MouseButton.Left:
 			{
 				// Calculate frame from click position
 				float localX = mouseButton.Position.X;
@@ -3069,52 +3050,59 @@ public partial class KeyframeTrackGroup : VBoxContainer
 					}
 					// If we weren't dragging, don't consume - let it bubble for drag selection
 				}
+
+				break;
 			}
-			else if (mouseButton.ButtonIndex == MouseButton.Right && mouseButton.Pressed)
+			case InputEventMouseButton mouseButton:
 			{
-				// Right-click to open context menu
-				if (propertyPath != null)
+				if (mouseButton.ButtonIndex == MouseButton.Right && mouseButton.Pressed)
 				{
-					float localX = mouseButton.Position.X;
-					int frame = Mathf.RoundToInt(localX / _pixelsPerFrame);
-					frame = Mathf.Max(0, frame);
-					
-					var keyframes = _timeline.GetKeyframesForProperty(_object, propertyPath);
-					var clickedKeyframe = keyframes.Find(k => Mathf.Abs(k.Frame - frame) <= 1);
-					
-					if (clickedKeyframe != null)
+					// Right-click to open context menu
+					if (propertyPath != null)
 					{
-						_timeline.ShowKeyframeContextMenu(clickedKeyframe, _object, propertyPath, mouseButton.GlobalPosition);
-						sourceControl?.AcceptEvent(); // Consume the event
+						float localX = mouseButton.Position.X;
+						int frame = Mathf.RoundToInt(localX / _pixelsPerFrame);
+						frame = Mathf.Max(0, frame);
+					
+						var keyframes = _timeline.GetKeyframesForProperty(_object, propertyPath);
+						var clickedKeyframe = keyframes.Find(k => Mathf.Abs(k.Frame - frame) <= 1);
+					
+						if (clickedKeyframe != null)
+						{
+							_timeline.ShowKeyframeContextMenu(clickedKeyframe, _object, propertyPath, mouseButton.GlobalPosition);
+							sourceControl?.AcceptEvent(); // Consume the event
+						}
 					}
 				}
+
+				break;
 			}
-		}
-		else if (inputEvent is InputEventMouseMotion mouseMotion && _isDraggingKeyframe && _draggedKeyframe != null)
-		{
-			// Update keyframe position while dragging
-			float localX = mouseMotion.Position.X;
-			int newFrame = Mathf.RoundToInt(localX / _pixelsPerFrame);
-			newFrame = Mathf.Max(0, newFrame); // Only clamp to 0, allow going past max
+			case InputEventMouseMotion mouseMotion when _isDraggingKeyframe && _draggedKeyframe != null:
+			{
+				// Update keyframe position while dragging
+				float localX = mouseMotion.Position.X;
+				int newFrame = Mathf.RoundToInt(localX / _pixelsPerFrame);
+				newFrame = Mathf.Max(0, newFrame); // Only clamp to 0, allow going past max
 			
-			if (newFrame != _draggedKeyframe.Frame)
-			{
-				// Calculate the offset from the original position
-				int offset = newFrame - _dragStartFrame;
-				
-				// Move all selected keyframes by the same offset
-				foreach (var kf in _timeline._selectedKeyframes)
+				if (newFrame != _draggedKeyframe.Frame)
 				{
-					if (_selectedKeyframesStartFrames.TryGetValue(kf, out int startFrame))
-					{
-						int targetFrame = startFrame + offset;
-						kf.Frame = Mathf.Max(0, targetFrame); // Clamp to 0
-					}
-				}
+					// Calculate the offset from the original position
+					int offset = newFrame - _dragStartFrame;
 				
-				QueueRedrawTracks();
+					// Move all selected keyframes by the same offset
+					foreach (var kf in _timeline._selectedKeyframes)
+					{
+						if (_selectedKeyframesStartFrames.TryGetValue(kf, out int startFrame))
+						{
+							int targetFrame = startFrame + offset;
+							kf.Frame = Mathf.Max(0, targetFrame); // Clamp to 0
+						}
+					}
+				
+					QueueRedrawTracks();
+				}
+				break;
 			}
-			sourceControl?.AcceptEvent(); // Consume the event while dragging
 		}
 	}
 
@@ -3186,15 +3174,9 @@ public partial class KeyframeTrackGroup : VBoxContainer
 		else if (frameOverride.HasValue)
 		{
 			// For main track, check if ANY keyframe at this frame is selected
-			foreach (var propPath in _propertyPaths)
+			if (_propertyPaths.Select(propPath => _timeline.GetKeyframesForProperty(_object, propPath)).Select(keyframes => keyframes.Find(k => k.Frame == frameOverride.Value)).Any(kf => kf != null && _timeline._selectedKeyframes.Contains(kf)))
 			{
-				var keyframes = _timeline.GetKeyframesForProperty(_object, propPath);
-				var kf = keyframes.Find(k => k.Frame == frameOverride.Value);
-				if (kf != null && _timeline._selectedKeyframes.Contains(kf))
-				{
-					isSelected = true;
-					break;
-				}
+				isSelected = true;
 			}
 		}
 		

@@ -150,9 +150,9 @@ public class AsyncModelLoader
 			if (token.IsCancellationRequested)
 				return;
 
-			if (child is Node childNode)
+			if (child != null)
 			{
-				await PreloadAllTexturesAsync(childNode, token);
+				await PreloadAllTexturesAsync(child, token);
 			}
 		}
 
@@ -163,7 +163,7 @@ public class AsyncModelLoader
 	/// <summary>
 	/// Preloads all textures from a material.
 	/// </summary>
-	private async Task PreloadMaterialTexturesAsync(Godot.Material material, CancellationToken token)
+	private async Task PreloadMaterialTexturesAsync(Material material, CancellationToken token)
 	{
 		if (material is StandardMaterial3D stdMat)
 		{
@@ -248,7 +248,7 @@ public class AsyncModelLoader
 	/// </summary>
 	private async Task WaitForShaderCompilationAsync(Node node, CancellationToken token)
 	{
-		var materialsToCheck = new List<Godot.Material>();
+		var materialsToCheck = new List<Material>();
 		CollectMaterials(node, materialsToCheck);
 
 		int maxWaitFrames = 300; // Maximum ~5 seconds at 60fps
@@ -300,9 +300,9 @@ public class AsyncModelLoader
 	/// <summary>
 	/// Recursively collects all materials from a node hierarchy.
 	/// </summary>
-	private void CollectMaterials(Node node, List<Godot.Material> materials)
+	private void CollectMaterials(Node node, List<Material> materials)
 	{
-		if (node is MeshInstance3D meshInstance && meshInstance.Mesh != null)
+		if (node is MeshInstance3D { Mesh: not null } meshInstance)
 		{
 			var mesh = meshInstance.Mesh;
 			int surfaceCount = mesh.GetSurfaceCount();
@@ -321,8 +321,8 @@ public class AsyncModelLoader
 
 		foreach (var child in node.GetChildren())
 		{
-			if (child is Node childNode)
-				CollectMaterials(childNode, materials);
+			if (child != null)
+				CollectMaterials(child, materials);
 		}
 	}
 

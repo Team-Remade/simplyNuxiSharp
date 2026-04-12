@@ -134,16 +134,9 @@ public partial class LightSceneObject : SceneObject
 		base._Ready();
 		
 		// Set initial visibility based on Main's render mode state
-		if (simplyRemadeNuxi.Main.Instance != null)
-		{
-			SetRenderMode(simplyRemadeNuxi.Main.Instance.IsRenderModeEnabled());
-		}
-		else
-		{
-			// Default to disabled if Main instance not yet available
-			SetRenderMode(false);
-		}
+		SetRenderMode(Main.Instance != null && Main.Instance.IsRenderModeEnabled());
 
+		// Default to disabled if Main instance not yet available
 		Sprite.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
 	}
 	

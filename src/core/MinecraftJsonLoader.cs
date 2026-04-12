@@ -308,11 +308,7 @@ public class MinecraftJsonLoader
 	/// </summary>
 	public MinecraftModel GetModel(string relativePath)
 	{
-		if (_loadedModels.TryGetValue(relativePath, out var model))
-		{
-			return model;
-		}
-		return null;
+		return _loadedModels.GetValueOrDefault(relativePath);
 	}
 	
 	/// <summary>
@@ -320,11 +316,7 @@ public class MinecraftJsonLoader
 	/// </summary>
 	public BlockState GetBlockState(string relativePath)
 	{
-		if (_loadedBlockStates.TryGetValue(relativePath, out var blockState))
-		{
-			return blockState;
-		}
-		return null;
+		return _loadedBlockStates.GetValueOrDefault(relativePath);
 	}
 	
 	/// <summary>

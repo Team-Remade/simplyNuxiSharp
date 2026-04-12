@@ -66,7 +66,7 @@ public partial class CameraSceneObject : SceneObject
 		{
 			// Set to only render on layer 2 (bit 1, since layers are 0-indexed)
 			// This disables layer 1 and enables only layer 2
-			visualInstance.Layers = (uint)(1 << 1); // Only layer 2 enabled
+			visualInstance.Layers = 1 << 1; // Only layer 2 enabled
 		}
 		
 		foreach (var child in node.GetChildren())

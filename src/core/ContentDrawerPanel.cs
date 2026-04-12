@@ -199,7 +199,7 @@ public partial class ContentDrawerPanel : Panel
 		var filterType = _selectedTab == 0 ? null : TabNameToAssetType(TabNames[_selectedTab]);
 		var assets     = filterType == null
 			? ProjectManager.GetAssets()
-			: (IReadOnlyList<AssetEntry>)ProjectManager.GetAssetsByType(filterType);
+			: ProjectManager.GetAssetsByType(filterType);
 
 		foreach (var asset in assets)
 		{
@@ -247,7 +247,7 @@ public partial class ContentDrawerPanel : Panel
 
 		var filters = new[]
 		{
-			"*.glb,*.gltf,*.mimodel,*.blend ; 3D Models",
+			"*.glb,*.gltf,*.mimodel ; 3D Models",
 			"*.png,*.jpg,*.jpeg,*.bmp,*.webp ; Images",
 			"*.wav,*.mp3,*.ogg ; Audio",
 			"* ; All Files",

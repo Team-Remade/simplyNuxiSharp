@@ -112,12 +112,9 @@ public class MineImatorLoader
         var resourceDict = new Dictionary<string, string>(); // modelID -> filename
         if (miObject.Resources != null)
         {
-            foreach (var resource in miObject.Resources)
+            foreach (var resource in miObject.Resources.Where(resource => !string.IsNullOrEmpty(resource.Id) && !string.IsNullOrEmpty(resource.Filename)))
             {
-                if (!string.IsNullOrEmpty(resource.Id) && !string.IsNullOrEmpty(resource.Filename))
-                {
-                    resourceDict[resource.Id] = resource.Filename;
-                }
+                resourceDict[resource.Id] = resource.Filename;
             }
         }
 
@@ -183,14 +180,11 @@ public class MineImatorLoader
                 }
 
                 // If we couldn't load a model, create a placeholder
-                if (itemObject == null)
+                itemObject ??= new SceneObject
                 {
-                    itemObject = new SceneObject
-                    {
-                        Name = timeline.ModelPartName ?? timeline.Name ?? "Unknown",
-                        ObjectType = "Placeholder"
-                    };
-                }
+                    Name = timeline.ModelPartName ?? timeline.Name ?? "Unknown",
+                    ObjectType = "Placeholder"
+                };
 
                 // Apply transform from timeline (try direct fields first, then keyframes)
                 ApplyTimelineTransform(itemObject, timeline, miModel);
@@ -252,19 +246,10 @@ public class MineImatorLoader
     /// </summary>
     private void ApplyTimelineTransform(SceneObject itemObject, MiTimeline timeline, MiModel model = null)
     {
-        if (timeline.Keyframes != null && timeline.Keyframes.Count > 0)
+        if (timeline.Keyframes is { Count: > 0 })
         {
             // Search through all keyframes to find one with position data
-            float[] keyframePos = null;
-            foreach (var kf in timeline.Keyframes)
-            {
-                var pos = kf.Value.GetPosition();
-                if (pos != null)
-                {
-                    keyframePos = pos;
-                    break;
-                }
-            }
+            float[] keyframePos = timeline.Keyframes.Select(kf => kf.Value.GetPosition()).FirstOrDefault(pos => pos != null);
 
             if (keyframePos != null)
             {
@@ -366,14 +351,7 @@ public class MineImatorLoader
 
         // Second: Check if part has its own texture
         var partTexture = part.GetTexture(null, model);
-        if (partTexture != null)
-            return partTexture;
-
-        // Third: Fall back to model default texture
-        if (model != null)
-            return model.GetTexture();
-
-        return null;
+        return partTexture ?? model?.GetTexture();
     }
 
     /// <summary>
@@ -384,7 +362,7 @@ public class MineImatorLoader
     /// <returns>A CharacterSceneObject with skeleton and bones</returns>
     public CharacterSceneObject CreateCharacterFromModel(MiModel model)
     {
-        if (model == null || model.Parts == null || model.Parts.Count == 0)
+        if (model?.Parts == null || model.Parts.Count == 0)
         {
             GD.PrintErr("Cannot create character from null or empty model");
             return null;
@@ -394,7 +372,7 @@ public class MineImatorLoader
         LoadModelTextures(model);
 
         // Get the default texture (backward compatibility)
-        ImageTexture texture = model.GetTexture();
+        model.GetTexture();
 
         // Create skeleton
         var skeleton = new Skeleton3D();
@@ -405,9 +383,9 @@ public class MineImatorLoader
         FlattenPartsForBones(model.Parts, -1, Vector3.One, boneDataList);
 
         // Create all bones first
-        foreach (var (part, boneIdx, parentIdx, _) in boneDataList)
+        foreach (var (part, boneIdx, parentIdx, accumulatedParentScale) in boneDataList)
         {
-            CreateBoneFromPart(skeleton, part, boneIdx, parentIdx);
+            CreateBoneFromPart(skeleton, part, boneIdx, parentIdx, accumulatedParentScale);
         }
 
         // Create CharacterSceneObject
@@ -425,7 +403,7 @@ public class MineImatorLoader
         CreateBoneSceneObjects(character, skeleton, boneDataList);
 
         // Now add meshes to the BoneSceneObjects
-        foreach (var (part, boneIdx, parentIdx, accumulatedParentScale) in boneDataList)
+        foreach (var (part, boneIdx, _, accumulatedParentScale) in boneDataList)
         {
             string boneName = skeleton.GetBoneName(boneIdx);
             if (!character.BoneObjects.TryGetValue(boneName, out var boneObject))
@@ -449,7 +427,7 @@ public class MineImatorLoader
             float lockBend = part.LockBend ?? 1f;
             boneObject.SetBendParameters(bendParams, lockBend);
 
-            if (part.Shapes != null && part.Shapes.Count > 0)
+            if (part.Shapes is { Count: > 0 })
             {
                 int shapeIndex = 0;
                 foreach (var shape in part.Shapes)
@@ -500,7 +478,7 @@ public class MineImatorLoader
             int currentIdx = boneDataList.Count;
             boneDataList.Add((part, currentIdx, parentIdx, accumulatedParentScale));
 
-            if (part.Parts != null && part.Parts.Count > 0)
+            if (part.Parts is { Count: > 0 })
             {
                 // Compute this part's scale to pass down as accumulated scale to children
                 Vector3 partScale = Vector3.One;
@@ -518,7 +496,8 @@ public class MineImatorLoader
     /// <summary>
     /// Creates a bone from a part
     /// </summary>
-    private void CreateBoneFromPart(Skeleton3D skeleton, MiPart part, int boneIdx, int parentIdx)
+    /// <param name="accumulatedParentScale">The product of all ancestor part scales up the hierarchy</param>
+    private void CreateBoneFromPart(Skeleton3D skeleton, MiPart part, int boneIdx, int parentIdx, Vector3 accumulatedParentScale)
     {
         string boneName = part.Name ?? $"Bone_{boneIdx}";
 
@@ -534,6 +513,9 @@ public class MineImatorLoader
                 part.Position[1] / 16.0f,
                 part.Position[2] / 16.0f
             );
+
+            // Apply parent scale to position so children are placed correctly relative to scaled parent
+            position *= accumulatedParentScale;
         }
 
         // Convert rotation from degrees to radians
@@ -545,13 +527,6 @@ public class MineImatorLoader
                 Mathf.DegToRad(part.Rotation[1]),
                 Mathf.DegToRad(-part.Rotation[2]) // Inverted
             );
-        }
-
-        // Get scale
-        Vector3 scale = Vector3.One;
-        if (part.Scale != null && part.Scale.Length >= 3)
-        {
-            scale = new Vector3(part.Scale[0], part.Scale[1], part.Scale[2]);
         }
 
         // Add bone
@@ -983,514 +958,517 @@ public class MineImatorLoader
         else
         {
             // Bent block: generate segmented geometry matching Modelbench's algorithm
-            var b = bend.Value;
-
-            // Determine the segment axis based on bend part direction.
-            // In the JSON/Godot coordinate system (Y-up):
-            //   RIGHT/LEFT  -> X axis (0)
-            //   UPPER/LOWER -> Y axis (1) - height is Y in JSON
-            //   FRONT/BACK  -> Z axis (2) - depth is Z in JSON
-            // Note: Modelbench internally uses Z-up, but the JSON uses Y-up.
-            int segAxis; // 0=X, 1=Y, 2=Z
-            switch (b.Part)
+            if (bend != null)
             {
-                case BendPart.Right:
-                case BendPart.Left: segAxis = 0; break;
-                case BendPart.Upper:
-                case BendPart.Lower: segAxis = 1; break;
-                case BendPart.Front:
-                case BendPart.Back: segAxis = 2; break;
-                default: segAxis = 1; break;
-            }
+                var b = bend.Value;
 
-            // Block extents along each axis
-            // Use min/max (not from/to directly) so that inflate is already applied
-            float x1 = min.X, x2 = max.X;
-            float y1 = min.Y, y2 = max.Y;
-            float z1 = min.Z, z2 = max.Z;
-
-            // Bend region size (in Godot units = pixels/16)
-            // Modelbench default is 4 pixels for realistic, 1 for blocky
-            float bendSize = b.BendSize / 16.0f;
-            float bendOffset = b.BendOffset / 16.0f;
-
-            // Determine effective bend style (use model override or fall back to project setting)
-            BendStyle effectiveStyle = (bendStyle == BendStyle.ProjectDefault)
-                ? simplyRemadeNuxi.Main.ProjectBendStyle
-                : bendStyle;
-
-            // Check for sharp bend: project=blocky AND bend_size was null AND only one axis active
-            // sharpbend = app.project_bend_style = "blocky" && bend_size = null &&
-            //   ((bend_axis[X] && !bend_axis[Y] && !bend_axis[Z]) || ...)
-            int activeAxes = (b.AxisX ? 1 : 0) + (b.AxisY ? 1 : 0) + (b.AxisZ ? 1 : 0);
-            bool sharpBend = (effectiveStyle == BendStyle.Blocky) && !b.ExplicitBendSize && (activeAxes == 1);
-
-            // Number of segments: use MineImator calculation logic
-            float detail = BendHelper.CalculateSegmentCount(b.BendSize, b.Detail);
-
-            // Adjust detail based on shape scale along the bend axis.
-            // When the part is stretched along the bend axis, reduce segment count to maintain visual density.
-            if (b.BendSize >= 1 && shapeScale[segAxis] > .5f)
-                detail /= shapeScale[segAxis];
-
-            float segSize = bendSize / detail;
-
-            // Invert angle for LOWER/BACK/LEFT parts (they bend in the opposite direction)
-            bool invAngle = (b.Part == BendPart.Lower || b.Part == BendPart.Back || b.Part == BendPart.Left);
-
-            // Bend region start/end relative to the shape's local origin.
-            // Formula: bendStart = (bend_offset - (shape_pos_along_axis + shape_min_local)) - bendSize/2
-            // segAxis 0=X, 1=Y, 2=Z in JSON/Godot coordinate system
-            float bendStart, bendEnd;
-            switch (segAxis)
-            {
-                case 0: // X axis (RIGHT/LEFT)
-                    bendStart = (bendOffset - (shapePosition.X + x1)) - bendSize / 2.0f;
-                    bendEnd = (bendOffset - (shapePosition.X + x1)) + bendSize / 2.0f;
-                    break;
-                case 1: // Y axis (UPPER/LOWER - height)
-                    bendStart = (bendOffset - (shapePosition.Y + y1)) - bendSize / 2.0f;
-                    bendEnd = (bendOffset - (shapePosition.Y + y1)) + bendSize / 2.0f;
-                    break;
-                default: // Z axis (FRONT/BACK - depth)
-                    bendStart = (bendOffset - (shapePosition.Z + z1)) - bendSize / 2.0f;
-                    bendEnd = (bendOffset - (shapePosition.Z + z1)) + bendSize / 2.0f;
-                    break;
-            }
-
-            // Total size along the segment axis
-            float totalSize;
-            switch (segAxis)
-            {
-                case 0: totalSize = x2 - x1; break;
-                case 1: totalSize = y2 - y1; break;
-                default: totalSize = z2 - z1; break;
-            }
-
-            // UV texture offsets along the segment axis (for sliding UVs per segment)
-            // These match the GML texp1/texp2/texp3 variables
-            float texpSide1, texpSide2, texpSide3;
-            switch (segAxis)
-            {
-                case 0: // X axis: South/North/Up/Down slide along X
-                    texpSide1 = texSouth1.X;
-                    texpSide2 = texNorth2.X;
-                    texpSide3 = texDown4.X;
-                    break;
-                case 1: // Y axis (UPPER/LOWER): all 4 band faces scroll V
-                    texpSide1 = texSouth3.Y;
-                    texpSide2 = texSouth3.Y; // unused for Y axis
-                    texpSide3 = texSouth3.Y; // unused for Y axis
-                    break;
-                default: // Z axis (FRONT/BACK): East/West scroll U, Up/Down scroll V
-                    texpSide1 = texEast2.X;
-                    texpSide2 = texWest1.X;
-                    texpSide3 = texUp1.Y;
-                    break;
-            }
-
-            // Starting face points and normals (the "start cap" of the first segment)
-            Vector3 p1, p2, p3, p4;
-            Vector3 n1, n2, n3, n4;
-            Vector2 texStart1, texStart2, texStart3, texStart4;
-            Vector2 texEnd1, texEnd2, texEnd3, texEnd4;
-
-            switch (segAxis)
-            {
-                case 0: // X axis
-                    p1 = new Vector3(x1, y1, z2);
-                    p2 = new Vector3(x1, y2, z2);
-                    p3 = new Vector3(x1, y2, z1);
-                    p4 = new Vector3(x1, y1, z1);
-                    n1 = new Vector3(0, 1, 0);
-                    n2 = new Vector3(0, -1, 0);
-                    n3 = new Vector3(0, 0, 1);
-                    n4 = new Vector3(0, 0, -1);
-                    texStart1 = texWest1;
-                    texStart2 = texWest2;
-                    texStart3 = texWest3;
-                    texStart4 = texWest4;
-                    texEnd1 = texEast1;
-                    texEnd2 = texEast2;
-                    texEnd3 = texEast3;
-                    texEnd4 = texEast4;
-                    break;
-                case 1: // Y axis (UPPER/LOWER): start cap = Down, end cap = Up
-                    p1 = new Vector3(x2, y1, z2);
-                    p2 = new Vector3(x1, y1, z2);
-                    p3 = new Vector3(x1, y1, z1);
-                    p4 = new Vector3(x2, y1, z1);
-                    n1 = new Vector3(1, 0, 0);
-                    n2 = new Vector3(-1, 0, 0);
-                    n3 = new Vector3(0, 0, 1);
-                    n4 = new Vector3(0, 0, -1);
-                    texStart1 = texDown1;
-                    texStart2 = texDown2;
-                    texStart3 = texDown3;
-                    texStart4 = texDown4;
-                    texEnd1 = texUp1;
-                    texEnd2 = texUp2;
-                    texEnd3 = texUp3;
-                    texEnd4 = texUp4;
-                    break;
-                default: // Z axis
-                    p1 = new Vector3(x1, y2, z1);
-                    p2 = new Vector3(x2, y2, z1);
-                    p3 = new Vector3(x2, y1, z1);
-                    p4 = new Vector3(x1, y1, z1);
-                    n1 = new Vector3(1, 0, 0);
-                    n2 = new Vector3(-1, 0, 0);
-                    n3 = new Vector3(0, 1, 0);
-                    n4 = new Vector3(0, -1, 0);
-                    texStart1 = texDown1;
-                    texStart2 = texDown2;
-                    texStart3 = texDown3;
-                    texStart4 = texDown4;
-                    texEnd1 = texUp1;
-                    texEnd2 = texUp2;
-                    texEnd3 = texUp3;
-                    texEnd4 = texUp4;
-                    break;
-            }
-
-            // Build shape rotation transform to pre-rotate vertices before bending
-            // Note: Rotations are applied in reverse order due to right-multiplication (Z→X→Y)
-            Transform3D shapeRotMat = Transform3D.Identity;
-            if (shapeRotation != Vector3.Zero)
-            {
-                shapeRotMat = shapeRotMat.Rotated(Vector3.Forward, shapeRotation.Z); // Z first
-                shapeRotMat = shapeRotMat.Rotated(Vector3.Right, shapeRotation.X);  // Then X
-                shapeRotMat = shapeRotMat.Rotated(Vector3.Up, shapeRotation.Y);      // Then Y
-            }
-
-            // Build shape scale transform
-            Transform3D shapeScaleMat = Transform3D.Identity;
-            if (shapeScale != default && shapeScale != Vector3.One)
-            {
-                shapeScaleMat = shapeScaleMat.Scaled(shapeScale);
-            }
-
-            // Apply shape rotation to starting points before bending, then scale
-            p1 = shapeRotMat * shapeScaleMat * p1;
-            p2 = shapeRotMat * shapeScaleMat * p2;
-            p3 = shapeRotMat * shapeScaleMat * p3;
-            p4 = shapeRotMat * shapeScaleMat * p4;
-            n1 = (shapeRotMat.Basis * shapeScaleMat.Basis * n1).Normalized();
-            n2 = (shapeRotMat.Basis * shapeScaleMat.Basis * n2).Normalized();
-            n3 = (shapeRotMat.Basis * shapeScaleMat.Basis * n3).Normalized();
-            n4 = (shapeRotMat.Basis * shapeScaleMat.Basis * n4).Normalized();
-
-            // Apply initial bend transform to starting points
-            float startP;
-            if (bendStart > 0)
-                startP = 0.0f;
-            else if (bendEnd < 0)
-                startP = 1.0f;
-            else
-                startP = 1.0f - bendEnd / bendSize;
-
-            if (invAngle) startP = 1.0f - startP;
-
-            Vector3 startBendVec = BendHelper.GetBendVector(b.Angle, startP);
-            Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition);
-
-            p1 = startMat * p1;
-            p2 = startMat * p2;
-            p3 = startMat * p3;
-            p4 = startMat * p4;
-            n1 = (startMat.Basis * n1).Normalized();
-            n2 = (startMat.Basis * n2).Normalized();
-            n3 = (startMat.Basis * n3).Normalized();
-            n4 = (startMat.Basis * n4).Normalized();
-
-            // Iterate over segments
-            float segPos = 0.0f;
-            while (true)
-            {
-                // End cap
-                if (segPos >= totalSize)
+                // Determine the segment axis based on bend part direction.
+                // In the JSON/Godot coordinate system (Y-up):
+                //   RIGHT/LEFT  -> X axis (0)
+                //   UPPER/LOWER -> Y axis (1) - height is Y in JSON
+                //   FRONT/BACK  -> Z axis (2) - depth is Z in JSON
+                // Note: Modelbench internally uses Z-up, but the JSON uses Y-up.
+                int segAxis; // 0=X, 1=Y, 2=Z
+                switch (b.Part)
                 {
-                    // Compute cap normal from the current face orientation
-                    Vector3 capNormal;
-                    switch (segAxis)
-                    {
-                        case 0: capNormal = Vector3.Right; break;
-                        case 1: capNormal = Vector3.Up; break;
-                        default: capNormal = Vector3.Back; break;
-                    }
-
-                    switch (segAxis)
-                    {
-                        case 0:
-                        case 2: // X and Z (FRONT/BACK) use same winding (matches GML X and Y)
-                            // p2, p1, p4, p3 form the end cap quad
-                            AddFaceWithUVs(vertices, normals, uvs, indices,
-                                p2, p1, p4, p3, capNormal, texEnd1, texEnd2, texEnd3, texEnd4, invert);
-                            break;
-                        default: // Y (UPPER/LOWER) uses Z winding (matches GML Z)
-                            // p4, p3, p2, p1 form the end cap quad
-                            AddFaceWithUVs(vertices, normals, uvs, indices,
-                                p4, p3, p2, p1, capNormal, texEnd1, texEnd2, texEnd3, texEnd4, invert);
-                            break;
-                    }
-
-                    break;
+                    case BendPart.Right:
+                    case BendPart.Left: segAxis = 0; break;
+                    case BendPart.Upper:
+                    case BendPart.Lower: segAxis = 1; break;
+                    case BendPart.Front:
+                    case BendPart.Back: segAxis = 2; break;
+                    default: segAxis = 1; break;
                 }
 
-                // Start cap (only for first segment)
-                if (segPos == 0.0f)
-                {
-                    Vector3 startCapNormal;
-                    switch (segAxis)
-                    {
-                        case 0: startCapNormal = Vector3.Left; break;
-                        case 1: startCapNormal = Vector3.Down; break;
-                        default: startCapNormal = Vector3.Forward; break;
-                    }
+                // Block extents along each axis
+                // Use min/max (not from/to directly) so that inflate is already applied
+                float x1 = min.X, x2 = max.X;
+                float y1 = min.Y, y2 = max.Y;
+                float z1 = min.Z, z2 = max.Z;
 
-                    // p1, p2, p3, p4 form the start cap quad
-                    AddFaceWithUVs(vertices, normals, uvs, indices,
-                        p1, p2, p3, p4, startCapNormal, texStart1, texStart2, texStart3, texStart4, invert);
+                // Bend region size (in Godot units = pixels/16)
+                // Modelbench default is 4 pixels for realistic, 1 for blocky
+                float bendSize = b.BendSize / 16.0f;
+                float bendOffset = b.BendOffset / 16.0f;
+
+                // Determine effective bend style (use model override or fall back to project setting)
+                BendStyle effectiveStyle = (bendStyle == BendStyle.ProjectDefault)
+                    ? Main.ProjectBendStyle
+                    : bendStyle;
+
+                // Check for sharp bend: project=blocky AND bend_size was null AND only one axis active
+                // sharpbend = app.project_bend_style = "blocky" && bend_size = null &&
+                //   ((bend_axis[X] && !bend_axis[Y] && !bend_axis[Z]) || ...)
+                int activeAxes = (b.AxisX ? 1 : 0) + (b.AxisY ? 1 : 0) + (b.AxisZ ? 1 : 0);
+                bool sharpBend = (effectiveStyle == BendStyle.Blocky) && !b.ExplicitBendSize && (activeAxes == 1);
+
+                // Number of segments: use MineImator calculation logic
+                float detail = BendHelper.CalculateSegmentCount(b.BendSize, b.Detail);
+
+                // Adjust detail based on shape scale along the bend axis.
+                // When the part is stretched along the bend axis, reduce segment count to maintain visual density.
+                if (b.BendSize >= 1 && shapeScale[segAxis] > .5f)
+                    detail /= shapeScale[segAxis];
+
+                float segSize = bendSize / detail;
+
+                // Invert angle for LOWER/BACK/LEFT parts (they bend in the opposite direction)
+                bool invAngle = (b.Part == BendPart.Lower || b.Part == BendPart.Back || b.Part == BendPart.Left);
+
+                // Bend region start/end relative to the shape's local origin.
+                // Formula: bendStart = (bend_offset - (shape_pos_along_axis + shape_min_local)) - bendSize/2
+                // segAxis 0=X, 1=Y, 2=Z in JSON/Godot coordinate system
+                float bendStart, bendEnd;
+                switch (segAxis)
+                {
+                    case 0: // X axis (RIGHT/LEFT)
+                        bendStart = (bendOffset - (shapePosition.X + x1)) - bendSize / 2.0f;
+                        bendEnd = (bendOffset - (shapePosition.X + x1)) + bendSize / 2.0f;
+                        break;
+                    case 1: // Y axis (UPPER/LOWER - height)
+                        bendStart = (bendOffset - (shapePosition.Y + y1)) - bendSize / 2.0f;
+                        bendEnd = (bendOffset - (shapePosition.Y + y1)) + bendSize / 2.0f;
+                        break;
+                    default: // Z axis (FRONT/BACK - depth)
+                        bendStart = (bendOffset - (shapePosition.Z + z1)) - bendSize / 2.0f;
+                        bendEnd = (bendOffset - (shapePosition.Z + z1)) + bendSize / 2.0f;
+                        break;
                 }
 
-                // Determine segment size
-                float curSegSize;
-                if (segPos >= bendEnd)
-                    curSegSize = totalSize - segPos;
-                else if (segPos < bendStart)
-                    curSegSize = Math.Min(totalSize - segPos, bendStart);
+                // Total size along the segment axis
+                float totalSize;
+                switch (segAxis)
+                {
+                    case 0: totalSize = x2 - x1; break;
+                    case 1: totalSize = y2 - y1; break;
+                    default: totalSize = z2 - z1; break;
+                }
+
+                // UV texture offsets along the segment axis (for sliding UVs per segment)
+                // These match the GML texp1/texp2/texp3 variables
+                float texpSide1, texpSide2, texpSide3;
+                switch (segAxis)
+                {
+                    case 0: // X axis: South/North/Up/Down slide along X
+                        texpSide1 = texSouth1.X;
+                        texpSide2 = texNorth2.X;
+                        texpSide3 = texDown4.X;
+                        break;
+                    case 1: // Y axis (UPPER/LOWER): all 4 band faces scroll V
+                        texpSide1 = texSouth3.Y;
+                        texpSide2 = texSouth3.Y; // unused for Y axis
+                        texpSide3 = texSouth3.Y; // unused for Y axis
+                        break;
+                    default: // Z axis (FRONT/BACK): East/West scroll U, Up/Down scroll V
+                        texpSide1 = texEast2.X;
+                        texpSide2 = texWest1.X;
+                        texpSide3 = texUp1.Y;
+                        break;
+                }
+
+                // Starting face points and normals (the "start cap" of the first segment)
+                Vector3 p1, p2, p3, p4;
+                Vector3 n1, n2, n3, n4;
+                Vector2 texStart1, texStart2, texStart3, texStart4;
+                Vector2 texEnd1, texEnd2, texEnd3, texEnd4;
+
+                switch (segAxis)
+                {
+                    case 0: // X axis
+                        p1 = new Vector3(x1, y1, z2);
+                        p2 = new Vector3(x1, y2, z2);
+                        p3 = new Vector3(x1, y2, z1);
+                        p4 = new Vector3(x1, y1, z1);
+                        n1 = new Vector3(0, 1, 0);
+                        n2 = new Vector3(0, -1, 0);
+                        n3 = new Vector3(0, 0, 1);
+                        n4 = new Vector3(0, 0, -1);
+                        texStart1 = texWest1;
+                        texStart2 = texWest2;
+                        texStart3 = texWest3;
+                        texStart4 = texWest4;
+                        texEnd1 = texEast1;
+                        texEnd2 = texEast2;
+                        texEnd3 = texEast3;
+                        texEnd4 = texEast4;
+                        break;
+                    case 1: // Y axis (UPPER/LOWER): start cap = Down, end cap = Up
+                        p1 = new Vector3(x2, y1, z2);
+                        p2 = new Vector3(x1, y1, z2);
+                        p3 = new Vector3(x1, y1, z1);
+                        p4 = new Vector3(x2, y1, z1);
+                        n1 = new Vector3(1, 0, 0);
+                        n2 = new Vector3(-1, 0, 0);
+                        n3 = new Vector3(0, 0, 1);
+                        n4 = new Vector3(0, 0, -1);
+                        texStart1 = texDown1;
+                        texStart2 = texDown2;
+                        texStart3 = texDown3;
+                        texStart4 = texDown4;
+                        texEnd1 = texUp1;
+                        texEnd2 = texUp2;
+                        texEnd3 = texUp3;
+                        texEnd4 = texUp4;
+                        break;
+                    default: // Z axis
+                        p1 = new Vector3(x1, y2, z1);
+                        p2 = new Vector3(x2, y2, z1);
+                        p3 = new Vector3(x2, y1, z1);
+                        p4 = new Vector3(x1, y1, z1);
+                        n1 = new Vector3(1, 0, 0);
+                        n2 = new Vector3(-1, 0, 0);
+                        n3 = new Vector3(0, 1, 0);
+                        n4 = new Vector3(0, -1, 0);
+                        texStart1 = texDown1;
+                        texStart2 = texDown2;
+                        texStart3 = texDown3;
+                        texStart4 = texDown4;
+                        texEnd1 = texUp1;
+                        texEnd2 = texUp2;
+                        texEnd3 = texUp3;
+                        texEnd4 = texUp4;
+                        break;
+                }
+
+                // Build shape rotation transform to pre-rotate vertices before bending
+                // Note: Rotations are applied in reverse order due to right-multiplication (Z→X→Y)
+                Transform3D shapeRotMat = Transform3D.Identity;
+                if (shapeRotation != Vector3.Zero)
+                {
+                    shapeRotMat = shapeRotMat.Rotated(Vector3.Forward, shapeRotation.Z); // Z first
+                    shapeRotMat = shapeRotMat.Rotated(Vector3.Right, shapeRotation.X);  // Then X
+                    shapeRotMat = shapeRotMat.Rotated(Vector3.Up, shapeRotation.Y);      // Then Y
+                }
+
+                // Build shape scale transform
+                Transform3D shapeScaleMat = Transform3D.Identity;
+                if (shapeScale != default && shapeScale != Vector3.One)
+                {
+                    shapeScaleMat = shapeScaleMat.Scaled(shapeScale);
+                }
+
+                // Apply shape rotation to starting points before bending, then scale
+                p1 = shapeRotMat * shapeScaleMat * p1;
+                p2 = shapeRotMat * shapeScaleMat * p2;
+                p3 = shapeRotMat * shapeScaleMat * p3;
+                p4 = shapeRotMat * shapeScaleMat * p4;
+                n1 = (shapeRotMat.Basis * shapeScaleMat.Basis * n1).Normalized();
+                n2 = (shapeRotMat.Basis * shapeScaleMat.Basis * n2).Normalized();
+                n3 = (shapeRotMat.Basis * shapeScaleMat.Basis * n3).Normalized();
+                n4 = (shapeRotMat.Basis * shapeScaleMat.Basis * n4).Normalized();
+
+                // Apply initial bend transform to starting points
+                float startP;
+                if (bendStart > 0)
+                    startP = 0.0f;
+                else if (bendEnd < 0)
+                    startP = 1.0f;
                 else
+                    startP = 1.0f - bendEnd / bendSize;
+
+                if (invAngle) startP = 1.0f - startP;
+
+                Vector3 startBendVec = BendHelper.GetBendVector(b.Angle, startP);
+                Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition);
+
+                p1 = startMat * p1;
+                p2 = startMat * p2;
+                p3 = startMat * p3;
+                p4 = startMat * p4;
+                n1 = (startMat.Basis * n1).Normalized();
+                n2 = (startMat.Basis * n2).Normalized();
+                n3 = (startMat.Basis * n3).Normalized();
+                n4 = (startMat.Basis * n4).Normalized();
+
+                // Iterate over segments
+                float segPos = 0.0f;
+                while (true)
                 {
-                    curSegSize = segSize;
-                    if (segPos == 0.0f)
+                    // End cap
+                    if (segPos >= totalSize)
                     {
-                        float fromCoord;
-                        // fromCoord is the shape's minimum in part space (shape_local + shape_position)
+                        // Compute cap normal from the current face orientation
+                        Vector3 capNormal;
                         switch (segAxis)
                         {
-                            case 0: fromCoord = x1 + shapePosition.X; break;
-                            case 1: fromCoord = y1 + shapePosition.Y; break;
-                            default: fromCoord = z1 + shapePosition.Z; break;
+                            case 0: capNormal = Vector3.Right; break;
+                            case 1: capNormal = Vector3.Up; break;
+                            default: capNormal = Vector3.Back; break;
                         }
 
-                        curSegSize -= (fromCoord - bendStart) % segSize;
-                    }
+                        switch (segAxis)
+                        {
+                            case 0:
+                            case 2: // X and Z (FRONT/BACK) use same winding (matches GML X and Y)
+                                // p2, p1, p4, p3 form the end cap quad
+                                AddFaceWithUVs(vertices, normals, uvs, indices,
+                                    p2, p1, p4, p3, capNormal, texEnd1, texEnd2, texEnd3, texEnd4, invert);
+                                break;
+                            default: // Y (UPPER/LOWER) uses Z winding (matches GML Z)
+                                // p4, p3, p2, p1 form the end cap quad
+                                AddFaceWithUVs(vertices, normals, uvs, indices,
+                                    p4, p3, p2, p1, capNormal, texEnd1, texEnd2, texEnd3, texEnd4, invert);
+                                break;
+                        }
 
-                    curSegSize = Math.Min(totalSize - segPos, curSegSize);
-                }
-
-                segPos += Math.Max(curSegSize, 0.005f);
-
-                // Compute next segment points
-                Vector3 np1, np2, np3, np4;
-                Vector3 nn1, nn2, nn3, nn4;
-                float ntexpSide1, ntexpSide2, ntexpSide3;
-
-                switch (segAxis)
-                {
-                    case 0: // X axis
-                    {
-                        np1 = new Vector3(x1 + segPos, y1, z2);
-                        np2 = new Vector3(x1 + segPos, y2, z2);
-                        np3 = new Vector3(x1 + segPos, y2, z1);
-                        np4 = new Vector3(x1 + segPos, y1, z1);
-                        nn1 = new Vector3(0, 1, 0);
-                        nn2 = new Vector3(0, -1, 0);
-                        nn3 = new Vector3(0, 0, 1);
-                        nn4 = new Vector3(0, 0, -1);
-                        float toff = (segPos / totalSize) * texSizeFixX * (textureMirror ? -1 : 1);
-                        ntexpSide1 = texSouth1.X + toff;
-                        ntexpSide2 = texNorth2.X - toff;
-                        ntexpSide3 = texDown4.X + toff;
                         break;
                     }
-                    case 1: // Y axis (UPPER/LOWER): all 4 band faces scroll V
+
+                    // Start cap (only for first segment)
+                    if (segPos == 0.0f)
                     {
-                        np1 = new Vector3(x2, y1 + segPos, z2);
-                        np2 = new Vector3(x1, y1 + segPos, z2);
-                        np3 = new Vector3(x1, y1 + segPos, z1);
-                        np4 = new Vector3(x2, y1 + segPos, z1);
-                        nn1 = new Vector3(1, 0, 0);
-                        nn2 = new Vector3(-1, 0, 0);
-                        nn3 = new Vector3(0, 0, 1);
-                        nn4 = new Vector3(0, 0, -1);
-                        float toff = (segPos / totalSize) * texSizeFixY;
-                        ntexpSide1 = texSouth3.Y - toff; // single V coord for all faces
-                        ntexpSide2 = ntexpSide1;
-                        ntexpSide3 = ntexpSide1;
-                        break;
+                        Vector3 startCapNormal;
+                        switch (segAxis)
+                        {
+                            case 0: startCapNormal = Vector3.Left; break;
+                            case 1: startCapNormal = Vector3.Down; break;
+                            default: startCapNormal = Vector3.Forward; break;
+                        }
+
+                        // p1, p2, p3, p4 form the start cap quad
+                        AddFaceWithUVs(vertices, normals, uvs, indices,
+                            p1, p2, p3, p4, startCapNormal, texStart1, texStart2, texStart3, texStart4, invert);
                     }
-                    default: // Z axis (FRONT/BACK): East/West scroll U, Up/Down scroll V
+
+                    // Determine segment size
+                    float curSegSize;
+                    if (segPos >= bendEnd)
+                        curSegSize = totalSize - segPos;
+                    else if (segPos < bendStart)
+                        curSegSize = Math.Min(totalSize - segPos, bendStart);
+                    else
                     {
-                        np1 = new Vector3(x1, y2, z1 + segPos);
-                        np2 = new Vector3(x2, y2, z1 + segPos);
-                        np3 = new Vector3(x2, y1, z1 + segPos);
-                        np4 = new Vector3(x1, y1, z1 + segPos);
-                        nn1 = new Vector3(1, 0, 0);
-                        nn2 = new Vector3(-1, 0, 0);
-                        nn3 = new Vector3(0, 1, 0);
-                        nn4 = new Vector3(0, -1, 0);
-                        float toff = (segPos / totalSize) * texSizeFixZ;
-                        ntexpSide1 = texEast2.X - toff * (textureMirror ? -1 : 1);
-                        ntexpSide2 = texWest1.X + toff * (textureMirror ? -1 : 1);
-                        ntexpSide3 = texUp1.Y + toff;
-                        break;
+                        curSegSize = segSize;
+                        if (segPos == 0.0f)
+                        {
+                            float fromCoord;
+                            // fromCoord is the shape's minimum in part space (shape_local + shape_position)
+                            switch (segAxis)
+                            {
+                                case 0: fromCoord = x1 + shapePosition.X; break;
+                                case 1: fromCoord = y1 + shapePosition.Y; break;
+                                default: fromCoord = z1 + shapePosition.Z; break;
+                            }
+
+                            curSegSize -= (fromCoord - bendStart) % segSize;
+                        }
+
+                        curSegSize = Math.Min(totalSize - segPos, curSegSize);
                     }
-                }
 
-                // Apply shape rotation to segment vertices before bending, then scale
-                np1 = shapeRotMat * shapeScaleMat * np1;
-                np2 = shapeRotMat * shapeScaleMat * np2;
-                np3 = shapeRotMat * shapeScaleMat * np3;
-                np4 = shapeRotMat * shapeScaleMat * np4;
-                nn1 = (shapeRotMat.Basis * shapeScaleMat.Basis * nn1).Normalized();
-                nn2 = (shapeRotMat.Basis * shapeScaleMat.Basis * nn2).Normalized();
-                nn3 = (shapeRotMat.Basis * shapeScaleMat.Basis * nn3).Normalized();
-                nn4 = (shapeRotMat.Basis * shapeScaleMat.Basis * nn4).Normalized();
+                    segPos += Math.Max(curSegSize, 0.005f);
 
-                // Compute bend weight for this segment
-                float segP;
-                if (segPos < bendStart)
-                    segP = 0.0f;
-                else if (segPos >= bendEnd)
-                    segP = 1.0f;
-                else
-                    segP = (1.0f - (bendEnd - segPos) / bendSize);
+                    // Compute next segment points
+                    Vector3 np1, np2, np3, np4;
+                    Vector3 nn1, nn2, nn3, nn4;
+                    float ntexpSide1, ntexpSide2, ntexpSide3;
 
-                if (invAngle) segP = 1.0f - segP;
+                    switch (segAxis)
+                    {
+                        case 0: // X axis
+                        {
+                            np1 = new Vector3(x1 + segPos, y1, z2);
+                            np2 = new Vector3(x1 + segPos, y2, z2);
+                            np3 = new Vector3(x1 + segPos, y2, z1);
+                            np4 = new Vector3(x1 + segPos, y1, z1);
+                            nn1 = new Vector3(0, 1, 0);
+                            nn2 = new Vector3(0, -1, 0);
+                            nn3 = new Vector3(0, 0, 1);
+                            nn4 = new Vector3(0, 0, -1);
+                            float toff = (segPos / totalSize) * texSizeFixX * (textureMirror ? -1 : 1);
+                            ntexpSide1 = texSouth1.X + toff;
+                            ntexpSide2 = texNorth2.X - toff;
+                            ntexpSide3 = texDown4.X + toff;
+                            break;
+                        }
+                        case 1: // Y axis (UPPER/LOWER): all 4 band faces scroll V
+                        {
+                            np1 = new Vector3(x2, y1 + segPos, z2);
+                            np2 = new Vector3(x1, y1 + segPos, z2);
+                            np3 = new Vector3(x1, y1 + segPos, z1);
+                            np4 = new Vector3(x2, y1 + segPos, z1);
+                            nn1 = new Vector3(1, 0, 0);
+                            nn2 = new Vector3(-1, 0, 0);
+                            nn3 = new Vector3(0, 0, 1);
+                            nn4 = new Vector3(0, 0, -1);
+                            float toff = (segPos / totalSize) * texSizeFixY;
+                            ntexpSide1 = texSouth3.Y - toff; // single V coord for all faces
+                            ntexpSide2 = ntexpSide1;
+                            ntexpSide3 = ntexpSide1;
+                            break;
+                        }
+                        default: // Z axis (FRONT/BACK): East/West scroll U, Up/Down scroll V
+                        {
+                            np1 = new Vector3(x1, y2, z1 + segPos);
+                            np2 = new Vector3(x2, y2, z1 + segPos);
+                            np3 = new Vector3(x2, y1, z1 + segPos);
+                            np4 = new Vector3(x1, y1, z1 + segPos);
+                            nn1 = new Vector3(1, 0, 0);
+                            nn2 = new Vector3(-1, 0, 0);
+                            nn3 = new Vector3(0, 1, 0);
+                            nn4 = new Vector3(0, -1, 0);
+                            float toff = (segPos / totalSize) * texSizeFixZ;
+                            ntexpSide1 = texEast2.X - toff * (textureMirror ? -1 : 1);
+                            ntexpSide2 = texWest1.X + toff * (textureMirror ? -1 : 1);
+                            ntexpSide3 = texUp1.Y + toff;
+                            break;
+                        }
+                    }
 
-                Vector3 segBendVec = BendHelper.GetBendVector(b.Angle, segP);
-                Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition);
+                    // Apply shape rotation to segment vertices before bending, then scale
+                    np1 = shapeRotMat * shapeScaleMat * np1;
+                    np2 = shapeRotMat * shapeScaleMat * np2;
+                    np3 = shapeRotMat * shapeScaleMat * np3;
+                    np4 = shapeRotMat * shapeScaleMat * np4;
+                    nn1 = (shapeRotMat.Basis * shapeScaleMat.Basis * nn1).Normalized();
+                    nn2 = (shapeRotMat.Basis * shapeScaleMat.Basis * nn2).Normalized();
+                    nn3 = (shapeRotMat.Basis * shapeScaleMat.Basis * nn3).Normalized();
+                    nn4 = (shapeRotMat.Basis * shapeScaleMat.Basis * nn4).Normalized();
+
+                    // Compute bend weight for this segment
+                    float segP;
+                    if (segPos < bendStart)
+                        segP = 0.0f;
+                    else if (segPos >= bendEnd)
+                        segP = 1.0f;
+                    else
+                        segP = (1.0f - (bendEnd - segPos) / bendSize);
+
+                    if (invAngle) segP = 1.0f - segP;
+
+                    Vector3 segBendVec = BendHelper.GetBendVector(b.Angle, segP);
+                    Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition);
                 
-                // Apply bend scale correction (anti-pinching)
-                Vector3 scaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, segP, segPos, segBendVec, b);
+                    // Apply bend scale correction (anti-pinching)
+                    Vector3 scaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, segP, segPos, segBendVec, b);
                 
-                // Apply bend transform first, then scale correction
-                np1 = segMat * (np1 + (np1 - shapePosition) * scaleCorrection);
-                np2 = segMat * (np2 + (np2 - shapePosition) * scaleCorrection);
-                np3 = segMat * (np3 + (np3 - shapePosition) * scaleCorrection);
-                np4 = segMat * (np4 + (np4 - shapePosition) * scaleCorrection);
-                nn1 = (segMat.Basis * nn1).Normalized();
-                nn2 = (segMat.Basis * nn2).Normalized();
-                nn3 = (segMat.Basis * nn3).Normalized();
-                nn4 = (segMat.Basis * nn4).Normalized();
+                    // Apply bend transform first, then scale correction
+                    np1 = segMat * (np1 + (np1 - shapePosition) * scaleCorrection);
+                    np2 = segMat * (np2 + (np2 - shapePosition) * scaleCorrection);
+                    np3 = segMat * (np3 + (np3 - shapePosition) * scaleCorrection);
+                    np4 = segMat * (np4 + (np4 - shapePosition) * scaleCorrection);
+                    nn1 = (segMat.Basis * nn1).Normalized();
+                    nn2 = (segMat.Basis * nn2).Normalized();
+                    nn3 = (segMat.Basis * nn3).Normalized();
+                    nn4 = (segMat.Basis * nn4).Normalized();
 
-                // Add surrounding faces for this segment
-                switch (segAxis)
-                {
-                    case 0: // X axis
+                    // Add surrounding faces for this segment
+                    switch (segAxis)
                     {
-                        // South
-                        var t1 = new Vector2(texpSide1, texSouth1.Y);
-                        var t2 = new Vector2(ntexpSide1, texSouth1.Y);
-                        var t3 = new Vector2(ntexpSide1, texSouth3.Y);
-                        var t4 = new Vector2(texpSide1, texSouth3.Y);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, p2, np2, np3, p3, n1, nn1, nn1, n1, t1, t2, t3,
-                            t4, invert);
-                        // North
-                        t1 = new Vector2(ntexpSide2, texNorth1.Y);
-                        t2 = new Vector2(texpSide2, texNorth1.Y);
-                        t3 = new Vector2(texpSide2, texNorth3.Y);
-                        t4 = new Vector2(ntexpSide2, texNorth3.Y);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, np1, p1, p4, np4, nn2, n2, n2, nn2, t1, t2, t3,
-                            t4, invert);
-                        // Up
-                        t1 = new Vector2(texpSide1, texUp1.Y);
-                        t2 = new Vector2(ntexpSide1, texUp1.Y);
-                        t3 = new Vector2(ntexpSide1, texUp3.Y);
-                        t4 = new Vector2(texpSide1, texUp3.Y);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, p1, np1, np2, p2, n3, nn3, nn3, n3, t1, t2, t3,
-                            t4, invert);
-                        // Down
-                        t1 = new Vector2(texpSide3, texDown1.Y);
-                        t2 = new Vector2(ntexpSide3, texDown1.Y);
-                        t3 = new Vector2(ntexpSide3, texDown3.Y);
-                        t4 = new Vector2(texpSide3, texDown3.Y);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, p3, np3, np4, p4, n4, nn4, nn4, n4, t1, t2, t3,
-                            t4, invert);
-                        texpSide1 = ntexpSide1;
-                        texpSide2 = ntexpSide2;
-                        texpSide3 = ntexpSide3;
-                        break;
+                        case 0: // X axis
+                        {
+                            // South
+                            var t1 = new Vector2(texpSide1, texSouth1.Y);
+                            var t2 = new Vector2(ntexpSide1, texSouth1.Y);
+                            var t3 = new Vector2(ntexpSide1, texSouth3.Y);
+                            var t4 = new Vector2(texpSide1, texSouth3.Y);
+                            AddFaceWithUVs(vertices, normals, uvs, indices, p2, np2, np3, p3, n1, nn1, nn1, n1, t1, t2, t3,
+                                t4, invert);
+                            // North
+                            t1 = new Vector2(ntexpSide2, texNorth1.Y);
+                            t2 = new Vector2(texpSide2, texNorth1.Y);
+                            t3 = new Vector2(texpSide2, texNorth3.Y);
+                            t4 = new Vector2(ntexpSide2, texNorth3.Y);
+                            AddFaceWithUVs(vertices, normals, uvs, indices, np1, p1, p4, np4, nn2, n2, n2, nn2, t1, t2, t3,
+                                t4, invert);
+                            // Up
+                            t1 = new Vector2(texpSide1, texUp1.Y);
+                            t2 = new Vector2(ntexpSide1, texUp1.Y);
+                            t3 = new Vector2(ntexpSide1, texUp3.Y);
+                            t4 = new Vector2(texpSide1, texUp3.Y);
+                            AddFaceWithUVs(vertices, normals, uvs, indices, p1, np1, np2, p2, n3, nn3, nn3, n3, t1, t2, t3,
+                                t4, invert);
+                            // Down
+                            t1 = new Vector2(texpSide3, texDown1.Y);
+                            t2 = new Vector2(ntexpSide3, texDown1.Y);
+                            t3 = new Vector2(ntexpSide3, texDown3.Y);
+                            t4 = new Vector2(texpSide3, texDown3.Y);
+                            AddFaceWithUVs(vertices, normals, uvs, indices, p3, np3, np4, p4, n4, nn4, nn4, n4, t1, t2, t3,
+                                t4, invert);
+                            texpSide1 = ntexpSide1;
+                            texpSide2 = ntexpSide2;
+                            texpSide3 = ntexpSide3;
+                            break;
+                        }
+                        case 1: // Y axis (UPPER/LOWER): East/West/South/North all scroll V
+                        {
+                            // East: U fixed from face corners, V slides
+                            var t1 = new Vector2(texEast1.X, ntexpSide1);
+                            var t2 = new Vector2(texEast2.X, ntexpSide1);
+                            var t3 = new Vector2(texEast2.X, texpSide1);
+                            var t4 = new Vector2(texEast1.X, texpSide1);
+                            AddFaceWithUVs(vertices, normals, uvs, indices, np1, p1, p4, np4, nn1, n1, n1, nn1, t1, t2, t3,
+                                t4, invert);
+                            // West: U fixed from face corners, V slides
+                            t1 = new Vector2(texWest1.X, ntexpSide1);
+                            t2 = new Vector2(texWest2.X, ntexpSide1);
+                            t3 = new Vector2(texWest2.X, texpSide1);
+                            t4 = new Vector2(texWest1.X, texpSide1);
+                            AddFaceWithUVs(vertices, normals, uvs, indices, p2, np2, np3, p3, n2, nn2, nn2, n2, t1, t2, t3,
+                                t4, invert);
+                            // South (z=z2 face): U fixed from face corners, V slides
+                            t1 = new Vector2(texSouth1.X, ntexpSide1);
+                            t2 = new Vector2(texSouth2.X, ntexpSide1);
+                            t3 = new Vector2(texSouth2.X, texpSide1);
+                            t4 = new Vector2(texSouth1.X, texpSide1);
+                            AddFaceWithUVs(vertices, normals, uvs, indices, p2, p1, np1, np2, n3, n3, nn3, nn3, t1, t2, t3,
+                                t4, invert);
+                            // North (z=z1 face): U fixed from face corners, V slides
+                            t1 = new Vector2(texNorth1.X, ntexpSide1);
+                            t2 = new Vector2(texNorth2.X, ntexpSide1);
+                            t3 = new Vector2(texNorth2.X, texpSide1);
+                            t4 = new Vector2(texNorth1.X, texpSide1);
+                            AddFaceWithUVs(vertices, normals, uvs, indices, np3, np4, p4, p3, nn4, nn4, n4, n4, t1, t2, t3,
+                                t4, invert);
+                            texpSide1 = ntexpSide1;
+                            break;
+                        }
+                        default: // Z axis (FRONT/BACK): East/West scroll U, Up/Down scroll V
+                        {
+                            // East: U slides, V fixed from face corners
+                            var t1 = new Vector2(ntexpSide1, texEast1.Y);
+                            var t2 = new Vector2(texpSide1, texEast1.Y);
+                            var t3 = new Vector2(texpSide1, texEast3.Y);
+                            var t4 = new Vector2(ntexpSide1, texEast3.Y);
+                            AddFaceWithUVs(vertices, normals, uvs, indices, np2, np3, p3, p2, nn1, n1, t1, t2, t3, t4,
+                                invert);
+                            // West: U slides, V fixed from face corners
+                            t1 = new Vector2(texpSide2, texWest1.Y);
+                            t2 = new Vector2(ntexpSide2, texWest1.Y);
+                            t3 = new Vector2(ntexpSide2, texWest3.Y);
+                            t4 = new Vector2(texpSide2, texWest3.Y);
+                            AddFaceWithUVs(vertices, normals, uvs, indices, np4, np1, p1, p4, nn2, n2, t1, t2, t3, t4,
+                                invert);
+                            // Up (y=y2 face): U fixed from face corners, V slides
+                            t1 = new Vector2(texUp1.X, texpSide3);
+                            t2 = new Vector2(texUp2.X, texpSide3);
+                            t3 = new Vector2(texUp2.X, ntexpSide3);
+                            t4 = new Vector2(texUp1.X, ntexpSide3);
+                            AddFaceWithUVs(vertices, normals, uvs, indices, np1, np2, p2, p1, nn3, n3, t1, t2, t3, t4,
+                                invert);
+                            // Down (y=y1 face): U fixed from face corners, V slides
+                            t1 = new Vector2(texDown1.X, ntexpSide3);
+                            t2 = new Vector2(texDown2.X, ntexpSide3);
+                            t3 = new Vector2(texDown2.X, texpSide3);
+                            t4 = new Vector2(texDown1.X, texpSide3);
+                            AddFaceWithUVs(vertices, normals, uvs, indices, np3, np4, p4, p3, nn4, n4, t1, t2, t3, t4,
+                                invert);
+                            texpSide1 = ntexpSide1;
+                            texpSide2 = ntexpSide2;
+                            texpSide3 = ntexpSide3;
+                            break;
+                        }
                     }
-                    case 1: // Y axis (UPPER/LOWER): East/West/South/North all scroll V
-                    {
-                        // East: U fixed from face corners, V slides
-                        var t1 = new Vector2(texEast1.X, ntexpSide1);
-                        var t2 = new Vector2(texEast2.X, ntexpSide1);
-                        var t3 = new Vector2(texEast2.X, texpSide1);
-                        var t4 = new Vector2(texEast1.X, texpSide1);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, np1, p1, p4, np4, nn1, n1, n1, nn1, t1, t2, t3,
-                            t4, invert);
-                        // West: U fixed from face corners, V slides
-                        t1 = new Vector2(texWest1.X, ntexpSide1);
-                        t2 = new Vector2(texWest2.X, ntexpSide1);
-                        t3 = new Vector2(texWest2.X, texpSide1);
-                        t4 = new Vector2(texWest1.X, texpSide1);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, p2, np2, np3, p3, n2, nn2, nn2, n2, t1, t2, t3,
-                            t4, invert);
-                        // South (z=z2 face): U fixed from face corners, V slides
-                        t1 = new Vector2(texSouth1.X, ntexpSide1);
-                        t2 = new Vector2(texSouth2.X, ntexpSide1);
-                        t3 = new Vector2(texSouth2.X, texpSide1);
-                        t4 = new Vector2(texSouth1.X, texpSide1);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, p2, p1, np1, np2, n3, n3, nn3, nn3, t1, t2, t3,
-                            t4, invert);
-                        // North (z=z1 face): U fixed from face corners, V slides
-                        t1 = new Vector2(texNorth1.X, ntexpSide1);
-                        t2 = new Vector2(texNorth2.X, ntexpSide1);
-                        t3 = new Vector2(texNorth2.X, texpSide1);
-                        t4 = new Vector2(texNorth1.X, texpSide1);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, np3, np4, p4, p3, nn4, nn4, n4, n4, t1, t2, t3,
-                            t4, invert);
-                        texpSide1 = ntexpSide1;
-                        break;
-                    }
-                    default: // Z axis (FRONT/BACK): East/West scroll U, Up/Down scroll V
-                    {
-                        // East: U slides, V fixed from face corners
-                        var t1 = new Vector2(ntexpSide1, texEast1.Y);
-                        var t2 = new Vector2(texpSide1, texEast1.Y);
-                        var t3 = new Vector2(texpSide1, texEast3.Y);
-                        var t4 = new Vector2(ntexpSide1, texEast3.Y);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, np2, np3, p3, p2, nn1, n1, t1, t2, t3, t4,
-                            invert);
-                        // West: U slides, V fixed from face corners
-                        t1 = new Vector2(texpSide2, texWest1.Y);
-                        t2 = new Vector2(ntexpSide2, texWest1.Y);
-                        t3 = new Vector2(ntexpSide2, texWest3.Y);
-                        t4 = new Vector2(texpSide2, texWest3.Y);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, np4, np1, p1, p4, nn2, n2, t1, t2, t3, t4,
-                            invert);
-                        // Up (y=y2 face): U fixed from face corners, V slides
-                        t1 = new Vector2(texUp1.X, texpSide3);
-                        t2 = new Vector2(texUp2.X, texpSide3);
-                        t3 = new Vector2(texUp2.X, ntexpSide3);
-                        t4 = new Vector2(texUp1.X, ntexpSide3);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, np1, np2, p2, p1, nn3, n3, t1, t2, t3, t4,
-                            invert);
-                        // Down (y=y1 face): U fixed from face corners, V slides
-                        t1 = new Vector2(texDown1.X, ntexpSide3);
-                        t2 = new Vector2(texDown2.X, ntexpSide3);
-                        t3 = new Vector2(texDown2.X, texpSide3);
-                        t4 = new Vector2(texDown1.X, texpSide3);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, np3, np4, p4, p3, nn4, n4, t1, t2, t3, t4,
-                            invert);
-                        texpSide1 = ntexpSide1;
-                        texpSide2 = ntexpSide2;
-                        texpSide3 = ntexpSide3;
-                        break;
-                    }
+
+                    p1 = np1;
+                    p2 = np2;
+                    p3 = np3;
+                    p4 = np4;
+                    n1 = nn1;
+                    n2 = nn2;
+                    n3 = nn3;
+                    n4 = nn4;
                 }
-
-                p1 = np1;
-                p2 = np2;
-                p3 = np3;
-                p4 = np4;
-                n1 = nn1;
-                n2 = nn2;
-                n3 = nn3;
-                n4 = nn4;
             }
         }
 
@@ -1579,7 +1557,7 @@ public class MineImatorLoader
         if (textureMirror)
         {
             (tex1, tex2) = (tex2, tex1);
-            (tex3, tex4) = (tex4, tex3);
+            (tex3, _) = (tex4, tex3);
         }
 
         // ── Bend parameters ───────────────────────────────────────────────────
@@ -1603,7 +1581,7 @@ public class MineImatorLoader
 
         // Determine effective bend style (use model override or fall back to project setting)
         BendStyle effectiveStyle = (bendStyle == BendStyle.ProjectDefault)
-            ? simplyRemadeNuxi.Main.ProjectBendStyle
+            ? Main.ProjectBendStyle
             : bendStyle;
 
         // Check for sharp bend: project=blocky AND bend_size was null AND only one axis active
@@ -2054,8 +2032,6 @@ public class MineImatorLoader
 
         float texNormW = 1.0f / texWidth;
         float texNormH = 1.0f / texHeight;
-        float ptexSizeX = (1.0f - 1.0f / 256.0f) / (texWidth / (sizeX / regionW));
-        float ptexSizeY = (1.0f - 1.0f / 256.0f) / (texHeight / (sizeY / regionH));
 
         for (int outer = 0; outer < outerCount; outer++)
         {
@@ -2548,9 +2524,7 @@ public class MineImatorLoader
                     }
 
                     // Center of this pixel box
-                    float centerX = posX + adjustedPixelScaleX / 2.0f;
-                    float centerY = posY + adjustedPixelScaleY / 2.0f;
-                    float centerZ = from.Z + (0.5f * 0.0625f); // Plane is at Z=0 by default
+                    float centerZ = from.Z + 0.5f * 0.0625f; // Plane is at Z=0 by default
 
                     // UV coordinates for this pixel (normalized)
                     float uvX = (texX + 0.5f) / texWidth;
@@ -2870,10 +2844,7 @@ public class MineImatorLoader
         }
 
         // Initialize the loaded textures dictionary if needed
-        if (model.LoadedTextures == null)
-        {
-            model.LoadedTextures = new Dictionary<string, ImageTexture>();
-        }
+        model.LoadedTextures ??= new Dictionary<string, ImageTexture>();
 
         // Load the single texture (backward compatibility)
         if (!string.IsNullOrEmpty(model.Texture))
@@ -2888,11 +2859,8 @@ public class MineImatorLoader
         // Load multiple textures from the dictionary
         if (model.Textures != null && model.Textures.Count > 0)
         {
-            foreach (var kvp in model.Textures)
+            foreach (var (textureName, texturePath) in model.Textures)
             {
-                var textureName = kvp.Key;
-                var texturePath = kvp.Value;
-
                 // Skip if already loaded from single texture
                 if (model.LoadedTextures.ContainsKey(textureName))
                 {
@@ -2900,14 +2868,14 @@ public class MineImatorLoader
                 }
 
                 // Resolve full path
-                string fullPath;
+                string fullPath = null;
                 if (Path.IsPathRooted(texturePath))
                 {
                     fullPath = texturePath;
                 }
                 else
                 {
-                    fullPath = Path.Combine(model.DirectoryPath, texturePath);
+                    if (texturePath != null) fullPath = Path.Combine(model.DirectoryPath, texturePath);
                 }
 
                 if (!File.Exists(fullPath))
@@ -2995,7 +2963,7 @@ public class MineImatorLoader
             }
 
             // Recursively load textures for child parts
-            if (part.Parts != null && part.Parts.Count > 0)
+            if (part.Parts is { Count: > 0 })
             {
                 LoadPartTextures(part.Parts, model);
             }
@@ -3023,27 +2991,27 @@ public class MineImatorLoader
             switch (extension)
             {
                 case ".png":
-                    error = image.LoadPngFromBuffer(fileBytes);
+                    image.LoadPngFromBuffer(fileBytes);
                     break;
                 case ".jpg":
                 case ".jpeg":
-                    error = image.LoadJpgFromBuffer(fileBytes);
+                    image.LoadJpgFromBuffer(fileBytes);
                     break;
                 case ".webp":
-                    error = image.LoadWebpFromBuffer(fileBytes);
+                    image.LoadWebpFromBuffer(fileBytes);
                     break;
                 case ".bmp":
-                    error = image.LoadBmpFromBuffer(fileBytes);
+                    image.LoadBmpFromBuffer(fileBytes);
                     break;
                 case ".tga":
-                    error = image.LoadTgaFromBuffer(fileBytes);
+                    image.LoadTgaFromBuffer(fileBytes);
                     break;
                 default:
                     error = image.LoadPngFromBuffer(fileBytes);
                     if (error != Error.Ok) error = image.LoadJpgFromBuffer(fileBytes);
                     if (error != Error.Ok) error = image.LoadWebpFromBuffer(fileBytes);
                     if (error != Error.Ok) error = image.LoadBmpFromBuffer(fileBytes);
-                    if (error != Error.Ok) error = image.LoadTgaFromBuffer(fileBytes);
+                    if (error != Error.Ok) image.LoadTgaFromBuffer(fileBytes);
                     break;
             }
 
@@ -3191,12 +3159,7 @@ public class MiPart
         }
 
         // Fallback to model's textures
-        if (model != null)
-        {
-            return model.GetTexture(textureName);
-        }
-
-        return null;
+        return model?.GetTexture(textureName);
     }
 }
 
@@ -3295,29 +3258,37 @@ public class SingleOrArrayConverter : JsonConverter<float[]>
 {
     public override float[] Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        if (reader.TokenType == JsonTokenType.Number)
+        switch (reader.TokenType)
         {
-            return new float[] { reader.GetSingle() };
-        }
-        else if (reader.TokenType == JsonTokenType.StartArray)
-        {
-            var list = new List<float>();
-            while (reader.Read())
+            case JsonTokenType.Number:
+                return [reader.GetSingle()];
+            case JsonTokenType.StartArray:
             {
-                if (reader.TokenType == JsonTokenType.EndArray)
-                    break;
-                if (reader.TokenType == JsonTokenType.Number)
-                    list.Add(reader.GetSingle());
+                var list = new List<float>();
+                while (reader.Read())
+                {
+                    if (reader.TokenType == JsonTokenType.EndArray)
+                        break;
+                    if (reader.TokenType == JsonTokenType.Number)
+                        list.Add(reader.GetSingle());
+                }
+
+                return list.ToArray();
             }
-
-            return list.ToArray();
+            case JsonTokenType.Null:
+                return null;
+            case JsonTokenType.None:
+            case JsonTokenType.StartObject:
+            case JsonTokenType.EndObject:
+            case JsonTokenType.EndArray:
+            case JsonTokenType.PropertyName:
+            case JsonTokenType.Comment:
+            case JsonTokenType.String:
+            case JsonTokenType.True:
+            case JsonTokenType.False:
+            default:
+                throw new JsonException($"Unexpected token type {reader.TokenType} when parsing float or float array");
         }
-        else if (reader.TokenType == JsonTokenType.Null)
-        {
-            return null;
-        }
-
-        throw new JsonException($"Unexpected token type {reader.TokenType} when parsing float or float array");
     }
 
     public override void Write(Utf8JsonWriter writer, float[] value, JsonSerializerOptions options)
@@ -3350,36 +3321,41 @@ public class SingleOrArrayBoolConverter : JsonConverter<bool[]>
 {
     public override bool[] Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        if (reader.TokenType == JsonTokenType.True || reader.TokenType == JsonTokenType.False)
+        switch (reader.TokenType)
         {
-            return new bool[] { reader.GetBoolean() };
-        }
-        else if (reader.TokenType == JsonTokenType.Number)
-        {
-            // Handle numeric 0/1 as bool
-            return new bool[] { reader.GetInt32() != 0 };
-        }
-        else if (reader.TokenType == JsonTokenType.StartArray)
-        {
-            var list = new List<bool>();
-            while (reader.Read())
+            case JsonTokenType.True:
+            case JsonTokenType.False:
+                return [reader.GetBoolean()];
+            case JsonTokenType.Number:
+                // Handle numeric 0/1 as bool
+                return [reader.GetInt32() != 0];
+            case JsonTokenType.StartArray:
             {
-                if (reader.TokenType == JsonTokenType.EndArray)
-                    break;
-                if (reader.TokenType == JsonTokenType.True || reader.TokenType == JsonTokenType.False)
-                    list.Add(reader.GetBoolean());
-                else if (reader.TokenType == JsonTokenType.Number)
-                    list.Add(reader.GetInt32() != 0);
+                var list = new List<bool>();
+                while (reader.Read())
+                {
+                    if (reader.TokenType == JsonTokenType.EndArray)
+                        break;
+                    if (reader.TokenType == JsonTokenType.True || reader.TokenType == JsonTokenType.False)
+                        list.Add(reader.GetBoolean());
+                    else if (reader.TokenType == JsonTokenType.Number)
+                        list.Add(reader.GetInt32() != 0);
+                }
+
+                return list.ToArray();
             }
-
-            return list.ToArray();
+            case JsonTokenType.Null:
+                return null;
+            case JsonTokenType.None:
+            case JsonTokenType.StartObject:
+            case JsonTokenType.EndObject:
+            case JsonTokenType.EndArray:
+            case JsonTokenType.PropertyName:
+            case JsonTokenType.Comment:
+            case JsonTokenType.String:
+            default:
+                throw new JsonException($"Unexpected token type {reader.TokenType} when parsing bool or bool array");
         }
-        else if (reader.TokenType == JsonTokenType.Null)
-        {
-            return null;
-        }
-
-        throw new JsonException($"Unexpected token type {reader.TokenType} when parsing bool or bool array");
     }
 
     public override void Write(Utf8JsonWriter writer, bool[] value, JsonSerializerOptions options)
@@ -3586,10 +3562,10 @@ public class MiKeyframe
     /// </summary>
     public float[] GetPosition()
     {
-        if (Position != null && Position.Length >= 3)
+        if (Position is { Length: >= 3 })
             return Position;
         if (PosX.HasValue || PosY.HasValue || PosZ.HasValue)
-            return new float[] { PosX ?? 0, PosZ ?? 0, PosY ?? 0 }; // Swap Y and Z
+            return [PosX ?? 0, PosZ ?? 0, PosY ?? 0]; // Swap Y and Z
         return null;
     }
 
@@ -3598,10 +3574,10 @@ public class MiKeyframe
     /// </summary>
     public float[] GetRotation()
     {
-        if (Rotation != null && Rotation.Length >= 3)
+        if (Rotation is { Length: >= 3 })
             return Rotation;
         if (RotX.HasValue || RotY.HasValue || RotZ.HasValue)
-            return new float[] { RotX ?? 0, RotY ?? 0, RotZ ?? 0 };
+            return [RotX ?? 0, RotY ?? 0, RotZ ?? 0];
         return null;
     }
 
@@ -3610,10 +3586,10 @@ public class MiKeyframe
     /// </summary>
     public float[] GetScale()
     {
-        if (Scale != null && Scale.Length >= 3)
+        if (Scale is { Length: >= 3 })
             return Scale;
         if (SclX.HasValue || SclY.HasValue || SclZ.HasValue)
-            return new float[] { SclX ?? 1, SclY ?? 1, SclZ ?? 1 };
+            return [SclX ?? 1, SclY ?? 1, SclZ ?? 1];
         return null;
     }
 }

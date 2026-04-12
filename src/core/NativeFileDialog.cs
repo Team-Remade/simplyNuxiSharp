@@ -231,7 +231,7 @@ public static class NativeFileDialog
 		public static readonly string[] CSharp = new[] { "*.cs" };
 		public static readonly string[] GodotScene = new[] { "*.tscn", "*.scn" };
 		public static readonly string[] GodotResource = new[] { "*.tres", "*.res" };
-		public static readonly string[] Models = new[] { "*.glb,*.gltf,*.mimodel,*.miobject,*.blend ; 3D Models" };
+		public static readonly string[] Models = new[] { "*.glb,*.gltf,*.mimodel,*.miobject ; 3D Models" };
 		public static readonly string[] All = new[] { "*" };
 	}
 }

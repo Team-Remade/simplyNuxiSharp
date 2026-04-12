@@ -227,7 +227,7 @@ public static class BendHelper
 	/// <summary>
 	/// Computes the bend vector for a given weight (0-1).
 	/// Matches Modelbench's model_shape_get_bend():
-	///   X/Y use easeinoutquint easing, Z uses linear.
+	/// Uses easeinoutquint
 	/// </summary>
 	public static Vector3 GetBendVector(Vector3 angle, float weight)
 	{
@@ -271,27 +271,11 @@ public static class BendHelper
 		if (bendVec.X == 0 && bendVec.Y == 0 && bendVec.Z == 0)
 			return Transform3D.Identity;
 		
-		// Convert from Modelbench Z-up to Godot Y-up coordinate system:
-		// After ParseAxisString/SetVec3Component, bendVec is already in Godot Y-up:
-		//   bendVec.X = JSON "x" (left/right) -> Godot X
-		//   bendVec.Y = JSON "y" (up/down, height) -> Godot Y
-		//   bendVec.Z = JSON "z" (front/back, depth) -> Godot Z
-		float godotX = bendVec.X;
-		float godotY = bendVec.Y;
-		float godotZ = -bendVec.Z;
-		
-		// Build rotation from bend angles (in degrees -> radians).
-		// Modelbench's matrix_build(pos, rotX, rotY, rotZ, scale) applies rotations in YXZ order.
-		// bendVec is already in Godot Y-up coordinates, so direct mapping applies:
-		//   godotX = bendVec.X (left/right), godotY = bendVec.Y (up/down), godotZ = bendVec.Z (front/back)
-		// Rotations are applied as: Y first, then X, then Z.
-		Vector3 godotEuler = new Vector3(godotY, godotX, godotZ);
-		
 		// Apply rotations in YXZ order to match matrix_build
 		var transform = Transform3D.Identity;
-		transform = transform.Rotated(Vector3.Up, Mathf.DegToRad(godotEuler.X));   // Y first
-		transform = transform.Rotated(Vector3.Right, Mathf.DegToRad(godotEuler.Y)); // Then X
-		transform = transform.Rotated(Vector3.Forward, Mathf.DegToRad(godotEuler.Z));  // Then Z
+		transform = transform.Rotated(Vector3.Up, Mathf.DegToRad(bendVec.Y));   // Y first
+		transform = transform.Rotated(Vector3.Right, Mathf.DegToRad(bendVec.X)); // Then X
+		transform = transform.Rotated(Vector3.Back, Mathf.DegToRad(bendVec.Z));  // Then Z
 		
 		// Calculate the bend pivot position in part-local space
 		// This matches the GML logic: pos = bend_offset - shape_position_along_axis

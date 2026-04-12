@@ -210,7 +210,7 @@ public partial class RenderAnimationDialog : Window
 		_videoOptionsContainer.Visible = (index == 0); // Video File
 		
 		// Resize window to fit new content
-		CallDeferred(MethodName.ResetSize);
+		CallDeferred(Window.MethodName.ResetSize);
 	}
 	
 	public void SetResolution(int width, int height)
@@ -280,7 +280,7 @@ public partial class RenderAnimationDialog : Window
 			
 			NativeFileDialog.ShowSaveFile(
 				"Save Rendered Video",
-				new[] { extension },
+				[extension],
 				(success, filePath) =>
 				{
 					if (success && !string.IsNullOrEmpty(filePath))

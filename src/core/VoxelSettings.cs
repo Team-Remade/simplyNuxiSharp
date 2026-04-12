@@ -196,7 +196,7 @@ public partial class VoxelSettings : Node
 	private static ArrayMesh CombineMeshesFromNode(Node3D node, string blockName = null)
 	{
 		// Step 1: Collect all surfaces with their materials and geometry
-		var surfaces = new System.Collections.Generic.List<(
+		var surfaces = new List<(
 			Material mat,
 			Vector3[] verts,
 			Vector3[] normals,
@@ -242,8 +242,8 @@ public partial class VoxelSettings : Node
 		
 		// Step 2: Build a texture atlas from all unique textures
 		// Map each material to its atlas slot index
-		var materialToSlot = new System.Collections.Generic.Dictionary<Material, int>();
-		var slotTextures = new System.Collections.Generic.List<ImageTexture>();
+		var materialToSlot = new Dictionary<Material, int>();
+		var slotTextures = new List<ImageTexture>();
 		
 		foreach (var (mat, _, _, _, _, _) in surfaces)
 		{
@@ -310,10 +310,10 @@ public partial class VoxelSettings : Node
 		atlasMaterial.AlphaScissorThreshold = 0.5f;
 		
 		// Step 4: Combine all surfaces into one, remapping UVs to atlas regions
-		var allVerts = new System.Collections.Generic.List<Vector3>();
-		var allNormals = new System.Collections.Generic.List<Vector3>();
-		var allUVs = new System.Collections.Generic.List<Vector2>();
-		var allIndices = new System.Collections.Generic.List<int>();
+		var allVerts = new List<Vector3>();
+		var allNormals = new List<Vector3>();
+		var allUVs = new List<Vector2>();
+		var allIndices = new List<int>();
 		
 		foreach (var (mat, verts, normals, uvs, indices, transform) in surfaces)
 		{

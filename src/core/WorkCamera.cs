@@ -94,7 +94,6 @@ public partial class WorkCamera : Camera3D
 			if (SelectionManager.Instance?.Gizmo != null)
 			{
 				SelectionManager.Instance.Gizmo.UseLocalSpace = !SelectionManager.Instance.Gizmo.UseLocalSpace;
-				string mode = SelectionManager.Instance.Gizmo.UseLocalSpace ? "Local" : "Global";
 			}
 		}
 
@@ -120,58 +119,61 @@ public partial class WorkCamera : Camera3D
 			}
 		}
 
-		if (@event is InputEventMouseButton { ButtonIndex: MouseButton.WheelUp or MouseButton.WheelDown} eventMouseButton)
+		switch (@event)
 		{
-			int zoomDir = 0;
-			switch (eventMouseButton.ButtonIndex)
+			case InputEventMouseButton { ButtonIndex: MouseButton.WheelUp or MouseButton.WheelDown} eventMouseButton:
 			{
-				case MouseButton.WheelUp:
-					zoomDir = -1;
-					break;
-				case MouseButton.WheelDown:
-					zoomDir = 1;
-					break;
-			}
+				int zoomDir = eventMouseButton.ButtonIndex switch
+				{
+					MouseButton.WheelUp => -1,
+					MouseButton.WheelDown => 1,
+					_ => 0
+				};
 
-			if (IsFlying)
-			{
-				MoveSpeed = Mathf.Clamp(MoveSpeed - zoomDir * 0.5f, MinMoveSpeed, MaxMoveSpeed);
-			}
-			else
-			{
-				OrbitDistance = Mathf.Clamp(OrbitDistance - ZoomSpeed * zoomDir, MinMoveSpeed, MaxMoveSpeed);
-				UpdateOrbitTransform();
-			}
-		}
+				if (IsFlying)
+				{
+					MoveSpeed = Mathf.Clamp(MoveSpeed - zoomDir * 0.5f, MinMoveSpeed, MaxMoveSpeed);
+				}
+				else
+				{
+					OrbitDistance = Mathf.Clamp(OrbitDistance - ZoomSpeed * zoomDir, MinMoveSpeed, MaxMoveSpeed);
+					UpdateOrbitTransform();
+				}
 
-		if (@event is InputEventMouseMotion motionEvent)
-		{
-			if (IsFlying)
+				break;
+			}
+			case InputEventMouseMotion motionEvent when IsFlying:
 			{
 				var rot = Rotation;
 				rot.Y -= motionEvent.Relative.X * MouseSensitivity;
 				rot.X -= motionEvent.Relative.Y * MouseSensitivity;
 				rot.X = Mathf.Clamp(rot.X, Mathf.DegToRad(-90), Mathf.DegToRad(90));
 				Rotation = rot;
+				break;
 			}
-			else if (Input.IsMouseButtonPressed(MouseButton.Left) && !gizmoInteracting)
+			case InputEventMouseMotion motionEvent:
 			{
-				if (!IsDragging)
+				if (Input.IsMouseButtonPressed(MouseButton.Left) && !gizmoInteracting)
 				{
-					var delta = motionEvent.Position - OrbitClickPosition;
-					if (delta.Length() > OrbitDeadzone)
+					if (!IsDragging)
 					{
-						IsDragging = true;
-						Input.SetMouseMode(Input.MouseModeEnum.Captured);
+						var delta = motionEvent.Position - OrbitClickPosition;
+						if (delta.Length() > OrbitDeadzone)
+						{
+							IsDragging = true;
+							Input.SetMouseMode(Input.MouseModeEnum.Captured);
+						}
+					}
+					else
+					{
+						OrbitYaw -= motionEvent.Relative.X * OrbitSensitivity;
+						OrbitPitch += motionEvent.Relative.Y * OrbitSensitivity;
+						OrbitPitch = Mathf.Clamp(OrbitPitch, Mathf.DegToRad(-89), Mathf.DegToRad(89));
+						UpdateOrbitTransform();
 					}
 				}
-				else
-				{
-					OrbitYaw -= motionEvent.Relative.X * OrbitSensitivity;
-					OrbitPitch += motionEvent.Relative.Y * OrbitSensitivity;
-					OrbitPitch = Mathf.Clamp(OrbitPitch, Mathf.DegToRad(-89), Mathf.DegToRad(89));
-					UpdateOrbitTransform();
-				}
+
+				break;
 			}
 		}
 	}

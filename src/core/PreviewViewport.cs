@@ -34,7 +34,6 @@ public partial class PreviewViewport : Control
 	private Vector2 _resizeStartPos = Vector2.Zero;
 	private Vector2 _resizeStartSize = Vector2.Zero;
 	private const float RESIZE_HANDLE_SIZE = 8f;
-	private const float RESIZE_BORDER_WIDTH = 4f;
 
 	private bool rendering;
 	
@@ -61,8 +60,7 @@ public partial class PreviewViewport : Control
 	}
 	
 	private Corner _currentCorner = Corner.BottomRight;
-	private const float SNAP_DISTANCE = 50f;
-	
+
 	private SubViewport _mainViewport;
 	private Camera3D _mainCamera;
 	
@@ -318,28 +316,16 @@ public partial class PreviewViewport : Control
 	private void UpdateCursorForPosition(Vector2 pos)
 	{
 		var edge = GetResizeEdgeAtPosition(pos);
-		CursorShape cursor = CursorShape.Arrow;
-		
-		switch (edge)
+
+		CursorShape cursor = edge switch
 		{
-			case ResizeEdge.Left:
-			case ResizeEdge.Right:
-				cursor = CursorShape.Hsize;
-				break;
-			case ResizeEdge.Top:
-			case ResizeEdge.Bottom:
-				cursor = CursorShape.Vsize;
-				break;
-			case ResizeEdge.TopLeft:
-			case ResizeEdge.BottomRight:
-				cursor = CursorShape.Fdiagsize;
-				break;
-			case ResizeEdge.TopRight:
-			case ResizeEdge.BottomLeft:
-				cursor = CursorShape.Bdiagsize;
-				break;
-		}
-		
+			ResizeEdge.Left or ResizeEdge.Right => CursorShape.Hsize,
+			ResizeEdge.Top or ResizeEdge.Bottom => CursorShape.Vsize,
+			ResizeEdge.TopLeft or ResizeEdge.BottomRight => CursorShape.Fdiagsize,
+			ResizeEdge.TopRight or ResizeEdge.BottomLeft => CursorShape.Bdiagsize,
+			_ => CursorShape.Arrow
+		};
+
 		MouseDefaultCursorShape = cursor;
 	}
 	
@@ -437,6 +423,10 @@ public partial class PreviewViewport : Control
 				if (newSize.Y < minSize.Y)
 					newSize.Y = minSize.Y;
 				break;
+			case ResizeEdge.None:
+				break;
+			default:
+				throw new ArgumentOutOfRangeException();
 		}
 		
 		Position = newPos;
@@ -460,11 +450,11 @@ public partial class PreviewViewport : Control
 		float minDist = Mathf.Min(distBottomRight, Mathf.Min(distBottomLeft, Mathf.Min(distTopRight, distTopLeft)));
 		
 		Corner targetCorner = Corner.BottomRight;
-		if (minDist == distBottomLeft)
+		if (Math.Abs(minDist - distBottomLeft) < 0.1f)
 			targetCorner = Corner.BottomLeft;
-		else if (minDist == distTopRight)
+		else if (Math.Abs(minDist - distTopRight) < 0.1f)
 			targetCorner = Corner.TopRight;
-		else if (minDist == distTopLeft)
+		else if (Math.Abs(minDist - distTopLeft) < 0.1f)
 			targetCorner = Corner.TopLeft;
 		
 		_currentCorner = targetCorner;
@@ -522,7 +512,7 @@ public partial class PreviewViewport : Control
 		var sceneTree = GetTree();
 		var parent = GetParent();
 		
-		if (sceneTree == null || sceneTree.Root == null || parent == null)
+		if (sceneTree?.Root == null || parent == null)
 		{
 			GD.PrintErr("Cannot create dedicated window: Missing required references");
 			return;
@@ -885,24 +875,16 @@ public partial class PreviewViewport : Control
 		var image = PreviewSubViewport.GetTexture().GetImage();
 		
 		// Save the image
-		Error saveResult = Error.Failed;
-		switch (format.ToUpper())
+		Error saveResult = format.ToUpper() switch
 		{
-			case "PNG":
-				saveResult = image.SavePng(filePath);
-				break;
-			case "JPG":
-			case "JPEG":
-				saveResult = image.SaveJpg(filePath);
-				break;
-			case "WEBP":
-				saveResult = image.SaveWebp(filePath);
-				break;
-			case "BMP":
-				saveResult = image.SavePng(filePath); // Godot doesn't have SaveBmp, use PNG
-				break;
-		}
-		
+			"PNG" => image.SavePng(filePath),
+			"JPG" or "JPEG" => image.SaveJpg(filePath),
+			"WEBP" => image.SaveWebp(filePath),
+			"BMP" => image.SavePng(filePath) // Godot doesn't have SaveBmp, use PNG
+			,
+			_ => Error.Failed
+		};
+
 		// Restore original size and update mode
 		PreviewSubViewport.Size = originalSize;
 		PreviewSubViewport.RenderTargetUpdateMode = originalUpdateMode;

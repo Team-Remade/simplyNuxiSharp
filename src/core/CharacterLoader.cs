@@ -116,11 +116,7 @@ public class CharacterLoader
 	/// </summary>
 	public string GetCharacterPath(string characterName)
 	{
-		if (_characterPaths.TryGetValue(characterName, out var path))
-		{
-			return path;
-		}
-		return null;
+		return _characterPaths.GetValueOrDefault(characterName);
 	}
 	
 	/// <summary>
