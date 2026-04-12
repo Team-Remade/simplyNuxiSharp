@@ -1077,15 +1077,15 @@ public class MineImatorLoader
                     texpSide2 = texNorth2.X;
                     texpSide3 = texDown4.X;
                     break;
-                case 1: // Y axis: East/West/Up/Down slide along Y
+                case 1: // Y axis (UPPER/LOWER): all 4 band faces scroll V
+                    texpSide1 = texSouth3.Y;
+                    texpSide2 = texSouth3.Y; // unused for Y axis
+                    texpSide3 = texSouth3.Y; // unused for Y axis
+                    break;
+                default: // Z axis (FRONT/BACK): East/West scroll U, Up/Down scroll V
                     texpSide1 = texEast2.X;
                     texpSide2 = texWest1.X;
                     texpSide3 = texUp1.Y;
-                    break;
-                default: // Z axis: East/West/South/North slide along Z
-                    texpSide1 = texSouth3.Y;
-                    texpSide2 = texSouth3.Y;
-                    texpSide3 = texSouth3.Y;
                     break;
             }
 
@@ -1115,7 +1115,7 @@ public class MineImatorLoader
                     texEnd3 = texEast3;
                     texEnd4 = texEast4;
                     break;
-                case 1: // Y axis
+                case 1: // Y axis (UPPER/LOWER): start cap = Down, end cap = Up
                     p1 = new Vector3(x2, y1, z2);
                     p2 = new Vector3(x1, y1, z2);
                     p3 = new Vector3(x1, y1, z1);
@@ -1124,14 +1124,14 @@ public class MineImatorLoader
                     n2 = new Vector3(-1, 0, 0);
                     n3 = new Vector3(0, 0, 1);
                     n4 = new Vector3(0, 0, -1);
-                    texStart1 = texNorth1;
-                    texStart2 = texNorth2;
-                    texStart3 = texNorth3;
-                    texStart4 = texNorth4;
-                    texEnd1 = texSouth1;
-                    texEnd2 = texSouth2;
-                    texEnd3 = texSouth3;
-                    texEnd4 = texSouth4;
+                    texStart1 = texDown1;
+                    texStart2 = texDown2;
+                    texStart3 = texDown3;
+                    texStart4 = texDown4;
+                    texEnd1 = texUp1;
+                    texEnd2 = texUp2;
+                    texEnd3 = texUp3;
+                    texEnd4 = texUp4;
                     break;
                 default: // Z axis
                     p1 = new Vector3(x1, y2, z1);
@@ -1222,12 +1222,12 @@ public class MineImatorLoader
                     switch (segAxis)
                     {
                         case 0:
-                        case 1:
+                        case 2: // X and Z (FRONT/BACK) use same winding (matches GML X and Y)
                             // p2, p1, p4, p3 form the end cap quad
                             AddFaceWithUVs(vertices, normals, uvs, indices,
                                 p2, p1, p4, p3, capNormal, texEnd1, texEnd2, texEnd3, texEnd4, invert);
                             break;
-                        default:
+                        default: // Y (UPPER/LOWER) uses Z winding (matches GML Z)
                             // p4, p3, p2, p1 form the end cap quad
                             AddFaceWithUVs(vertices, normals, uvs, indices,
                                 p4, p3, p2, p1, capNormal, texEnd1, texEnd2, texEnd3, texEnd4, invert);
@@ -1304,7 +1304,7 @@ public class MineImatorLoader
                         ntexpSide3 = texDown4.X + toff;
                         break;
                     }
-                    case 1: // Y axis
+                    case 1: // Y axis (UPPER/LOWER): all 4 band faces scroll V
                     {
                         np1 = new Vector3(x2, y1 + segPos, z2);
                         np2 = new Vector3(x1, y1 + segPos, z2);
@@ -1315,12 +1315,12 @@ public class MineImatorLoader
                         nn3 = new Vector3(0, 0, 1);
                         nn4 = new Vector3(0, 0, -1);
                         float toff = (segPos / totalSize) * texSizeFixY;
-                        ntexpSide1 = texEast2.X - toff * (textureMirror ? -1 : 1);
-                        ntexpSide2 = texWest1.X + toff * (textureMirror ? -1 : 1);
-                        ntexpSide3 = texUp1.Y + toff;
+                        ntexpSide1 = texSouth3.Y - toff; // single V coord for all faces
+                        ntexpSide2 = ntexpSide1;
+                        ntexpSide3 = ntexpSide1;
                         break;
                     }
-                    default: // Z axis
+                    default: // Z axis (FRONT/BACK): East/West scroll U, Up/Down scroll V
                     {
                         np1 = new Vector3(x1, y2, z1 + segPos);
                         np2 = new Vector3(x2, y2, z1 + segPos);
@@ -1331,9 +1331,9 @@ public class MineImatorLoader
                         nn3 = new Vector3(0, 1, 0);
                         nn4 = new Vector3(0, -1, 0);
                         float toff = (segPos / totalSize) * texSizeFixZ;
-                        ntexpSide1 = texSouth3.Y - toff;
-                        ntexpSide2 = ntexpSide1;
-                        ntexpSide3 = ntexpSide1;
+                        ntexpSide1 = texEast2.X - toff * (textureMirror ? -1 : 1);
+                        ntexpSide2 = texWest1.X + toff * (textureMirror ? -1 : 1);
+                        ntexpSide3 = texUp1.Y + toff;
                         break;
                     }
                 }
@@ -1413,72 +1413,72 @@ public class MineImatorLoader
                         texpSide3 = ntexpSide3;
                         break;
                     }
-                    case 1: // Y axis
+                    case 1: // Y axis (UPPER/LOWER): East/West/South/North all scroll V
                     {
-                        // East
-                        var t1 = new Vector2(ntexpSide1, texEast1.Y);
-                        var t2 = new Vector2(texpSide1, texEast1.Y);
-                        var t3 = new Vector2(texpSide1, texEast3.Y);
-                        var t4 = new Vector2(ntexpSide1, texEast3.Y);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, np1, p1, p4, np4, nn1, n1, n1, nn1, t1, t2, t3,
-                            t4, invert);
-                        // West
-                        t1 = new Vector2(texpSide2, texWest1.Y);
-                        t2 = new Vector2(ntexpSide2, texWest1.Y);
-                        t3 = new Vector2(ntexpSide2, texWest3.Y);
-                        t4 = new Vector2(texpSide2, texWest3.Y);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, p2, np2, np3, p3, n2, nn2, nn2, n2, t1, t2, t3,
-                            t4, invert);
-                        // Up
-                        t1 = new Vector2(texUp1.X, texpSide3);
-                        t2 = new Vector2(texUp2.X, texpSide3);
-                        t3 = new Vector2(texUp2.X, ntexpSide3);
-                        t4 = new Vector2(texUp1.X, ntexpSide3);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, p2, p1, np1, np2, n3, nn3, nn3, n3, t1, t2, t3,
-                            t4, invert);
-                        // Down
-                        t1 = new Vector2(texDown1.X, ntexpSide3);
-                        t2 = new Vector2(texDown2.X, ntexpSide3);
-                        t3 = new Vector2(texDown2.X, texpSide3);
-                        t4 = new Vector2(texDown1.X, texpSide3);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, np3, np4, p4, p3, n4, nn4, t1, t2, t3, t4,
-                            invert);
-                        texpSide1 = ntexpSide1;
-                        texpSide2 = ntexpSide2;
-                        texpSide3 = ntexpSide3;
-                        break;
-                    }
-                    default: // Z axis
-                    {
-                        // East
+                        // East: U fixed from face corners, V slides
                         var t1 = new Vector2(texEast1.X, ntexpSide1);
                         var t2 = new Vector2(texEast2.X, ntexpSide1);
                         var t3 = new Vector2(texEast2.X, texpSide1);
                         var t4 = new Vector2(texEast1.X, texpSide1);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, np2, np3, p3, p2, n1, nn1, t1, t2, t3, t4,
-                            invert);
-                        // West
+                        AddFaceWithUVs(vertices, normals, uvs, indices, np1, p1, p4, np4, nn1, n1, n1, nn1, t1, t2, t3,
+                            t4, invert);
+                        // West: U fixed from face corners, V slides
                         t1 = new Vector2(texWest1.X, ntexpSide1);
                         t2 = new Vector2(texWest2.X, ntexpSide1);
                         t3 = new Vector2(texWest2.X, texpSide1);
                         t4 = new Vector2(texWest1.X, texpSide1);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, np4, np1, p1, p4, n2, nn2, t1, t2, t3, t4,
-                            invert);
-                        // South
+                        AddFaceWithUVs(vertices, normals, uvs, indices, p2, np2, np3, p3, n2, nn2, nn2, n2, t1, t2, t3,
+                            t4, invert);
+                        // South (z=z2 face): U fixed from face corners, V slides
                         t1 = new Vector2(texSouth1.X, ntexpSide1);
                         t2 = new Vector2(texSouth2.X, ntexpSide1);
                         t3 = new Vector2(texSouth2.X, texpSide1);
                         t4 = new Vector2(texSouth1.X, texpSide1);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, np1, np2, p2, p1, n3, nn3, t1, t2, t3, t4,
-                            invert);
-                        // North
+                        AddFaceWithUVs(vertices, normals, uvs, indices, p2, p1, np1, np2, n3, n3, nn3, nn3, t1, t2, t3,
+                            t4, invert);
+                        // North (z=z1 face): U fixed from face corners, V slides
                         t1 = new Vector2(texNorth1.X, ntexpSide1);
                         t2 = new Vector2(texNorth2.X, ntexpSide1);
                         t3 = new Vector2(texNorth2.X, texpSide1);
                         t4 = new Vector2(texNorth1.X, texpSide1);
-                        AddFaceWithUVs(vertices, normals, uvs, indices, np3, np4, p4, p3, n4, nn4, t1, t2, t3, t4,
+                        AddFaceWithUVs(vertices, normals, uvs, indices, np3, np4, p4, p3, nn4, nn4, n4, n4, t1, t2, t3,
+                            t4, invert);
+                        texpSide1 = ntexpSide1;
+                        break;
+                    }
+                    default: // Z axis (FRONT/BACK): East/West scroll U, Up/Down scroll V
+                    {
+                        // East: U slides, V fixed from face corners
+                        var t1 = new Vector2(ntexpSide1, texEast1.Y);
+                        var t2 = new Vector2(texpSide1, texEast1.Y);
+                        var t3 = new Vector2(texpSide1, texEast3.Y);
+                        var t4 = new Vector2(ntexpSide1, texEast3.Y);
+                        AddFaceWithUVs(vertices, normals, uvs, indices, np2, np3, p3, p2, nn1, n1, t1, t2, t3, t4,
+                            invert);
+                        // West: U slides, V fixed from face corners
+                        t1 = new Vector2(texpSide2, texWest1.Y);
+                        t2 = new Vector2(ntexpSide2, texWest1.Y);
+                        t3 = new Vector2(ntexpSide2, texWest3.Y);
+                        t4 = new Vector2(texpSide2, texWest3.Y);
+                        AddFaceWithUVs(vertices, normals, uvs, indices, np4, np1, p1, p4, nn2, n2, t1, t2, t3, t4,
+                            invert);
+                        // Up (y=y2 face): U fixed from face corners, V slides
+                        t1 = new Vector2(texUp1.X, texpSide3);
+                        t2 = new Vector2(texUp2.X, texpSide3);
+                        t3 = new Vector2(texUp2.X, ntexpSide3);
+                        t4 = new Vector2(texUp1.X, ntexpSide3);
+                        AddFaceWithUVs(vertices, normals, uvs, indices, np1, np2, p2, p1, nn3, n3, t1, t2, t3, t4,
+                            invert);
+                        // Down (y=y1 face): U fixed from face corners, V slides
+                        t1 = new Vector2(texDown1.X, ntexpSide3);
+                        t2 = new Vector2(texDown2.X, ntexpSide3);
+                        t3 = new Vector2(texDown2.X, texpSide3);
+                        t4 = new Vector2(texDown1.X, texpSide3);
+                        AddFaceWithUVs(vertices, normals, uvs, indices, np3, np4, p4, p3, nn4, n4, t1, t2, t3, t4,
                             invert);
                         texpSide1 = ntexpSide1;
+                        texpSide2 = ntexpSide2;
+                        texpSide3 = ntexpSide3;
                         break;
                     }
                 }
