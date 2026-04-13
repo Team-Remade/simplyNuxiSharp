@@ -1171,7 +1171,7 @@ public class MineImatorLoader
                 if (invAngle) startP = 1.0f - startP;
 
                 Vector3 startBendVec = BendHelper.GetBendVector(b.Angle, startP);
-                Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition);
+                Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition, shapeScale);
 
                 p1 = startMat * p1;
                 p2 = startMat * p2;
@@ -1343,7 +1343,7 @@ public class MineImatorLoader
                     Vector3 segBendVec = sharpBend
                         ? b.Angle * segP
                         : BendHelper.GetBendVector(b.Angle, segP);
-                    Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition);
+                    Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition, shapeScale);
                 
                     // Apply bend scale correction (anti-pinching)
                     Vector3 scaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, segP, segPos, segBendVec, b);
@@ -1687,7 +1687,7 @@ public class MineImatorLoader
         if (invAngle) startP = 1.0f - startP;
 
         Vector3 startBendVec = BendHelper.GetBendVector(b.Angle, startP);
-        Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition);
+        Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition, shapeScale);
 
         p1 = startMat * p1;
         p2 = startMat * p2;
@@ -1763,7 +1763,7 @@ public class MineImatorLoader
             Vector3 segBendVec = sharpBend
                 ? b.Angle * segP
                 : BendHelper.GetBendVector(b.Angle, segP);
-            Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition);
+            Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition, shapeScale);
             
             // Apply bend scale correction (anti-pinching)
             Vector3 scaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, segP, segPos, segBendVec, b);
@@ -2035,7 +2035,7 @@ public class MineImatorLoader
                 Vector3 bendVec = sharpBend
                     ? b.Angle * segP
                     : BendHelper.GetBendVector(b.Angle, segP);
-                Transform3D mat = BendHelper.GetBendMatrix(b, bendVec, shapePosition);
+                Transform3D mat = BendHelper.GetBendMatrix(b, bendVec, shapePosition, shapeScale);
                 
                 // Apply bend scale correction (anti-pinching)
                 Vector3 scaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, segP, innerPos, bendVec, b);

@@ -273,8 +273,9 @@ public static class BendHelper
 	/// </summary>
 	/// <param name="b">Bend parameters</param>
 	/// <param name="bendVec">Bend angle vector in degrees (Modelbench internal Z-up axes)</param>
-	/// <param name="shapePosition">Shape position in part-local space (Godot units)</param>
-	public static Transform3D GetBendMatrix(BendParams b, Vector3 bendVec, Vector3 shapePosition)
+	/// <param name="shapePosition">Shape position in part-local space (Godot units, pre-shape scale)</param>
+	/// <param name="shapeScale">Shape scale to apply to shapePosition for pivot calculation</param>
+	public static Transform3D GetBendMatrix(BendParams b, Vector3 bendVec, Vector3 shapePosition, Vector3 shapeScale = default)
 	{
 		// If no rotation, return identity
 		if (bendVec.X == 0 && bendVec.Y == 0 && bendVec.Z == 0)
@@ -290,23 +291,31 @@ public static class BendHelper
 		// This matches the GML logic: pos = bend_offset - shape_position_along_axis
 		// In Modelbench Z-up: RIGHT/LEFT=X, FRONT/BACK=Y, UPPER/LOWER=Z
 		// In Godot Y-up: RIGHT/LEFT=X, UPPER/LOWER=Y, FRONT/BACK=Z
+		// Note: shapePosition is pre-shape-scale, so scale it for correct pivot calculation.
+		if (shapeScale == Vector3.Zero)
+			shapeScale = Vector3.One;
+		Vector3 scaledShapePos = new Vector3(
+			shapePosition.X * shapeScale.X,
+			shapePosition.Y * shapeScale.Y,
+			shapePosition.Z * shapeScale.Z
+		);
 		Vector3 pivotPos = Vector3.Zero;
 		switch (b.Part)
 		{
 			case BendPart.Right:
 			case BendPart.Left:
 				// X axis - pivot along X
-				pivotPos.X = b.BendOffset / 16.0f - shapePosition.X;
+				pivotPos.X = b.BendOffset / 16.0f - scaledShapePos.X;
 				break;
 			case BendPart.Front:
 			case BendPart.Back:
 				// Z axis in Godot (depth) - pivot along Z
-				pivotPos.Z = b.BendOffset / 16.0f - shapePosition.Z;
+				pivotPos.Z = b.BendOffset / 16.0f - scaledShapePos.Z;
 				break;
 			case BendPart.Upper:
 			case BendPart.Lower:
 				// Y axis in Godot (height) - pivot along Y
-				pivotPos.Y = b.BendOffset / 16.0f - shapePosition.Y;
+				pivotPos.Y = b.BendOffset / 16.0f - scaledShapePos.Y;
 				break;
 		}
 		
