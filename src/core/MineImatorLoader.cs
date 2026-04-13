@@ -1717,7 +1717,8 @@ public class MineImatorLoader
             startScaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, startP, 0, startBendVec, b);
 
         Vector3 startMatScale = Vector3.One + startScaleCorrection;
-        Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition, shapeScale, startMatScale);
+        Vector3 pivot = from - to;
+        Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, pivot, shapeScale, startMatScale);
 
         p1 = startMat * p1;
         p2 = startMat * p2;
