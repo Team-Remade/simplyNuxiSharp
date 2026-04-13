@@ -212,6 +212,7 @@ public class BoneShapeData
 	public ImageTexture Texture;
 	public Vector3 AccumulatedScale;
 	public BendStyle ModelBendStyle;
+	public float? PartColorAlpha;
 }
 
 /// <summary>
@@ -245,6 +246,9 @@ public partial class BoneSceneObject : SceneObject
 			ApplyAlphaToControlledMesh();
 		}
 	}
+
+	// Color alpha loaded from model (for Mine Imator color_alpha property)
+	public float? ColorAlpha { get; set; }
 
 	// ── Bend data ─────────────────────────────────────────────────────────────
 
@@ -338,7 +342,7 @@ public partial class BoneSceneObject : SceneObject
 			{
 				var meshInstance = loader.CreateShapeMeshPublic(
 					sd.PartName, sd.ShapeIndex, sd.Shape, sd.Model,
-					sd.Texture, sd.AccumulatedScale, effectiveBendParams, sd.ModelBendStyle);
+					sd.Texture, sd.AccumulatedScale, effectiveBendParams, sd.ModelBendStyle, sd.PartColorAlpha);
 				if (meshInstance != null)
 				{
 					AddVisualInstance(meshInstance);
@@ -689,6 +693,16 @@ public partial class BoneSceneObject : SceneObject
 				MaterialSettings = parentBone.MaterialSettings;
 				_hasExplicitMaterialSettings = false;
 			}
+		}
+	}
+
+	public void InheritColorAlphaFromParent()
+	{
+		if (ColorAlpha.HasValue) return; // Already has its own color alpha
+		var parent = GetParent();
+		if (parent is BoneSceneObject parentBone)
+		{
+			ColorAlpha = parentBone.ColorAlpha;
 		}
 	}
 }

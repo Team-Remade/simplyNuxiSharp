@@ -450,7 +450,7 @@ public class MineImatorLoader
                     }
 
                     var meshInstance = CreateShapeMesh(part.Name, shapeIndex, shape, model, shapeTexture,
-                        accumulatedScale, bendParams, _currentCharacter.ModelBendStyle);
+                        accumulatedScale, bendParams, _currentCharacter.ModelBendStyle, part.ColorAlpha);
                     if (meshInstance != null)
                     {
                         // Apply inherited material settings to the mesh's material
@@ -472,6 +472,16 @@ public class MineImatorLoader
                             }
                         }
 
+                        // Apply part's color_alpha after MaterialSettings to override alpha
+                        if (boneObject.ColorAlpha.HasValue && meshInstance.Mesh is ArrayMesh mesh2 && mesh2.GetSurfaceCount() > 0)
+                        {
+                            var material = mesh2.SurfaceGetMaterial(0);
+                            if (material is StandardMaterial3D stdMat)
+                            {
+                                stdMat.AlbedoColor = new Color(stdMat.AlbedoColor.R, stdMat.AlbedoColor.G, stdMat.AlbedoColor.B, boneObject.ColorAlpha.Value);
+                            }
+                        }
+
                         // Add the mesh as a visual child of the BoneSceneObject
                         boneObject.AddVisualInstance(meshInstance);
                         meshInstance.Name = $"{part.Name}_Shape{shapeIndex}";
@@ -486,7 +496,8 @@ public class MineImatorLoader
                         Model = model,
                         Texture = shapeTexture,
                         AccumulatedScale = accumulatedScale,
-                        ModelBendStyle = _currentCharacter.ModelBendStyle
+                        ModelBendStyle = _currentCharacter.ModelBendStyle,
+                        PartColorAlpha = boneObject.ColorAlpha
                     });
 
                     shapeIndex++;
@@ -638,8 +649,14 @@ public class MineImatorLoader
                 boneObject.SetBasePoseRotation(originalRotation);
             }
 
+            // Set color alpha from part
+            boneObject.ColorAlpha = boneData.part.ColorAlpha;
+
             // Inherit material settings from parent bone if not explicitly set
             boneObject.InheritMaterialSettingsFromParent();
+
+            // Inherit color alpha from parent bone if not explicitly set on this bone
+            boneObject.InheritColorAlphaFromParent();
         }
     }
 
@@ -647,8 +664,9 @@ public class MineImatorLoader
     /// Public wrapper for <see cref="CreateShapeMesh"/> used by <see cref="BoneSceneObject.RegenerateMeshes"/>.
     /// </summary>
     public MeshInstance3D CreateShapeMeshPublic(string partName, int shapeIndex, MiShape shape, MiModel model,
-        ImageTexture texture, Vector3 accumulatedParentScale, BendParams? bendParams = null, BendStyle bendStyle = BendStyle.ProjectDefault)
-        => CreateShapeMesh(partName, shapeIndex, shape, model, texture, accumulatedParentScale, bendParams, bendStyle);
+        ImageTexture texture, Vector3 accumulatedParentScale, BendParams? bendParams = null, BendStyle bendStyle = BendStyle.ProjectDefault,
+        float? partColorAlpha = null)
+        => CreateShapeMesh(partName, shapeIndex, shape, model, texture, accumulatedParentScale, bendParams, bendStyle, partColorAlpha);
 
     /// <summary>
     /// Creates a MeshInstance3D for a single shape
@@ -656,8 +674,10 @@ public class MineImatorLoader
     /// <param name="accumulatedParentScale">The product of all ancestor part scales up the hierarchy</param>
     /// <param name="bendParams">Bend parameters from the parent part (null if no bending)</param>
     /// <param name="bendStyle">The bend style setting from the character model</param>
+    /// <param name="partColorAlpha">Optional alpha value from the part's color_alpha property</param>
     private MeshInstance3D CreateShapeMesh(string partName, int shapeIndex, MiShape shape, MiModel model,
-        ImageTexture texture, Vector3 accumulatedParentScale, BendParams? bendParams = null, BendStyle bendStyle = BendStyle.ProjectDefault)
+        ImageTexture texture, Vector3 accumulatedParentScale, BendParams? bendParams = null, BendStyle bendStyle = BendStyle.ProjectDefault,
+        float? partColorAlpha = null)
     {
         if (shape == null || shape.From == null || shape.To == null)
         {
@@ -3225,6 +3245,10 @@ public class MiPart
     public float? LockBend { get; set; }
 
     [JsonPropertyName("locked")] public bool Locked { get; set; }
+
+    [JsonPropertyName("color_alpha")]
+    [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.AllowNamedFloatingPointLiterals)]
+    public float? ColorAlpha { get; set; }
 
     [JsonPropertyName("shapes")] public List<MiShape> Shapes { get; set; }
 
