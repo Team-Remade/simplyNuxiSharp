@@ -380,6 +380,9 @@ public static class BendHelper
 	/// <summary>
 	/// Calculates anti-pinching scale correction for blocky bending.
 	/// Matches Modelbench's model_shape_get_bend_scale() exactly.
+	/// 
+	/// NOTE: The GML version only handled X and Y axes, missing Z axis entirely.
+	/// This C# version correctly handles all three axes (this was a bug in the GML).
 	/// </summary>
 	/// <param name="bendStart">Start position of bend region</param>
 	/// <param name="bendEnd">End position of bend region</param>

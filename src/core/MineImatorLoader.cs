@@ -425,7 +425,6 @@ public class MineImatorLoader
 
             // Store bend params and lock_bend on the bone for later editing
             float lockBend = part.LockBend ?? 1f;
-            GD.Print("Part name: ", part.Name, " - LockBend: ", lockBend);
             boneObject.SetBendParameters(bendParams, lockBend);
 
             if (part.Shapes is { Count: > 0 })
@@ -1171,8 +1170,10 @@ public class MineImatorLoader
 
                 if (invAngle) startP = 1.0f - startP;
 
+                var pivot = to - from;
+
                 Vector3 startBendVec = BendHelper.GetBendVector(b.Angle, startP);
-                Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition);
+                Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, pivot);
 
                 p1 = startMat * p1;
                 p2 = startMat * p2;
@@ -1574,13 +1575,22 @@ public class MineImatorLoader
         // Segment axis in Godot Y-up:
         //   RIGHT/LEFT  → X (0)  [same as blocks]
         //   FRONT/BACK/UPPER/LOWER → Y (1)  [GML uses Z=height, Godot Y=height]
-        int segAxis; // 0=X, 1=Y
+        int segAxis; // 0=X, 1=Y, 2=Z
         switch (b.Part)
         {
             case BendPart.Right:
             case BendPart.Left:
                 segAxis = 0; break;
-            default: // Front, Back, Upper, Lower
+            case BendPart.Upper:
+            case BendPart.Lower:
+                segAxis = 1; break;
+            case BendPart.Front:
+            case BendPart.Back:
+                // NOTE: CreateBentPlaneMesh is designed for planes flat on Z (z=z1).
+                // Front/Back parts would require plane geometry along Z which this function doesn't support.
+                // Using segAxis=1 as fallback (same as UPPER/LOWER).
+                segAxis = 1; break;
+            default:
                 segAxis = 1; break;
         }
 
@@ -1619,18 +1629,15 @@ public class MineImatorLoader
             bendStart = (bendOffset - (shapePosition.X + x1)) - bendSize / 2.0f;
             bendEnd = (bendOffset - (shapePosition.X + x1)) + bendSize / 2.0f;
         }
-        else // Y axis
+        else // Y axis (UPPER/LOWER and Front/Back)
         {
             bendStart = (bendOffset - (shapePosition.Y + y1)) - bendSize / 2.0f;
             bendEnd = (bendOffset - (shapePosition.Y + y1)) + bendSize / 2.0f;
         }
 
         // ── Starting edge points ──────────────────────────────────────────────
-        // The plane is flat on Z (at z1). Normals point along Z (forward/backward).
         // For segAxis=X: left edge (x=x1), two points along Y
-        //   GML: p1=(x1,y1,z2), p2=(x1,y1,z1) → Godot: p1=(x1,y2,z1), p2=(x1,y1,z1)
         // For segAxis=Y: bottom edge (y=y1), two points along X
-        //   GML: p1=(x1,y1,z1), p2=(x2,y1,z1) → Godot: p1=(x1,y1,z1), p2=(x2,y1,z1)
         Vector3 p1, p2;
         float texp1; // sliding UV coordinate
 
@@ -1646,7 +1653,7 @@ public class MineImatorLoader
             // Bottom edge: p1 = bottom-left, p2 = bottom-right
             p1 = new Vector3(x1, y1, z1);
             p2 = new Vector3(x2, y1, z1);
-            texp1 = tex3.Y; // bottom V (slides upward as Y increases)
+            texp1 = tex3.Y;
         }
 
         // Build shape rotation transform to pre-rotate vertices before bending
@@ -1681,8 +1688,10 @@ public class MineImatorLoader
 
         if (invAngle) startP = 1.0f - startP;
 
+        var pivot = from - to;
+
         Vector3 startBendVec = BendHelper.GetBendVector(b.Angle, startP);
-        Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition);
+        Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, pivot);
 
         p1 = startMat * p1;
         p2 = startMat * p2;

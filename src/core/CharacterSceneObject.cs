@@ -254,12 +254,6 @@ public partial class BoneSceneObject : SceneObject
 	/// </summary>
 	public BendParams? BendParameters { get; private set; }
 
-	/// <summary>
-	/// The lock_bend value from the MiPart JSON.
-	/// When > 0 children should inherit the parent's bent-half transform offset.
-	/// </summary>
-	public float LockBend { get; private set; }
-
 	/// <summary>Shape data list used to regenerate meshes when bend angle changes.</summary>
 	private readonly List<BoneShapeData> _shapeDataList = new();
 
@@ -400,12 +394,12 @@ public partial class BoneSceneObject : SceneObject
 	/// follows the end of the bend.</param>
 	public Transform3D GetBentHalfTransform(Vector3 shapePosition)
 	{
-		if (!BendParameters.HasValue || LockBend <= 0f)
+		if (!BendParameters.HasValue)
 			return Transform3D.Identity;
 
 		var b = BendParameters.Value;
 		var effectiveAngle = GetEffectiveBendAngle();
-		var bendVec = BendHelper.GetBendVector(effectiveAngle, LockBend);
+		var bendVec = BendHelper.GetBendVector(effectiveAngle, 1.0f);
 		return BendHelper.GetBendMatrix(b, bendVec, shapePosition);
 	}
 

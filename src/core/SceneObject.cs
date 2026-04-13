@@ -86,6 +86,12 @@ public partial class SceneObject : Node3D
 	public bool InheritScale = true;
 
 	/// <summary>
+	/// When > 0, this object follows the parent's bend transform.
+	/// Set by the importer for parts that should bend with their parent.
+	/// </summary>
+	[Export] public float LockBend = 1f;
+
+	/// <summary>
 	/// When true, this object inherits the parent's visibility (default: true).
 	/// When false, the object's own ObjectVisible property determines visibility
 	/// without considering parent visibility.
@@ -156,7 +162,12 @@ public partial class SceneObject : Node3D
 	/// </summary>
 	private void ApplyInheritanceTransform()
 	{
-		var bendAncestor = GetBendAncestor();
+		BoneSceneObject bendAncestor = null;
+
+		if (LockBend > 0f)
+		{
+			bendAncestor = GetBendAncestor();
+		}
 
 		// If all components are inherited and no bend, use normal Godot parenting (TopLevel = false)
 		if (InheritPosition && InheritRotation && InheritScale && bendAncestor == null)
@@ -242,10 +253,10 @@ public partial class SceneObject : Node3D
 
 	private BoneSceneObject GetBendAncestor()
 	{
-		var parent = GetParent() as Node;
+		var parent = GetParent();
 		// GML: lock_bend defaults to true. When true, the child transforms with the parent's
 		// bent-half transform (LockBend > 0 in C# = locked = apply bend matrix to child).
-		if (parent is BoneSceneObject bone && bone.LockBend > 0f && bone.BendParameters.HasValue)
+		if (parent is BoneSceneObject bone && bone.BendParameters.HasValue)
 		{
 			return bone;
 		}
