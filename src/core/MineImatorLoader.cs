@@ -811,7 +811,6 @@ public class MineImatorLoader
 
         // Texture sizes normalized (with 1/256 pixel fix for rendering artifacts)
         float texSizeX = sizeX / texWidth;
-        float texSizeY = sizeY / texHeight;
         float texSizeZ = sizeZ / texHeight; // Z uses texture height for V coordinate
 
         // Artifact fix: subtract 1/256 pixel to avoid rendering issues
