@@ -234,16 +234,17 @@ public static class BendHelper
 	/// <summary>
 	/// Computes the bend vector for a given weight (0-1).
 	/// Matches Modelbench's model_shape_get_bend():
-	///   X and Y axes use easeinoutquint easing.
-	///   Z axis uses linear weight (no easing).
+	///   GML (Z-up): X=quint, Y(depth)=quint, Z(height)=linear
+	///   Godot (Y-up): X=quint, Y(height)=linear, Z(depth)=quint
 	/// GML: vec3(bend[X] * ease("easeinoutquint", weight), bend[Y] * ease("easeinoutquint", weight), bend[Z] * weight)
+	/// Coordinate mapping: GML Z (height, linear) → Godot Y; GML Y (depth, quint) → Godot Z
 	/// </summary>
 	public static Vector3 GetBendVector(Vector3 angle, float weight)
 	{
 		return new Vector3(
-			angle.X * EaseInOutQuint(weight),
-			angle.Y * EaseInOutQuint(weight),
-			angle.Z * weight   // Z uses linear weighting, matching GML
+			angle.X * EaseInOutQuint(weight),  // X: quint easing (same in both systems)
+			angle.Y * weight,                   // Y (Godot height = GML Z): linear weighting
+			angle.Z * EaseInOutQuint(weight)    // Z (Godot depth = GML Y): quint easing
 		);
 	}
 	
@@ -251,47 +252,51 @@ public static class BendHelper
 	/// Builds the bend transformation matrix for a given bend vector.
 	/// Matches Modelbench's model_part_get_bend_matrix() exactly.
 	///
-	/// The GML applies TWO matrix multiplications:
-	///   mat1 = matrix_build(pos, bend, scale)   → v1 = R_bend * v + pos
-	///   mat2 = matrix_build(-pos, rotation, 1)  → v2 = R_rot * v1 - pos
-	///   Combined: v2 = R_rot * R_bend * v + R_rot * pos - pos
+	/// The GML: matrix_build(pos[X], pos[Y], pos[Z], bend[X], bend[Y], bend[Z], sca[X], sca[Y], sca[Z])
+	/// Which builds: Translate(pos) * RotateYXZ(bend) * Scale(sca)
 	///
-	/// For zero shape rotation (R_rot = I):
-	///   v2 = R_bend * v + pos - pos = R_bend * v
+	/// For shapes (element_type = TYPE_SHAPE):
+	///   mat2 = matrix_build(-pos, rotation, 1) * mat1
+	///   Combined: Translate(-pos) * Rotate(shapeRot) * Translate(pos) * RotateYXZ(bend) * Scale(sca)
 	///
-	/// So the final transform is just a ROTATION AROUND THE ORIGIN (no translation).
-	/// The pos/T values cancel out completely.
+	/// NOTE: Shape rotation is baked into mesh vertices before calling this method,
+	/// so we only compute: Translate(pos) * RotateYXZ(bend) * Scale(sca) * Translate(-pos)
+	/// which is a rotation+scale around the pivot point.
 	///
-	/// IMPORTANT: The bend angles are stored in Modelbench's internal Z-up coordinate system:
-	///   - bend.X = left/right rotation (around Modelbench X axis)
-	///   - bend.Y = front/back rotation (around Modelbench Y axis in Z-up, becomes Godot Z)
-	///   - bend.Z = up/down rotation (around Modelbench Z axis in Z-up, becomes Godot Y)
-	/// We need to remap to Godot's Y-up axes for proper rotation.
-	///
-	/// NOTE: Shape rotation is no longer applied here. It must be baked into the mesh
-	/// vertices before calling this method.
+	/// The bend angles are in the caller's coordinate system (already remapped to Godot Y-up
+	/// by GetBendVector or the caller's linear interpolation).
 	/// </summary>
 	/// <param name="b">Bend parameters</param>
-	/// <param name="bendVec">Bend angle vector in degrees (Modelbench internal Z-up axes)</param>
+	/// <param name="bendVec">Bend angle vector in degrees (already in Godot Y-up coordinates)</param>
 	/// <param name="shapePosition">Shape position in part-local space (Godot units, pre-shape scale)</param>
 	/// <param name="shapeScale">Shape scale to apply to shapePosition for pivot calculation</param>
-	public static Transform3D GetBendMatrix(BendParams b, Vector3 bendVec, Vector3 shapePosition, Vector3 shapeScale = default)
+	/// <param name="matrixScale">Optional scale factor for the matrix (used for blocky bend correction and Z-fighting).
+	/// Matches the GML's sca parameter in model_part_get_bend_matrix.</param>
+	public static Transform3D GetBendMatrix(BendParams b, Vector3 bendVec, Vector3 shapePosition, Vector3 shapeScale = default, Vector3 matrixScale = default)
 	{
-		// If no rotation, return identity
-		if (bendVec.X == 0 && bendVec.Y == 0 && bendVec.Z == 0)
+		// If no rotation and no special scale, return identity
+		if (bendVec.X == 0 && bendVec.Y == 0 && bendVec.Z == 0 &&
+		    (matrixScale == default || matrixScale == Vector3.One))
 			return Transform3D.Identity;
 		
-		// Apply rotations in YXZ order to match matrix_build
-		var transform = Transform3D.Identity;
-		transform = transform.Rotated(Vector3.Up, Mathf.DegToRad(bendVec.Y));   // Y first
-		transform = transform.Rotated(Vector3.Right, Mathf.DegToRad(bendVec.X)); // Then X
-		transform = transform.Rotated(Vector3.Back, Mathf.DegToRad(bendVec.Z));  // Then Z
+		// Default matrix scale to (1,1,1)
+		if (matrixScale == default || matrixScale == Vector3.Zero)
+			matrixScale = Vector3.One;
+		
+		// Build the rotation part: RotateYXZ matching GML's matrix_build rotation order
+		var rotBasis = Basis.Identity;
+		rotBasis = rotBasis.Rotated(Vector3.Up, Mathf.DegToRad(bendVec.Y));    // Y first
+		rotBasis = rotBasis.Rotated(Vector3.Right, Mathf.DegToRad(bendVec.X)); // Then X
+		rotBasis = rotBasis.Rotated(Vector3.Back, Mathf.DegToRad(bendVec.Z));  // Then Z
+		
+		// Apply matrix scale (matching GML's sca parameter in matrix_build)
+		var scaledBasis = rotBasis.Scaled(matrixScale);
 		
 		// Calculate the bend pivot position in part-local space
-		// This matches the GML logic: pos = bend_offset - shape_position_along_axis
+		// This matches the GML logic: pos = bend_offset (along bend axis)
+		// For shapes: pos -= shape_position_along_axis
 		// In Modelbench Z-up: RIGHT/LEFT=X, FRONT/BACK=Y, UPPER/LOWER=Z
 		// In Godot Y-up: RIGHT/LEFT=X, UPPER/LOWER=Y, FRONT/BACK=Z
-		// Note: shapePosition is pre-shape-scale, so scale it for correct pivot calculation.
 		if (shapeScale == Vector3.Zero)
 			shapeScale = Vector3.One;
 		Vector3 scaledShapePos = new Vector3(
@@ -304,29 +309,30 @@ public static class BendHelper
 		{
 			case BendPart.Right:
 			case BendPart.Left:
-				// X axis - pivot along X
 				pivotPos.X = b.BendOffset / 16.0f - scaledShapePos.X;
 				break;
 			case BendPart.Front:
 			case BendPart.Back:
-				// Z axis in Godot (depth) - pivot along Z
 				pivotPos.Z = b.BendOffset / 16.0f - scaledShapePos.Z;
 				break;
 			case BendPart.Upper:
 			case BendPart.Lower:
-				// Y axis in Godot (height) - pivot along Y
 				pivotPos.Y = b.BendOffset / 16.0f - scaledShapePos.Y;
 				break;
 		}
 		
-		// Apply the transformation: translate(pivot) * rotate * translate(-pivot)
-		var translateBack = Transform3D.Identity;
-		translateBack.Origin = -pivotPos;
-		var translateForward = Transform3D.Identity;
-		translateForward.Origin = pivotPos;
+		// GML builds: matrix_build(pos, bend, sca) which is Translate(pos) * Rotate(bend) * Scale(sca)
+		// For shape: matrix_multiply(matrix_build(-pos, shapeRot, 1), mat)
+		//   = Translate(-pos) * Rotate(shapeRot) * Translate(pos) * Rotate(bend) * Scale(sca)
+		// Since shapeRot is pre-baked into vertices, we compute:
+		//   Translate(pos) * Rotate(bend) * Scale(sca) as the "inner" transform,
+		//   then the full transform for a vertex v is: inner * v
+		// But we need it as: translate(pivot) * rotScale * translate(-pivot)
+		// Which expands to: v' = rotScale * (v - pivot) + pivot
+		//                      = rotScale * v + (pivot - rotScale * pivot)
+		var transform = new Transform3D(scaledBasis, pivotPos - scaledBasis * pivotPos);
 		
-		// Final transform: translate(pivot) * rotate * translate(-pivot)
-		return translateForward * transform * translateBack;
+		return transform;
 	}
 	
 	// ── Easing functions ──────────────────────────────────────────────────────
@@ -368,22 +374,25 @@ public static class BendHelper
 	
 	/// <summary>
 	/// Calculates the number of bend segments for a given bend size.
-	/// Matches MineImator's segment count calculation logic.
+	/// Matches Modelbench's model_shape_generate_block.gml line 110:
+	///   detail = (sharpbend ? 2 : max(bendsize, 2))
 	/// </summary>
 	/// <param name="bendSize">Bend size in pixels</param>
+	/// <param name="sharpBend">Whether sharp (blocky) bending is active</param>
 	/// <param name="detail">Optional explicit detail value</param>
-	/// <returns>Number of segments (minimum 1)</returns>
-	public static int CalculateSegmentCount(float bendSize, float? detail = null)
+	/// <returns>Number of segments (minimum 2)</returns>
+	public static float CalculateSegmentCount(float bendSize, bool sharpBend, float? detail = null)
 	{
 		if (detail.HasValue)
 		{
-			return Math.Max(1, (int)Math.Ceiling(detail.Value));
+			return Math.Max(2, detail.Value);
 		}
 		
-		// MineImator default: 1 segment per 2 pixels of bend size
-		// Minimum 1 segment, maximum 16 segments
-		int segments = (int)Math.Ceiling(bendSize / 2.0f);
-		return Math.Clamp(segments, 1, 16);
+		// Modelbench: sharpbend ? 2 : max(bendsize, 2)
+		if (sharpBend)
+			return 2;
+		
+		return Math.Max(bendSize, 2);
 	}
 	
 	/// <summary>
@@ -411,13 +420,15 @@ public static class BendHelper
 			else
 				bendScale = new Vector3((1 - weight) * 2, (1 - weight) * 2, (1 - weight) * 2);
 			
+			// GML only checks for X-only (bend_axis = [true,false,false]) → index 0 (GML X = Godot X)
+			// and Y-only (bend_axis = [false,true,false]) → index 1 (GML Y = depth = Godot Z index 2)
+			// GML Z (height) is never checked — the function returns vec3(0) for Z-only.
 			int bendAxis = -1;
 			if (bendParams.AxisX && !bendParams.AxisY && !bendParams.AxisZ)
-				bendAxis = 0;
-			else if (!bendParams.AxisX && bendParams.AxisY && !bendParams.AxisZ)
-				bendAxis = 1;
+				bendAxis = 0;  // GML X → Godot X (index 0)
 			else if (!bendParams.AxisX && !bendParams.AxisY && bendParams.AxisZ)
-				bendAxis = 2;
+				bendAxis = 2;  // GML Y (depth) → Godot Z (index 2)
+			// Note: Y-only (height) is intentionally NOT handled — matches GML which omits Z-axis
 			
 			if (bendAxis == -1)
 				return Vector3.Zero;

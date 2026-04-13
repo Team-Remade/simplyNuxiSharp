@@ -998,14 +998,15 @@ public class MineImatorLoader
                     ? Main.ProjectBendStyle
                     : bendStyle;
 
-                // Check for sharp bend: project=blocky AND bend_size was null AND only one axis active
-                // sharpbend = app.project_bend_style = "blocky" && bend_size = null &&
-                //   ((bend_axis[X] && !bend_axis[Y] && !bend_axis[Z]) || ...)
-                int activeAxes = (b.AxisX ? 1 : 0) + (b.AxisY ? 1 : 0) + (b.AxisZ ? 1 : 0);
-                bool sharpBend = (effectiveStyle == BendStyle.Blocky) && !b.ExplicitBendSize && (activeAxes == 1);
+                // Check for sharp bend: project=blocky AND bend_size was null AND exactly one of X or Z active (not Y).
+                // GML (Z-up): (bend_axis[X] && !bend_axis[Y] && !bend_axis[Z]) || (!bend_axis[X] && bend_axis[Y] && !bend_axis[Z])
+                // Coordinate mapping: GML X→Godot X, GML Y(depth)→Godot Z, GML Z(height) is NOT included.
+                // So in Godot: X-only or Z-only (not Y-only).
+                bool singleXorZ = (b.AxisX && !b.AxisY && !b.AxisZ) || (!b.AxisX && !b.AxisY && b.AxisZ);
+                bool sharpBend = (effectiveStyle == BendStyle.Blocky) && !b.ExplicitBendSize && singleXorZ;
 
-                // Number of segments: use MineImator calculation logic
-                float detail = BendHelper.CalculateSegmentCount(b.BendSize, b.Detail);
+                // Number of segments: matches GML detail = (sharpbend ? 2 : max(bendsize, 2))
+                float detail = BendHelper.CalculateSegmentCount(b.BendSize, sharpBend, b.Detail);
 
                 // Adjust detail based on shape scale along the bend axis.
                 // When the part is stretched along the bend axis, reduce segment count to maintain visual density.
@@ -1112,7 +1113,8 @@ public class MineImatorLoader
                         texEnd3 = texUp3;
                         texEnd4 = texUp4;
                         break;
-                    default: // Z axis
+                    default: // Z axis (FRONT/BACK) — matches GML segaxis=Y
+                        // GML Y-axis start/end caps: texstart=texnorth, texend=texsouth
                         p1 = new Vector3(x1, y2, z1);
                         p2 = new Vector3(x2, y2, z1);
                         p3 = new Vector3(x2, y1, z1);
@@ -1121,14 +1123,14 @@ public class MineImatorLoader
                         n2 = new Vector3(-1, 0, 0);
                         n3 = new Vector3(0, 1, 0);
                         n4 = new Vector3(0, -1, 0);
-                        texStart1 = texDown1;
-                        texStart2 = texDown2;
-                        texStart3 = texDown3;
-                        texStart4 = texDown4;
-                        texEnd1 = texUp1;
-                        texEnd2 = texUp2;
-                        texEnd3 = texUp3;
-                        texEnd4 = texUp4;
+                        texStart1 = texNorth1;
+                        texStart2 = texNorth2;
+                        texStart3 = texNorth3;
+                        texStart4 = texNorth4;
+                        texEnd1 = texSouth1;
+                        texEnd2 = texSouth2;
+                        texEnd3 = texSouth3;
+                        texEnd4 = texSouth4;
                         break;
                 }
 
@@ -1159,6 +1161,9 @@ public class MineImatorLoader
                 n3 = (shapeRotMat.Basis * shapeScaleMat.Basis * n3).Normalized();
                 n4 = (shapeRotMat.Basis * shapeScaleMat.Basis * n4).Normalized();
 
+                // Z-fighting scale factor (matches GML scalef = 0.005)
+                const float scaleFactor = 0.005f;
+
                 // Apply initial bend transform to starting points
                 float startP;
                 if (bendStart > 0)
@@ -1171,7 +1176,15 @@ public class MineImatorLoader
                 if (invAngle) startP = 1.0f - startP;
 
                 Vector3 startBendVec = BendHelper.GetBendVector(b.Angle, startP);
-                Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition, shapeScale);
+
+                // Compute start scale correction for sharp bending (matches GML lines 206-210)
+                Vector3 startScaleCorrection = Vector3.Zero;
+                if (sharpBend)
+                    startScaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, startP, 0, startBendVec, b);
+
+                // Matrix scale = (1,1,1) + bendScaleCorrection (matches GML vec3_add(vec3(1), startscale))
+                Vector3 startMatScale = Vector3.One + startScaleCorrection;
+                Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition, shapeScale, startMatScale);
 
                 p1 = startMat * p1;
                 p2 = startMat * p2;
@@ -1343,16 +1356,21 @@ public class MineImatorLoader
                     Vector3 segBendVec = sharpBend
                         ? b.Angle * segP
                         : BendHelper.GetBendVector(b.Angle, segP);
-                    Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition, shapeScale);
-                
-                    // Apply bend scale correction (anti-pinching)
-                    Vector3 scaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, segP, segPos, segBendVec, b);
-                
-                    // Apply bend transform first, then scale correction
-                    np1 = segMat * (np1 + (np1 - shapePosition) * scaleCorrection);
-                    np2 = segMat * (np2 + (np2 - shapePosition) * scaleCorrection);
-                    np3 = segMat * (np3 + (np3 - shapePosition) * scaleCorrection);
-                    np4 = segMat * (np4 + (np4 - shapePosition) * scaleCorrection);
+
+                    // Blocky bending scale correction (anti-pinching) passed through matrix
+                    // GML: mat = model_part_get_bend_matrix(id, bendvec, vec3(0), vec3_add(vec3_add(vec3(1), bendscale), vec3(segp * scalef)))
+                    Vector3 segScaleCorrection = Vector3.Zero;
+                    if (sharpBend)
+                        segScaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, segP, segPos, segBendVec, b);
+
+                    // Matrix scale = (1,1,1) + bendScaleCorrection + (segP * scaleFactor) for Z-fighting
+                    Vector3 segMatScale = Vector3.One + segScaleCorrection + new Vector3(segP * scaleFactor, segP * scaleFactor, segP * scaleFactor);
+                    Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition, shapeScale, segMatScale);
+
+                    np1 = segMat * np1;
+                    np2 = segMat * np2;
+                    np3 = segMat * np3;
+                    np4 = segMat * np4;
                     nn1 = (segMat.Basis * nn1).Normalized();
                     nn2 = (segMat.Basis * nn2).Normalized();
                     nn3 = (segMat.Basis * nn3).Normalized();
@@ -1600,13 +1618,14 @@ public class MineImatorLoader
             ? Main.ProjectBendStyle
             : bendStyle;
 
-        // Check for sharp bend: project=blocky AND bend_size was null AND only one axis active
-        // For planes, we check which axis is used based on bend direction
-        int activeAxes = (b.AxisX ? 1 : 0) + (b.AxisY ? 1 : 0) + (b.AxisZ ? 1 : 0);
-        bool sharpBend = (effectiveStyle == BendStyle.Blocky) && !b.ExplicitBendSize && (activeAxes == 1);
+        // Check for sharp bend: project=blocky AND bend_size was null AND X-only or Z-only (not Y-only)
+        // GML: ((bend_axis[X] && !bend_axis[Y] && !bend_axis[Z]) || (!bend_axis[X] && bend_axis[Y] && !bend_axis[Z]))
+        // Mapped to Godot: X-only or Z-only (not Y-only)
+        bool singleXorZ = (b.AxisX && !b.AxisY && !b.AxisZ) || (!b.AxisX && !b.AxisY && b.AxisZ);
+        bool sharpBend = (effectiveStyle == BendStyle.Blocky) && !b.ExplicitBendSize && singleXorZ;
 
-        // Number of segments: sharpbend ? 2 : max(bendsize, 2)
-        float detail = sharpBend ? 2.0f : Math.Max(b.BendSize, 2.0f);
+        // Number of segments: matches GML detail = (sharpbend ? 2 : max(bendsize, 2))
+        float detail = BendHelper.CalculateSegmentCount(b.BendSize, sharpBend, b.Detail);
 
         // Adjust detail based on shape scale along the bend axis.
         // When the part is stretched along the bend axis, reduce segment count to maintain visual density.
@@ -1687,7 +1706,14 @@ public class MineImatorLoader
         if (invAngle) startP = 1.0f - startP;
 
         Vector3 startBendVec = BendHelper.GetBendVector(b.Angle, startP);
-        Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition, shapeScale);
+
+        // Compute start scale correction for sharp bending
+        Vector3 startScaleCorrection = Vector3.Zero;
+        if (sharpBend)
+            startScaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, startP, 0, startBendVec, b);
+
+        Vector3 startMatScale = Vector3.One + startScaleCorrection;
+        Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition, shapeScale, startMatScale);
 
         p1 = startMat * p1;
         p2 = startMat * p2;
@@ -1763,14 +1789,17 @@ public class MineImatorLoader
             Vector3 segBendVec = sharpBend
                 ? b.Angle * segP
                 : BendHelper.GetBendVector(b.Angle, segP);
-            Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition, shapeScale);
-            
-            // Apply bend scale correction (anti-pinching)
-            Vector3 scaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, segP, segPos, segBendVec, b);
-            
-            // Apply bend transform first, then scale correction
-            np1 = segMat * (np1 + (np1 - shapePosition) * scaleCorrection);
-            np2 = segMat * (np2 + (np2 - shapePosition) * scaleCorrection);
+
+            // Blocky bending scale correction (anti-pinching) passed through matrix
+            Vector3 segScaleCorrection = Vector3.Zero;
+            if (sharpBend)
+                segScaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, segP, segPos, segBendVec, b);
+
+            Vector3 segMatScale = Vector3.One + segScaleCorrection;
+            Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition, shapeScale, segMatScale);
+
+            np1 = segMat * np1;
+            np2 = segMat * np2;
             var nn1 = (segMat.Basis * shapeRotMat.Basis * shapeScaleMat.Basis * Vector3.Forward).Normalized();
             var nn2 = (segMat.Basis * shapeRotMat.Basis * shapeScaleMat.Basis * Vector3.Back).Normalized();
 
@@ -1922,13 +1951,13 @@ public class MineImatorLoader
             ? simplyRemadeNuxi.Main.ProjectBendStyle
             : bendStyle;
 
-        // Check for sharp bend: project=blocky AND bend_size was null AND only one axis active
-        int activeAxes = (b.AxisX ? 1 : 0) + (b.AxisY ? 1 : 0) + (b.AxisZ ? 1 : 0);
-        bool sharpBend = (effectiveStyle == BendStyle.Blocky) && !b.ExplicitBendSize && (activeAxes == 1);
+        // Check for sharp bend: project=blocky AND bend_size was null AND X-only or Z-only (not Y-only)
+        bool singleXorZ = (b.AxisX && !b.AxisY && !b.AxisZ) || (!b.AxisX && !b.AxisY && b.AxisZ);
+        bool sharpBend = (effectiveStyle == BendStyle.Blocky) && !b.ExplicitBendSize && singleXorZ;
 
-        // Number of segments: sharpbend ? 2 : max(bendsize, 2)
+        // Number of segments: matches GML detail = (sharpbend ? 2 : max(bendsize, 2))
         int segAxis = bendAlongX ? 0 : 1; // X=0, Y=1
-        float detail = sharpBend ? 2.0f : Math.Max(b.BendSize, 2.0f);
+        float detail = BendHelper.CalculateSegmentCount(b.BendSize, sharpBend, b.Detail);
 
         // Adjust detail based on shape scale along the bend axis.
         // When the part is stretched along the bend axis, reduce segment count to maintain visual density.
@@ -2035,14 +2064,17 @@ public class MineImatorLoader
                 Vector3 bendVec = sharpBend
                     ? b.Angle * segP
                     : BendHelper.GetBendVector(b.Angle, segP);
-                Transform3D mat = BendHelper.GetBendMatrix(b, bendVec, shapePosition, shapeScale);
-                
-                // Apply bend scale correction (anti-pinching)
-                Vector3 scaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, segP, innerPos, bendVec, b);
-                
-                // Apply bend transform first, then scale correction
-                gridBot[outer, inner] = mat * (pBot + (pBot - shapePosition) * scaleCorrection);
-                gridTop[outer, inner] = mat * (pTop + (pTop - shapePosition) * scaleCorrection);
+
+                // Blocky bending scale correction (anti-pinching) passed through matrix
+                Vector3 segScaleCorrection = Vector3.Zero;
+                if (sharpBend)
+                    segScaleCorrection = BendHelper.GetBendScaleCorrection(bendStart, bendEnd, segP, innerPos, bendVec, b);
+
+                Vector3 segMatScale = Vector3.One + segScaleCorrection;
+                Transform3D mat = BendHelper.GetBendMatrix(b, bendVec, shapePosition, shapeScale, segMatScale);
+
+                gridBot[outer, inner] = mat * pBot;
+                gridTop[outer, inner] = mat * pTop;
             }
         }
 
