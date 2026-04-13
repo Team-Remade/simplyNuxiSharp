@@ -62,6 +62,12 @@ public struct BendParams
 	
 	/// <summary>Maximum allowed bend angle per axis (degrees)</summary>
 	public Vector3 DirectionMax;
+
+	/// <summary>
+	/// When true, this part adds its parent's bend angle to its own.
+	/// Matches Modelbench's inherit_bend / INHERIT_BEND.
+	/// </summary>
+	public bool InheritBend;
 }
 
 /// <summary>
@@ -220,7 +226,8 @@ public static class BendHelper
 			InvertY = invertY,
 			InvertZ = invertZ,
 			DirectionMin = dirMin,
-			DirectionMax = dirMax
+			DirectionMax = dirMax,
+			InheritBend = (bend.InheritBend ?? 0f) > 0f
 		};
 	}
 	

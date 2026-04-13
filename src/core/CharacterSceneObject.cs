@@ -304,6 +304,8 @@ public partial class BoneSceneObject : SceneObject
 	/// Rebuilds all mesh instances for this bone using the current bend angle.
 	/// Removes old meshes from the Visual node and creates new ones.
 	/// Also updates children's visual positions to reflect the new bend.
+	/// Also triggers regeneration on child bones whose InheritBend is true,
+	/// so their meshes update when the parent angle changes.
 	/// </summary>
 	public void RegenerateMeshes()
 	{
@@ -322,13 +324,22 @@ public partial class BoneSceneObject : SceneObject
 			node.QueueFree();
 		}
 
+		// Build effective bend params: replace Angle with the inherited-compounded angle.
+		BendParams? effectiveBendParams = null;
+		if (BendParameters.HasValue)
+		{
+			var bp = BendParameters.Value;
+			bp.Angle = GetEffectiveBendAngle();
+			effectiveBendParams = bp;
+		}
+
 		// Recreate meshes using the loader
 		var loader = new MineImatorLoader();
 		foreach (var sd in _shapeDataList)
 		{
 			var meshInstance = loader.CreateShapeMeshPublic(
 				sd.PartName, sd.ShapeIndex, sd.Shape, sd.Model,
-				sd.Texture, sd.AccumulatedScale, BendParameters, sd.ModelBendStyle);
+				sd.Texture, sd.AccumulatedScale, effectiveBendParams, sd.ModelBendStyle);
 			if (meshInstance != null)
 			{
 				AddVisualInstance(meshInstance);
@@ -342,6 +353,33 @@ public partial class BoneSceneObject : SceneObject
 		{
 			descendant.UpdateVisualPosition();
 		}
+
+		// Propagate to child BoneSceneObjects that inherit our bend angle,
+		// so their meshes also update when our angle changes.
+		foreach (var child in GetChildrenObjects())
+		{
+			if (child is BoneSceneObject childBone &&
+				childBone.BendParameters.HasValue &&
+				childBone.BendParameters.Value.InheritBend)
+			{
+				childBone.RegenerateMeshes();
+			}
+		}
+	}
+
+	/// <summary>
+	/// Returns the effective bend angle for this part, adding the parent part's angle
+	/// when InheritBend is true. Matches GML el_update_part.gml lines 122-123:
+	///   if (parent.BEND &amp;&amp; value[BEND] &amp;&amp; value[INHERIT_BEND])
+	///       bend_default_angle += parent.bend_default_angle
+	/// </summary>
+	private Vector3 GetEffectiveBendAngle()
+	{
+		if (!BendParameters.HasValue) return Vector3.Zero;
+		var angle = BendParameters.Value.Angle;
+		if (BendParameters.Value.InheritBend && GetParent() is BoneSceneObject parentBone && parentBone.BendParameters.HasValue)
+			angle += parentBone.GetEffectiveBendAngle();
+		return angle;
 	}
 
 	/// <summary>
@@ -358,7 +396,8 @@ public partial class BoneSceneObject : SceneObject
 			return Transform3D.Identity;
 
 		var b = BendParameters.Value;
-		var bendVec = BendHelper.GetBendVector(b.Angle, LockBend);
+		var effectiveAngle = GetEffectiveBendAngle();
+		var bendVec = BendHelper.GetBendVector(effectiveAngle, LockBend);
 		return BendHelper.GetBendMatrix(b, bendVec, shapePosition);
 	}
 

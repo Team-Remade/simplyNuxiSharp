@@ -243,7 +243,9 @@ public partial class SceneObject : Node3D
 	private BoneSceneObject GetBendAncestor()
 	{
 		var parent = GetParent() as Node;
-		if (parent is BoneSceneObject bone && bone.LockBend == 0f && bone.BendParameters.HasValue)
+		// GML: lock_bend defaults to true. When true, the child transforms with the parent's
+		// bent-half transform (LockBend > 0 in C# = locked = apply bend matrix to child).
+		if (parent is BoneSceneObject bone && bone.LockBend > 0f && bone.BendParameters.HasValue)
 		{
 			return bone;
 		}
