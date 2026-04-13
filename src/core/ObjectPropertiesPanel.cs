@@ -1603,6 +1603,13 @@ public partial class ObjectPropertiesPanel : Panel
 			return;
 		}
 
+		// Ensure MaterialSettings exists and mark as explicit
+		if (_currentObject.MaterialSettings == null)
+		{
+			_currentObject.MaterialSettings = new MaterialSettings();
+		}
+		_currentObject.SetExplicitMaterialSettings();
+		
 		// Update all materials on all surfaces of the object (for non-bone objects)
 		var meshInstances = _currentObject.GetMeshInstancesRecursively(_currentObject.Visual);
 		foreach (var meshInstance in meshInstances)
@@ -1618,11 +1625,17 @@ public partial class ObjectPropertiesPanel : Panel
 					var color = stdMat.AlbedoColor;
 					color.A = alpha;
 					stdMat.AlbedoColor = color;
-					
-					// Don't automatically change transparency mode - let user control it via dropdown
 				}
 			}
 		}
+		
+		// Now update MaterialSettings after applying to meshes
+		var matColor = _currentObject.MaterialSettings.AlbedoColor;
+		matColor.A = alpha;
+		_currentObject.MaterialSettings.AlbedoColor = matColor;
+
+		// Propagate the updated settings to children
+		_currentObject.PropagateMaterialSettingsToChildren();
 
 		// Auto-keyframe when property changes
 		AutoKeyframe("material.alpha");
@@ -1643,14 +1656,24 @@ public partial class ObjectPropertiesPanel : Panel
 	{
 		if (_currentObject == null) return;
 		
-		// Get the selected transparency mode
-		var transparencyMode = (BaseMaterial3D.TransparencyEnum)index;
+		// Get the selected ID using GetItemId which takes the internal index
+		int selectedId = (int)_materialAlphaModeDropdown.GetItemId((int)_materialAlphaModeDropdown.Selected);
+		var transparencyMode = (BaseMaterial3D.TransparencyEnum)selectedId;
 		
-		// Update all materials on all surfaces of the object
+		// Ensure MaterialSettings exists - create if needed
+		if (_currentObject.MaterialSettings == null)
+		{
+			_currentObject.MaterialSettings = new MaterialSettings();
+		}
+		_currentObject.SetExplicitMaterialSettings();
+
+		// Update the MaterialSettings transparency value
+		_currentObject.MaterialSettings.Transparency = transparencyMode;
+
+		// Apply directly to current object's meshes FIRST
 		var meshInstances = _currentObject.GetMeshInstancesRecursively(_currentObject.Visual);
 		foreach (var meshInstance in meshInstances.Where(meshInstance => meshInstance.Mesh != null))
 		{
-			// Apply transparency mode to all surfaces
 			for (int i = 0; i < meshInstance.Mesh.GetSurfaceCount(); i++)
 			{
 				var material = meshInstance.Mesh.SurfaceGetMaterial(i);
@@ -1660,6 +1683,9 @@ public partial class ObjectPropertiesPanel : Panel
 				}
 			}
 		}
+
+		// Propagate the updated settings to children
+		_currentObject.PropagateMaterialSettingsToChildren();
 	}
 
 	private void OnMaterialAlbedoChanged(Color color)
@@ -1735,6 +1761,7 @@ public partial class ObjectPropertiesPanel : Panel
 
 	/// <summary>
 	/// Applies a material property to all surfaces of all mesh instances on the current object.
+	/// Also updates the MaterialSettings for inheritance propagation.
 	/// </summary>
 	private void ApplyMaterialProperty(string propertyName, object value)
 	{
@@ -1746,6 +1773,13 @@ public partial class ObjectPropertiesPanel : Panel
 			case BoneSceneObject:
 				return;
 		}
+
+		// Ensure MaterialSettings exists and mark as explicit
+		if (_currentObject.MaterialSettings == null)
+		{
+			_currentObject.MaterialSettings = new MaterialSettings();
+		}
+		_currentObject.SetExplicitMaterialSettings();
 
 		var meshInstances = _currentObject.GetMeshInstancesRecursively(_currentObject.Visual);
 		foreach (var meshInstance in meshInstances.Where(meshInstance => meshInstance.Mesh != null))
@@ -1761,18 +1795,21 @@ public partial class ObjectPropertiesPanel : Panel
 						if (value is Color color)
 						{
 							stdMat.AlbedoColor = color;
+							_currentObject.MaterialSettings.AlbedoColor = color;
 						}
 						break;
 					case "metallic":
 						if (value is float metallic)
 						{
 							stdMat.Metallic = metallic;
+							_currentObject.MaterialSettings.Metallic = metallic;
 						}
 						break;
 					case "roughness":
 						if (value is float roughness)
 						{
 							stdMat.Roughness = roughness;
+							_currentObject.MaterialSettings.Roughness = roughness;
 						}
 						break;
 					case "normal":
@@ -1780,34 +1817,44 @@ public partial class ObjectPropertiesPanel : Panel
 						{
 							stdMat.NormalEnabled = true;
 							stdMat.NormalTexture = normalTex;
+							_currentObject.MaterialSettings.NormalEnabled = true;
+							_currentObject.MaterialSettings.NormalTexture = normalTex;
 						}
 						else
 						{
 							stdMat.NormalEnabled = false;
 							stdMat.NormalTexture = null;
+							_currentObject.MaterialSettings.NormalEnabled = false;
+							_currentObject.MaterialSettings.NormalTexture = null;
 						}
 						break;
 					case "emission_enabled":
 						if (value is bool enabled)
 						{
 							stdMat.EmissionEnabled = enabled;
+							_currentObject.MaterialSettings.EmissionEnabled = enabled;
 						}
 						break;
 					case "emission_color":
 						if (value is Color emissionColor)
 						{
 							stdMat.Emission = emissionColor;
+							_currentObject.MaterialSettings.EmissionColor = emissionColor;
 						}
 						break;
 					case "emission_energy":
 						if (value is float emissionEnergy)
 						{
 							stdMat.EmissionEnergyMultiplier = emissionEnergy;
+							_currentObject.MaterialSettings.EmissionEnergy = emissionEnergy;
 						}
 						break;
 				}
 			}
 		}
+
+		// Propagate the updated settings to children
+		_currentObject.PropagateMaterialSettingsToChildren();
 	}
 
 	/// <summary>

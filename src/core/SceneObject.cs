@@ -1,7 +1,21 @@
 using System.Collections.Generic;
+using System.Linq;
 using Godot;
 
 namespace simplyRemadeNuxi.core;
+
+public class MaterialSettings
+{
+	public Color AlbedoColor = new Color(1, 1, 1, 1);
+	public float Metallic = 0f;
+	public float Roughness = 0.5f;
+	public bool NormalEnabled = false;
+	public Texture2D NormalTexture = null;
+	public BaseMaterial3D.TransparencyEnum Transparency = BaseMaterial3D.TransparencyEnum.AlphaDepthPrePass;
+	public bool EmissionEnabled = false;
+	public Color EmissionColor = new Color(0, 0, 0, 1);
+	public float EmissionEnergy = 1f;
+}
 
 public partial class SceneObject : Node3D
 {
@@ -37,6 +51,106 @@ public partial class SceneObject : Node3D
 	/// For Items: the texture type ("block" or "item").
 	/// </summary>
 	public string TextureType = "item";
+
+	/// <summary>
+	/// Material settings that can be inherited from parent SceneObjects.
+	/// When null, this object uses its own defaults or explicit material settings.
+	/// </summary>
+	private MaterialSettings _materialSettings;
+	public MaterialSettings MaterialSettings
+	{
+		get => _materialSettings;
+		set
+		{
+			if (_materialSettings != value)
+			{
+				_materialSettings = value;
+				OnMaterialSettingsChanged();
+			}
+		}
+	}
+
+	/// <summary>
+	/// Called when MaterialSettings changes (either directly or via inheritance).
+	/// Propagates the change to all child SceneObjects.
+	/// </summary>
+	private void OnMaterialSettingsChanged()
+	{
+		PropagateMaterialSettingsToChildren();
+	}
+
+	/// <summary>
+	/// Propagates this object's MaterialSettings to all descendant SceneObjects
+	/// that don't have their own explicit MaterialSettings.
+	/// </summary>
+	public void PropagateMaterialSettingsToChildren()
+	{
+		if (_materialSettings == null) return;
+		
+		foreach (var child in GetChildren())
+		{
+			if (child is SceneObject childObj)
+			{
+				if (!childObj._hasExplicitMaterialSettings)
+				{
+					childObj._materialSettings = _materialSettings;
+					childObj.ApplyMaterialSettingsToMeshes();
+					childObj.PropagateMaterialSettingsToChildren();
+				}
+			}
+		}
+	}
+
+	/// <summary>
+	/// Flag indicating whether this object has explicitly set its own MaterialSettings
+	/// (as opposed to inheriting from parent). Children with explicit settings don't get updated.
+	/// </summary>
+	protected bool _hasExplicitMaterialSettings = false;
+
+	/// <summary>
+	/// Marks this object's MaterialSettings as explicitly set (not inherited).
+	/// </summary>
+	public void SetExplicitMaterialSettings()
+	{
+		_hasExplicitMaterialSettings = _materialSettings != null;
+	}
+
+	/// <summary>
+	/// Applies this object's MaterialSettings to all meshes in its Visual hierarchy.
+	/// Skips mesh instances that are part of the picking/bone visual system.
+	/// </summary>
+	public void ApplyMaterialSettingsToMeshes()
+	{
+		if (_materialSettings == null)
+		{
+			return;
+		}
+
+		var meshes = GetMeshInstancesRecursively(Visual);
+		foreach (var meshInstance in meshes.Where(m => m.Mesh != null))
+		{
+			// Skip bone picking visual (layer 2 indicates picking mesh)
+			if ((meshInstance.Layers & 2) != 0)
+				continue;
+
+			for (int i = 0; i < meshInstance.Mesh.GetSurfaceCount(); i++)
+			{
+				var material = meshInstance.Mesh.SurfaceGetMaterial(i);
+				if (material is StandardMaterial3D stdMat)
+				{
+					stdMat.AlbedoColor = _materialSettings.AlbedoColor;
+					stdMat.Metallic = _materialSettings.Metallic;
+					stdMat.Roughness = _materialSettings.Roughness;
+					stdMat.NormalEnabled = _materialSettings.NormalEnabled;
+					stdMat.NormalTexture = _materialSettings.NormalTexture;
+					stdMat.Transparency = _materialSettings.Transparency;
+					stdMat.EmissionEnabled = _materialSettings.EmissionEnabled;
+					stdMat.Emission = _materialSettings.EmissionColor;
+					stdMat.EmissionEnergyMultiplier = _materialSettings.EmissionEnergy;
+				}
+			}
+		}
+	}
 
 	// Keyframe storage for animation
 	// Dictionary key format: "propertyPath" (e.g., "visible", "position.x", "rotation.y")

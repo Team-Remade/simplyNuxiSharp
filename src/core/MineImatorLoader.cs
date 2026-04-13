@@ -403,7 +403,7 @@ public class MineImatorLoader
         CreateBoneSceneObjects(character, skeleton, boneDataList);
 
         // Now add meshes to the BoneSceneObjects
-        foreach (var (part, boneIdx, _, accumulatedParentScale) in boneDataList)
+        foreach (var (part, boneIdx, parentIdx, accumulatedParentScale) in boneDataList)
         {
             string boneName = skeleton.GetBoneName(boneIdx);
             if (!character.BoneObjects.TryGetValue(boneName, out var boneObject))
@@ -438,11 +438,40 @@ public class MineImatorLoader
                     // Get texture for this shape (supports multi-texture)
                     // First check if shape has its own texture, then check part, then fall back to model
                     ImageTexture shapeTexture = GetShapeTexture(shape, part, model);
+                    
+                    // If no shape texture, use inherited from parent parts
+                    if (shapeTexture == null && boneObject.MaterialSettings == null && !string.IsNullOrEmpty(part.Texture))
+                    {
+                        var texturePath = Path.Combine(model.DirectoryPath, part.Texture);
+                        if (File.Exists(texturePath))
+                        {
+                            shapeTexture = LoadTextureFromFile(texturePath);
+                        }
+                    }
 
                     var meshInstance = CreateShapeMesh(part.Name, shapeIndex, shape, model, shapeTexture,
                         accumulatedScale, bendParams, _currentCharacter.ModelBendStyle);
                     if (meshInstance != null)
                     {
+                        // Apply inherited material settings to the mesh's material
+                        if (boneObject.MaterialSettings != null && meshInstance.Mesh is ArrayMesh arrayMesh && arrayMesh.GetSurfaceCount() > 0)
+                        {
+                            var material = arrayMesh.SurfaceGetMaterial(0);
+                            if (material is StandardMaterial3D stdMat)
+                            {
+                                var inherited = boneObject.MaterialSettings;
+                                stdMat.AlbedoColor = inherited.AlbedoColor;
+                                stdMat.Metallic = inherited.Metallic;
+                                stdMat.Roughness = inherited.Roughness;
+                                stdMat.NormalEnabled = inherited.NormalEnabled;
+                                stdMat.NormalTexture = inherited.NormalTexture;
+                                stdMat.Transparency = inherited.Transparency;
+                                stdMat.EmissionEnabled = inherited.EmissionEnabled;
+                                stdMat.Emission = inherited.EmissionColor;
+                                stdMat.EmissionEnergyMultiplier = inherited.EmissionEnergy;
+                            }
+                        }
+
                         // Add the mesh as a visual child of the BoneSceneObject
                         boneObject.AddVisualInstance(meshInstance);
                         meshInstance.Name = $"{part.Name}_Shape{shapeIndex}";
@@ -575,7 +604,7 @@ public class MineImatorLoader
             character.BoneObjects[boneName] = boneObject;
         }
 
-        // Second pass: Build hierarchy and set base pose rotation from original values
+        // Second pass: Build hierarchy, set base pose rotation, and inherit material settings
         for (int i = 0; i < boneCount; i++)
         {
             var boneName = skeleton.GetBoneName(i);
@@ -608,6 +637,9 @@ public class MineImatorLoader
                 );
                 boneObject.SetBasePoseRotation(originalRotation);
             }
+
+            // Inherit material settings from parent bone if not explicitly set
+            boneObject.InheritMaterialSettingsFromParent();
         }
     }
 
@@ -746,7 +778,6 @@ public class MineImatorLoader
             {
                 AlbedoTexture = texture,
                 TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest,
-                // Use backface culling by default, frontface culling when inverted
                 CullMode = BaseMaterial3D.CullModeEnum.Back,
                 Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor,
                 AlphaScissorThreshold = 0.5f

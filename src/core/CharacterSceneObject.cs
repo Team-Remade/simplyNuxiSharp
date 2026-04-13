@@ -675,4 +675,20 @@ public partial class BoneSceneObject : SceneObject
 		}
 		return null;
 	}
+
+	/// <summary>
+	/// Inherits material settings from the parent BoneSceneObject if this bone doesn't have explicit settings.
+	/// </summary>
+	public void InheritMaterialSettingsFromParent()
+	{
+		var parent = GetParent();
+		if (parent is BoneSceneObject parentBone)
+		{
+			if (MaterialSettings == null)
+			{
+				MaterialSettings = parentBone.MaterialSettings;
+				_hasExplicitMaterialSettings = false;
+			}
+		}
+	}
 }
