@@ -720,13 +720,15 @@ public class MineImatorLoader
             {
                 // Bent 2D plane: segmented geometry matching Modelbench's algorithm
                 meshInstance = CreateBentPlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight,
-                    shape.TextureMirror, shape.Invert, inflate, effectiveBend.Value, shapePosition, shapeRotation, shapeScale, bendStyle);
+                    shape.TextureMirror, shape.Invert, inflate, effectiveBend.Value, shapePosition, shapeRotation,
+                    shapeScale, bendStyle, shape.HideFront, shape.HideBack);
             }
             else
             {
                 // Regular 2D plane (no bending)
                 meshInstance = CreatePlaneMesh(from, to, uvU, uvV, sizeX, sizeY, texWidth, texHeight,
-                    shape.TextureMirror, shape.Invert, inflate, shapeRotation, shapeScale);
+                    shape.TextureMirror, shape.Invert, inflate, shapeRotation, shapeScale,
+                    shape.HideFront, shape.HideBack);
             }
         }
         else // "block" or default
@@ -1337,7 +1339,11 @@ public class MineImatorLoader
 
                     if (invAngle) segP = 1.0f - segP;
 
-                    Vector3 segBendVec = BendHelper.GetBendVector(b.Angle, segP);
+                    // For sharp (blocky) bending, use linear weight (bend * segP) instead of eased.
+                    // GML: if (sharpbend) bendvec = vec3_mul(bend, segp)
+                    Vector3 segBendVec = sharpBend
+                        ? b.Angle * segP
+                        : BendHelper.GetBendVector(b.Angle, segP);
                     Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition);
                 
                     // Apply bend scale correction (anti-pinching)
@@ -1517,7 +1523,8 @@ public class MineImatorLoader
     private MeshInstance3D CreateBentPlaneMesh(Vector3 from, Vector3 to, float uvU, float uvV,
         float sizeX, float sizeY, int texWidth, int texHeight,
         bool textureMirror, bool invert, float inflate, BendParams bend, Vector3 shapePosition,
-        Vector3 shapeRotation = default, Vector3 shapeScale = default, BendStyle bendStyle = BendStyle.ProjectDefault)
+        Vector3 shapeRotation = default, Vector3 shapeScale = default, BendStyle bendStyle = BendStyle.ProjectDefault,
+        bool hideFront = false, bool hideBack = false)
     {
         var vertices = new List<Vector3>();
         var normals = new List<Vector3>();
@@ -1692,7 +1699,8 @@ public class MineImatorLoader
             if (segPos >= bendEnd) // Past bend: one big segment to the end
                 curSegSize = totalSize - segPos;
             else if (segPos < bendStart) // Before bend: one segment up to bend start
-                curSegSize = Math.Min(totalSize - segPos, bendStart - segPos);
+                // GML: segsize = min(size[segaxis] - segpos, bendstart) — uses raw bendstart, not bendstart-segpos
+                curSegSize = Math.Min(totalSize - segPos, bendStart);
             else // Within bend: use segSize
             {
                 curSegSize = segSize;
@@ -1745,7 +1753,11 @@ public class MineImatorLoader
 
             if (invAngle) segP = 1.0f - segP;
 
-            Vector3 segBendVec = BendHelper.GetBendVector(b.Angle, segP);
+            // For sharp (blocky) bending, use linear weight (bend * segP) instead of eased.
+            // GML: if (sharpbend) bendvec = vec3_mul(bend, segp)
+            Vector3 segBendVec = sharpBend
+                ? b.Angle * segP
+                : BendHelper.GetBendVector(b.Angle, segP);
             Transform3D segMat = BendHelper.GetBendMatrix(b, segBendVec, shapePosition);
             
             // Apply bend scale correction (anti-pinching)
@@ -1773,16 +1785,16 @@ public class MineImatorLoader
                 t4 = new Vector2(texp1, tex3.Y);
 
                 // Front face (normal toward -Z / Vector3.Forward)
-                // GML: vbuffer_add_triangle(p1, np1, np2, t1, t2, t3, ...)
-                //      vbuffer_add_triangle(np2, p2, p1, t3, t4, t1, ...)
-                AddFaceWithUVs(vertices, normals, uvs, indices,
-                    p1, np1, np2, p2, n1, nn1, nn1, n1, t1, t2, t3, t4, invert);
+                // GML: if (!hide_front) { vbuffer_add_triangle(p1, np1, np2, ...) ... }
+                if (!false)
+                    AddFaceWithUVs(vertices, normals, uvs, indices,
+                        p1, np1, np2, p2, n1, nn1, nn1, n1, t1, t2, t3, t4, invert);
 
                 // Back face (normal toward +Z / Vector3.Back)
-                // GML: vbuffer_add_triangle(np1, p1, np2, t2, t1, t3, ...)
-                //      vbuffer_add_triangle(p2, np2, p1, t4, t3, t1, ...)
-                AddFaceWithUVs(vertices, normals, uvs, indices,
-                    np1, p1, p2, np2, nn2, n2, n2, nn2, t2, t1, t4, t3, invert);
+                // GML: if (!hide_back) { vbuffer_add_triangle(np1, p1, np2, ...) ... }
+                if (!false)
+                    AddFaceWithUVs(vertices, normals, uvs, indices,
+                        np1, p1, p2, np2, nn2, n2, n2, nn2, t2, t1, t4, t3, invert);
             }
             else
             {
@@ -1794,16 +1806,16 @@ public class MineImatorLoader
                 t4 = new Vector2(tex1.X, texp1);
 
                 // Front face
-                // GML: vbuffer_add_triangle(np1, np2, p2, t1, t2, t3, ...)
-                //      vbuffer_add_triangle(p2, p1, np1, t3, t4, t1, ...)
-                AddFaceWithUVs(vertices, normals, uvs, indices,
-                    np1, np2, p2, p1, nn1, nn1, n1, n1, t1, t2, t3, t4, invert);
+                // GML: if (!hide_front) { vbuffer_add_triangle(np1, np2, p2, ...) ... }
+                if (!false)
+                    AddFaceWithUVs(vertices, normals, uvs, indices,
+                        np1, np2, p2, p1, nn1, nn1, n1, n1, t1, t2, t3, t4, invert);
 
                 // Back face
-                // GML: vbuffer_add_triangle(np2, np1, p2, t2, t1, t3, ...)
-                //      vbuffer_add_triangle(p1, p2, np1, t4, t3, t1, ...)
-                AddFaceWithUVs(vertices, normals, uvs, indices,
-                    np2, np1, p1, p2, nn2, nn2, n2, n2, t2, t1, t4, t3, invert);
+                // GML: if (!hide_back) { vbuffer_add_triangle(np2, np1, p2, ...) ... }
+                if (!false)
+                    AddFaceWithUVs(vertices, normals, uvs, indices,
+                        np2, np1, p1, p2, nn2, nn2, n2, n2, t2, t1, t4, t3, invert);
             }
 
             p1 = np1;
@@ -2013,7 +2025,11 @@ public class MineImatorLoader
 
                 if (invAngle) segP = 1.0f - segP;
 
-                Vector3 bendVec = BendHelper.GetBendVector(b.Angle, segP);
+                // For sharp (blocky) bending, use linear weight (bend * segP) instead of eased.
+                // GML: if (sharpbend) bendvec = vec3_mul(bend, segp)
+                Vector3 bendVec = sharpBend
+                    ? b.Angle * segP
+                    : BendHelper.GetBendVector(b.Angle, segP);
                 Transform3D mat = BendHelper.GetBendMatrix(b, bendVec, shapePosition);
                 
                 // Apply bend scale correction (anti-pinching)
@@ -2221,7 +2237,8 @@ public class MineImatorLoader
     /// <param name="shapeScale">The shape's scale, applied to vertices</param>
     private MeshInstance3D CreatePlaneMesh(Vector3 from, Vector3 to, float uvU, float uvV,
         float sizeX, float sizeY, int texWidth, int texHeight,
-        bool textureMirror, bool invert, float inflate = 0.0f, Vector3 shapeRotation = default, Vector3 shapeScale = default)
+        bool textureMirror, bool invert, float inflate = 0.0f, Vector3 shapeRotation = default,
+        Vector3 shapeScale = default, bool hideFront = false, bool hideBack = false)
     {
         var vertices = new List<Vector3>();
         var normals = new List<Vector3>();
@@ -2296,81 +2313,88 @@ public class MineImatorLoader
         Vector3 Rn(Vector3 n) => (shapeRotMat.Basis * shapeScaleMat.Basis * n).Normalized();
 
         // Front face (at min.Z, normal pointing backward)
-        int baseVertex = vertices.Count;
-
-        vertices.Add(Rv(new Vector3(min.X, min.Y, min.Z)));
-        vertices.Add(Rv(new Vector3(max.X, min.Y, min.Z)));
-        vertices.Add(Rv(new Vector3(max.X, max.Y, min.Z)));
-        vertices.Add(Rv(new Vector3(min.X, max.Y, min.Z)));
-
-        var backNormal = Rn(Vector3.Back);
-        normals.Add(backNormal);
-        normals.Add(backNormal);
-        normals.Add(backNormal);
-        normals.Add(backNormal);
-
-        // UV mapping: tex1=bottom-left, tex2=bottom-right, tex3=top-right, tex4=top-left
-        // When inverted, flip UV coordinates horizontally to mirror the texture
-        if (invert)
+        // Matches GML: if (!hide_front) { add front face }
+        if (!hideFront)
         {
-            uvs.Add(tex3);
-            uvs.Add(tex4);
-            uvs.Add(tex1);
-            uvs.Add(tex2);
-        }
-        else
-        {
-            uvs.Add(tex4);
-            uvs.Add(tex3);
-            uvs.Add(tex2);
-            uvs.Add(tex1);
-        }
+            int baseVertex = vertices.Count;
 
-        // Front face indices (counter-clockwise winding for front face)
-        indices.Add(baseVertex + 0);
-        indices.Add(baseVertex + 2);
-        indices.Add(baseVertex + 1);
-        indices.Add(baseVertex + 0);
-        indices.Add(baseVertex + 3);
-        indices.Add(baseVertex + 2);
+            vertices.Add(Rv(new Vector3(min.X, min.Y, min.Z)));
+            vertices.Add(Rv(new Vector3(max.X, min.Y, min.Z)));
+            vertices.Add(Rv(new Vector3(max.X, max.Y, min.Z)));
+            vertices.Add(Rv(new Vector3(min.X, max.Y, min.Z)));
+
+            var backNormal = Rn(Vector3.Back);
+            normals.Add(backNormal);
+            normals.Add(backNormal);
+            normals.Add(backNormal);
+            normals.Add(backNormal);
+
+            // UV mapping: tex1=bottom-left, tex2=bottom-right, tex3=top-right, tex4=top-left
+            if (invert)
+            {
+                uvs.Add(tex3);
+                uvs.Add(tex4);
+                uvs.Add(tex1);
+                uvs.Add(tex2);
+            }
+            else
+            {
+                uvs.Add(tex4);
+                uvs.Add(tex3);
+                uvs.Add(tex2);
+                uvs.Add(tex1);
+            }
+
+            // Front face indices (counter-clockwise winding)
+            indices.Add(baseVertex + 0);
+            indices.Add(baseVertex + 2);
+            indices.Add(baseVertex + 1);
+            indices.Add(baseVertex + 0);
+            indices.Add(baseVertex + 3);
+            indices.Add(baseVertex + 2);
+        }
 
         // Back face (at max.Z, normal pointing forward) - for two-sided rendering
-        baseVertex = vertices.Count;
-
-        vertices.Add(Rv(new Vector3(min.X, min.Y, max.Z)));
-        vertices.Add(Rv(new Vector3(max.X, min.Y, max.Z)));
-        vertices.Add(Rv(new Vector3(max.X, max.Y, max.Z)));
-        vertices.Add(Rv(new Vector3(min.X, max.Y, max.Z)));
-
-        var forwardNormal = Rn(Vector3.Forward);
-        normals.Add(forwardNormal);
-        normals.Add(forwardNormal);
-        normals.Add(forwardNormal);
-        normals.Add(forwardNormal);
-
-        // UV mapping for back face (same orientation, but also flip when inverted for consistency)
-        if (invert)
+        // Matches GML: if (!hide_back) { add back face }
+        if (!hideBack)
         {
-            uvs.Add(tex3);
-            uvs.Add(tex4);
-            uvs.Add(tex1);
-            uvs.Add(tex2);
-        }
-        else
-        {
-            uvs.Add(tex4);
-            uvs.Add(tex3);
-            uvs.Add(tex2);
-            uvs.Add(tex1);
-        }
+            int baseVertex = vertices.Count;
 
-        // Back face indices - reverse winding from front face (clockwise for back face)
-        indices.Add(baseVertex + 0);
-        indices.Add(baseVertex + 1);
-        indices.Add(baseVertex + 2);
-        indices.Add(baseVertex + 0);
-        indices.Add(baseVertex + 2);
-        indices.Add(baseVertex + 3);
+            vertices.Add(Rv(new Vector3(min.X, min.Y, max.Z)));
+            vertices.Add(Rv(new Vector3(max.X, min.Y, max.Z)));
+            vertices.Add(Rv(new Vector3(max.X, max.Y, max.Z)));
+            vertices.Add(Rv(new Vector3(min.X, max.Y, max.Z)));
+
+            var forwardNormal = Rn(Vector3.Forward);
+            normals.Add(forwardNormal);
+            normals.Add(forwardNormal);
+            normals.Add(forwardNormal);
+            normals.Add(forwardNormal);
+
+            // UV mapping for back face
+            if (invert)
+            {
+                uvs.Add(tex3);
+                uvs.Add(tex4);
+                uvs.Add(tex1);
+                uvs.Add(tex2);
+            }
+            else
+            {
+                uvs.Add(tex4);
+                uvs.Add(tex3);
+                uvs.Add(tex2);
+                uvs.Add(tex1);
+            }
+
+            // Back face indices - reverse winding from front face
+            indices.Add(baseVertex + 0);
+            indices.Add(baseVertex + 1);
+            indices.Add(baseVertex + 2);
+            indices.Add(baseVertex + 0);
+            indices.Add(baseVertex + 2);
+            indices.Add(baseVertex + 3);
+        }
 
         // Create the mesh
         var arrays = new Godot.Collections.Array();
@@ -3204,6 +3228,20 @@ public class MiShape
     /// </summary>
     [JsonPropertyName("bend")]
     public bool Bend { get; set; } = true;
+
+    /// <summary>
+    /// When true, the front face of a plane shape is not rendered.
+    /// Matches Modelbench's hide_front flag (used for inner/back surfaces).
+    /// </summary>
+    [JsonPropertyName("hide_front")]
+    public bool HideFront { get; set; } = false;
+
+    /// <summary>
+    /// When true, the back face of a plane shape is not rendered.
+    /// Matches Modelbench's hide_back flag (used for outer/front surfaces).
+    /// </summary>
+    [JsonPropertyName("hide_back")]
+    public bool HideBack { get; set; } = false;
 }
 
 /// <summary>

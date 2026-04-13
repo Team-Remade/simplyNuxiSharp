@@ -234,14 +234,16 @@ public static class BendHelper
 	/// <summary>
 	/// Computes the bend vector for a given weight (0-1).
 	/// Matches Modelbench's model_shape_get_bend():
-	/// Uses easeinoutquint
+	///   X and Y axes use easeinoutquint easing.
+	///   Z axis uses linear weight (no easing).
+	/// GML: vec3(bend[X] * ease("easeinoutquint", weight), bend[Y] * ease("easeinoutquint", weight), bend[Z] * weight)
 	/// </summary>
 	public static Vector3 GetBendVector(Vector3 angle, float weight)
 	{
 		return new Vector3(
 			angle.X * EaseInOutQuint(weight),
 			angle.Y * EaseInOutQuint(weight),
-			angle.Z * EaseInOutQuint(weight)
+			angle.Z * weight   // Z uses linear weighting, matching GML
 		);
 	}
 	

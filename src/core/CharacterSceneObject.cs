@@ -306,44 +306,50 @@ public partial class BoneSceneObject : SceneObject
 	/// Also updates children's visual positions to reflect the new bend.
 	/// Also triggers regeneration on child bones whose InheritBend is true,
 	/// so their meshes update when the parent angle changes.
+	///
+	/// NOTE: Even when this bone has no shapes (empty container part), propagation
+	/// to InheritBend children still runs — a shapeless parent can still drive
+	/// child bends via inherit_bend (e.g. the mouth's OpenedMouth part).
 	/// </summary>
 	public void RegenerateMeshes()
 	{
-		if (_shapeDataList.Count == 0) return;
-
-		// Remove existing mesh instances from Visual
-		var toRemove = new List<Node>();
-		foreach (var child in Visual.GetChildren())
+		// Only rebuild this bone's own meshes if it has any shapes registered.
+		if (_shapeDataList.Count > 0)
 		{
-			if (child is MeshInstance3D)
-				toRemove.Add(child);
-		}
-		foreach (var node in toRemove)
-		{
-			Visual.RemoveChild(node);
-			node.QueueFree();
-		}
-
-		// Build effective bend params: replace Angle with the inherited-compounded angle.
-		BendParams? effectiveBendParams = null;
-		if (BendParameters.HasValue)
-		{
-			var bp = BendParameters.Value;
-			bp.Angle = GetEffectiveBendAngle();
-			effectiveBendParams = bp;
-		}
-
-		// Recreate meshes using the loader
-		var loader = new MineImatorLoader();
-		foreach (var sd in _shapeDataList)
-		{
-			var meshInstance = loader.CreateShapeMeshPublic(
-				sd.PartName, sd.ShapeIndex, sd.Shape, sd.Model,
-				sd.Texture, sd.AccumulatedScale, effectiveBendParams, sd.ModelBendStyle);
-			if (meshInstance != null)
+			// Remove existing mesh instances from Visual
+			var toRemove = new List<Node>();
+			foreach (var child in Visual.GetChildren())
 			{
-				AddVisualInstance(meshInstance);
-				meshInstance.Name = $"{sd.PartName}_Shape{sd.ShapeIndex}";
+				if (child is MeshInstance3D)
+					toRemove.Add(child);
+			}
+			foreach (var node in toRemove)
+			{
+				Visual.RemoveChild(node);
+				node.QueueFree();
+			}
+
+			// Build effective bend params: replace Angle with the inherited-compounded angle.
+			BendParams? effectiveBendParams = null;
+			if (BendParameters.HasValue)
+			{
+				var bp = BendParameters.Value;
+				bp.Angle = GetEffectiveBendAngle();
+				effectiveBendParams = bp;
+			}
+
+			// Recreate meshes using the loader
+			var loader = new MineImatorLoader();
+			foreach (var sd in _shapeDataList)
+			{
+				var meshInstance = loader.CreateShapeMeshPublic(
+					sd.PartName, sd.ShapeIndex, sd.Shape, sd.Model,
+					sd.Texture, sd.AccumulatedScale, effectiveBendParams, sd.ModelBendStyle);
+				if (meshInstance != null)
+				{
+					AddVisualInstance(meshInstance);
+					meshInstance.Name = $"{sd.PartName}_Shape{sd.ShapeIndex}";
+				}
 			}
 		}
 
@@ -356,6 +362,8 @@ public partial class BoneSceneObject : SceneObject
 
 		// Propagate to child BoneSceneObjects that inherit our bend angle,
 		// so their meshes also update when our angle changes.
+		// This runs even if this bone has no shapes (shapeless container parts
+		// like OpenedMouth still drive their children's effective bend angle).
 		foreach (var child in GetChildrenObjects())
 		{
 			if (child is BoneSceneObject childBone &&
