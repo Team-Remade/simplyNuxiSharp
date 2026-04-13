@@ -1112,8 +1112,8 @@ public partial class SpawnMenu : PopupPanel
             {
                 AlbedoTexture = texture,
                 TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest, // Pixelated look for Minecraft textures
-                Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor, // Handle transparency
-                AlphaScissorThreshold = 0.5f,
+                Transparency = BaseMaterial3D.TransparencyEnum.AlphaDepthPrePass, // Handle transparency
+                DepthDrawMode = BaseMaterial3D.DepthDrawModeEnum.Always,
                 CullMode = BaseMaterial3D.CullModeEnum.Disabled // Show both sides of the plane
             };
 

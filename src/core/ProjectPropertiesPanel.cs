@@ -2521,8 +2521,8 @@ public partial class ProjectPropertiesPanel : Panel
         {
             material = new StandardMaterial3D
             {
-                Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor,
-                AlphaScissorThreshold = 0.5f,
+                Transparency = BaseMaterial3D.TransparencyEnum.AlphaDepthPrePass,
+                DepthDrawMode = BaseMaterial3D.DepthDrawModeEnum.Always,
                 AlphaAntialiasingMode = BaseMaterial3D.AlphaAntiAliasing.Off,
                 MetallicSpecular = 0.0f,
                 Uv1Scale = new Vector3(64, 64, 64),

@@ -190,8 +190,8 @@ void fragment() {
 			material.AlbedoColor = Colors.White;
 			material.AlbedoTexture = texture;
 			material.TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest;
-			material.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
-			material.AlphaScissorThreshold = 0.5f;
+			material.Transparency = BaseMaterial3D.TransparencyEnum.AlphaDepthPrePass;
+			material.DepthDrawMode = BaseMaterial3D.DepthDrawModeEnum.Always;
 			return material;
 		}
 		

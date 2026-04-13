@@ -306,8 +306,8 @@ public partial class VoxelSettings : Node
 		var atlasMaterial = new StandardMaterial3D();
 		atlasMaterial.AlbedoTexture = atlasTexture;
 		atlasMaterial.TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest;
-		atlasMaterial.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
-		atlasMaterial.AlphaScissorThreshold = 0.5f;
+		atlasMaterial.Transparency = BaseMaterial3D.TransparencyEnum.AlphaDepthPrePass;
+		atlasMaterial.DepthDrawMode = BaseMaterial3D.DepthDrawModeEnum.Always;
 		
 		// Step 4: Combine all surfaces into one, remapping UVs to atlas regions
 		var allVerts = new List<Vector3>();

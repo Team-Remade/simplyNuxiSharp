@@ -147,6 +147,7 @@ public partial class SceneObject : Node3D
 					stdMat.EmissionEnabled = _materialSettings.EmissionEnabled;
 					stdMat.Emission = _materialSettings.EmissionColor;
 					stdMat.EmissionEnergyMultiplier = _materialSettings.EmissionEnergy;
+					stdMat.DepthDrawMode = BaseMaterial3D.DepthDrawModeEnum.Always;
 				}
 			}
 		}

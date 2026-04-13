@@ -213,6 +213,7 @@ public class BoneShapeData
 	public Vector3 AccumulatedScale;
 	public BendStyle ModelBendStyle;
 	public float? PartColorAlpha;
+	public int PartDepth;
 }
 
 /// <summary>
@@ -249,6 +250,9 @@ public partial class BoneSceneObject : SceneObject
 
 	// Color alpha loaded from model (for Mine Imator color_alpha property)
 	public float? ColorAlpha { get; set; }
+
+	// Render priority depth from model (for Mine Imator depth property)
+	public int Depth { get; set; }
 
 	// ── Bend data ─────────────────────────────────────────────────────────────
 
@@ -342,7 +346,7 @@ public partial class BoneSceneObject : SceneObject
 			{
 				var meshInstance = loader.CreateShapeMeshPublic(
 					sd.PartName, sd.ShapeIndex, sd.Shape, sd.Model,
-					sd.Texture, sd.AccumulatedScale, effectiveBendParams, sd.ModelBendStyle, sd.PartColorAlpha);
+					sd.Texture, sd.AccumulatedScale, effectiveBendParams, sd.ModelBendStyle, sd.PartColorAlpha, sd.PartDepth);
 				if (meshInstance != null)
 				{
 					AddVisualInstance(meshInstance);
@@ -703,6 +707,16 @@ public partial class BoneSceneObject : SceneObject
 		if (parent is BoneSceneObject parentBone)
 		{
 			ColorAlpha = parentBone.ColorAlpha;
+		}
+	}
+
+	public void InheritDepthFromParent()
+	{
+		if (Depth != 0) return; // Already has its own depth
+		var parent = GetParent();
+		if (parent is BoneSceneObject parentBone)
+		{
+			Depth = parentBone.Depth;
 		}
 	}
 }

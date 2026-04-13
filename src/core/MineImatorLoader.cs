@@ -450,7 +450,7 @@ public class MineImatorLoader
                     }
 
                     var meshInstance = CreateShapeMesh(part.Name, shapeIndex, shape, model, shapeTexture,
-                        accumulatedScale, bendParams, _currentCharacter.ModelBendStyle, part.ColorAlpha);
+                        accumulatedScale, bendParams, _currentCharacter.ModelBendStyle, part.ColorAlpha, boneObject.Depth);
                     if (meshInstance != null)
                     {
                         // Apply inherited material settings to the mesh's material
@@ -497,7 +497,8 @@ public class MineImatorLoader
                         Texture = shapeTexture,
                         AccumulatedScale = accumulatedScale,
                         ModelBendStyle = _currentCharacter.ModelBendStyle,
-                        PartColorAlpha = boneObject.ColorAlpha
+                        PartColorAlpha = boneObject.ColorAlpha,
+                        PartDepth = boneObject.Depth
                     });
 
                     shapeIndex++;
@@ -652,11 +653,17 @@ public class MineImatorLoader
             // Set color alpha from part
             boneObject.ColorAlpha = boneData.part.ColorAlpha;
 
+            // Set depth from part
+            boneObject.Depth = boneData.part.Depth;
+
             // Inherit material settings from parent bone if not explicitly set
             boneObject.InheritMaterialSettingsFromParent();
 
             // Inherit color alpha from parent bone if not explicitly set on this bone
             boneObject.InheritColorAlphaFromParent();
+
+            // Inherit depth from parent bone if this bone has default depth
+            boneObject.InheritDepthFromParent();
         }
     }
 
@@ -665,8 +672,8 @@ public class MineImatorLoader
     /// </summary>
     public MeshInstance3D CreateShapeMeshPublic(string partName, int shapeIndex, MiShape shape, MiModel model,
         ImageTexture texture, Vector3 accumulatedParentScale, BendParams? bendParams = null, BendStyle bendStyle = BendStyle.ProjectDefault,
-        float? partColorAlpha = null)
-        => CreateShapeMesh(partName, shapeIndex, shape, model, texture, accumulatedParentScale, bendParams, bendStyle, partColorAlpha);
+        float? partColorAlpha = null, int depth = 0)
+        => CreateShapeMesh(partName, shapeIndex, shape, model, texture, accumulatedParentScale, bendParams, bendStyle, partColorAlpha, depth);
 
     /// <summary>
     /// Creates a MeshInstance3D for a single shape
@@ -675,9 +682,10 @@ public class MineImatorLoader
     /// <param name="bendParams">Bend parameters from the parent part (null if no bending)</param>
     /// <param name="bendStyle">The bend style setting from the character model</param>
     /// <param name="partColorAlpha">Optional alpha value from the part's color_alpha property</param>
+    /// <param name="depth">Render priority depth (flipped to render priority)</param>
     private MeshInstance3D CreateShapeMesh(string partName, int shapeIndex, MiShape shape, MiModel model,
         ImageTexture texture, Vector3 accumulatedParentScale, BendParams? bendParams = null, BendStyle bendStyle = BendStyle.ProjectDefault,
-        float? partColorAlpha = null)
+        float? partColorAlpha = null, int depth = 0)
     {
         if (shape == null || shape.From == null || shape.To == null)
         {
@@ -799,8 +807,9 @@ public class MineImatorLoader
                 AlbedoTexture = texture,
                 TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest,
                 CullMode = BaseMaterial3D.CullModeEnum.Back,
-                Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor,
-                AlphaScissorThreshold = 0.5f
+                Transparency = BaseMaterial3D.TransparencyEnum.AlphaDepthPrePass,
+                DepthDrawMode =  BaseMaterial3D.DepthDrawModeEnum.Always,
+                RenderPriority = depth
             };
 
             if (meshInstance.Mesh is ArrayMesh arrayMesh && arrayMesh.GetSurfaceCount() > 0)
@@ -3245,6 +3254,8 @@ public class MiPart
     public float? LockBend { get; set; }
 
     [JsonPropertyName("locked")] public bool Locked { get; set; }
+
+    [JsonPropertyName("depth")] public int Depth { get; set; }
 
     [JsonPropertyName("color_alpha")]
     [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString | JsonNumberHandling.AllowNamedFloatingPointLiterals)]
