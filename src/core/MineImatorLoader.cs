@@ -1170,10 +1170,8 @@ public class MineImatorLoader
 
                 if (invAngle) startP = 1.0f - startP;
 
-                var pivot = to - from;
-
                 Vector3 startBendVec = BendHelper.GetBendVector(b.Angle, startP);
-                Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, pivot);
+                Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition);
 
                 p1 = startMat * p1;
                 p2 = startMat * p2;
@@ -1688,10 +1686,8 @@ public class MineImatorLoader
 
         if (invAngle) startP = 1.0f - startP;
 
-        var pivot = from - to;
-
         Vector3 startBendVec = BendHelper.GetBendVector(b.Angle, startP);
-        Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, pivot);
+        Transform3D startMat = BendHelper.GetBendMatrix(b, startBendVec, shapePosition);
 
         p1 = startMat * p1;
         p2 = startMat * p2;
