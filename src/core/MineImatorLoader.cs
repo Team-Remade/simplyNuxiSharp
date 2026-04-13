@@ -420,8 +420,11 @@ public class MineImatorLoader
             Vector3 accumulatedScale = accumulatedParentScale * partScale;
 
             // Parse bend parameters from this part (if any)
-            // Pass the part's own scale so offset/size are scaled correctly
-            BendParams? bendParams = BendHelper.ParseBend(part.Bend, part.Scale, _currentCharacter.ModelBendStyle);
+            // Pass the accumulated scale (part's own scale × all ancestor scales) so offset/size
+            // are scaled correctly. Matches GML el_update_part.gml: scale = partScale * parent.scale
+            BendParams? bendParams = BendHelper.ParseBend(part.Bend,
+                new float[] { accumulatedScale.X, accumulatedScale.Y, accumulatedScale.Z },
+                _currentCharacter.ModelBendStyle);
 
             // Store bend params and lock_bend on the bone for later editing
             float lockBend = part.LockBend ?? 1f;
@@ -1010,7 +1013,8 @@ public class MineImatorLoader
 
                 // Adjust detail based on shape scale along the bend axis.
                 // When the part is stretched along the bend axis, reduce segment count to maintain visual density.
-                if (b.BendSize >= 1 && shapeScale[segAxis] > .5f)
+                // GML condition: (bend_size != null && bend_size >= 1) — only applies when bend size was explicitly set.
+                if (b.ExplicitBendSize && b.BendSize >= 1 && shapeScale[segAxis] > .5f)
                     detail /= shapeScale[segAxis];
 
                 float segSize = bendSize / detail;
