@@ -259,18 +259,18 @@ transform = Transform3D(0.70710677, -0.49999997, 0.49999997, 0, 0.70710677, 0.70
 script = ExtResource("6_lgr22")
 PickingShader = ExtResource("7_trn2v")
 
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=920564239]
-transform = Transform3D(0.8660254, -0.25, 0.4330127, 0, 0.8660254, 0.5, -0.5, -0.4330127, 0.75, 0, 0, 0)
-light_energy = 0.176
-light_specular = 0.0
-sky_mode = 1
-
 [node name="MinecraftClouds" type="MeshInstance3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=398200575]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 128, 3)
 material_override = SubResource("ShaderMaterial_mxvw5")
 mesh = SubResource("PlaneMesh_mxvw5")
 script = ExtResource("12_bg4s2")
 cloud_material = SubResource("ShaderMaterial_mxvw5")
+
+[node name="FillLight" type="DirectionalLight3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=920564239]
+transform = Transform3D(0.8660254, -0.25, 0.4330127, 0, 0.8660254, 0.5, -0.5, -0.4330127, 0.75, 0, 0, 0)
+light_energy = 0.175
+light_specular = 0.0
+sky_mode = 1
 
 [node name="Sun" type="DirectionalLight3D" parent="Content/MainContent/Viewport/MainViewport/SubViewport" unique_id=1996494694]
 transform = Transform3D(1, 0, 0, 0, 0.72539866, 0.688329, 0, -0.688329, 0.72539866, 0, 0, 0)
